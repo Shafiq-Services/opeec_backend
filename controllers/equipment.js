@@ -1,0 +1,626 @@
+const mongoose = require('mongoose');
+const Equipment = require('../models/equipment'); // Import the Equipment model
+const User = require('../models/User'); // Import the User model (for owner validation)
+const SubCategory = require('../models/sub_categories'); // Import the SubCategory model
+const categories = require('../models/categories'); // Import the categories model
+const addEquipment = async (req, res) => {
+    const {
+      sub_category_fk,
+      name,
+      make,
+      model,
+      serial_number,
+      description,
+      images,
+      address,
+      lat,
+      long,
+      delivery_by_owner,
+      rental_price,
+      equipment_price,
+      notice_period,
+      minimum_trip_duration,
+      maximum_trip_duration,
+    } = req.body;
+  
+    try {
+      // Validate required fields
+      const requiredFields = [
+        { name: 'sub_category_fk', value: sub_category_fk },
+        { name: 'name', value: name },
+        { name: 'make', value: make },
+        { name: 'model', value: model },
+        { name: 'serial_number', value: serial_number },
+        { name: 'description', value: description },
+        { name: 'address', value: address },
+        { name: 'lat', value: lat },
+        { name: 'long', value: long },
+        { name: 'rental_price', value: rental_price },
+        { name: 'equipment_price', value: equipment_price },
+        { name: 'notice_period', value: notice_period },
+        { name: 'minimum_trip_duration', value: minimum_trip_duration },
+        { name: 'maximum_trip_duration', value: maximum_trip_duration }
+      ];
+  
+      for (const field of requiredFields) {
+        if (!field.value) {
+          return res.status(400).json({ message: `${field.name} is required.` });
+        }
+      }
+  
+      // Validate image constraints
+      if (!images || images.length === 0) return res.status(400).json({ message: 'At least one image is required.' });
+      if (images.length > 3) return res.status(400).json({ message: 'A maximum of 3 images are allowed.' });
+  
+      // Validate sub-category existence
+      const subCategory = await SubCategory.findById(sub_category_fk);
+      if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
+  
+      // Create and save equipment
+      const newEquipment = new Equipment({
+        owner_id: req.userId,
+        sub_category_fk,
+        name,
+        make,
+        model,
+        serial_number,
+        description,
+        images,
+        location: { address, lat, long },
+        delivery_by_owner,
+        rental_price,
+        equipment_price,
+        notice_period,
+        minimum_trip_duration,
+        maximum_trip_duration,
+        isLive: false,
+      });
+  
+      const savedEquipment = await newEquipment.save();
+      res.status(201).json({ message: 'Equipment added successfully.', data: savedEquipment });
+  
+    } catch (error) {
+      console.error('Error adding equipment:', error);
+      res.status(500).json({ message: 'Error adding equipment.', error: error.message });
+    }
+};  
+
+  const updateEquipment = async (req, res) => {
+    const {
+        sub_category_fk,
+        name,
+        make,
+        model,
+        serial_number,
+        description,
+        images,
+        address,
+        lat,
+        long,
+        delivery_by_owner,
+        rental_price,
+        equipment_price,
+        notice_period,
+        minimum_trip_duration,
+        maximum_trip_duration,
+    } = req.body;
+    
+    try {
+        const equipmentId = req.query.equipment_id; // Get the equipment ID from the request params
+        const userId = req.userId; // Assuming user ID is extracted from token middleware for authentication
+
+        // Validate required fields
+        const requiredFields = [
+            { name: 'sub_category_fk', value: sub_category_fk },
+            { name: 'name', value: name },
+            { name: 'make', value: make },
+            { name: 'model', value: model },
+            { name: 'serial_number', value: serial_number },
+            { name: 'description', value: description },
+            { name: 'address', value: address },
+            { name: 'lat', value: lat },
+            { name: 'long', value: long },
+            { name: 'rental_price', value: rental_price },
+            { name: 'equipment_price', value: equipment_price },
+            { name: 'notice_period', value: notice_period },
+            { name: 'minimum_trip_duration', value: minimum_trip_duration },
+            { name: 'maximum_trip_duration', value: maximum_trip_duration }
+        ];
+
+        for (const field of requiredFields) {
+            if (!field.value) {
+                return res.status(400).json({ message: `${field.name} is required.` });
+            }
+        }
+
+        // Validate image constraints
+        if (!images || images.length === 0) return res.status(400).json({ message: 'At least one image is required.' });
+        if (images && images.length > 3) return res.status(400).json({ message: 'A maximum of 3 images are allowed.' });
+
+        // Validate sub-category existence
+        const subCategory = await SubCategory.findById(sub_category_fk);
+        if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
+
+        // Find the existing equipment by ID
+        const equipment = await Equipment.findById(equipmentId);
+        if (!equipment) return res.status(404).json({ message: 'Equipment not found.' });
+
+        // Replace images instead of adding them
+        if (images) {
+            equipment.images = images; // Replace existing images with new ones
+        }
+
+        // Update the other fields
+        equipment.sub_category_fk = sub_category_fk;
+        equipment.name = name;
+        equipment.make = make;
+        equipment.model = model;
+        equipment.serial_number = serial_number;
+        equipment.description = description;
+        equipment.location = { address, lat, long };
+        equipment.delivery_by_owner = delivery_by_owner;
+        equipment.rental_price = rental_price;
+        equipment.equipment_price = equipment_price;
+        equipment.notice_period = notice_period;
+        equipment.minimum_trip_duration = minimum_trip_duration;
+        equipment.maximum_trip_duration = maximum_trip_duration;
+
+        // Save the updated equipment
+        const updatedEquipment = await equipment.save();
+        res.status(200).json({ message: 'Equipment updated successfully.', data: updatedEquipment });
+
+    } catch (error) {
+        console.error('Error updating equipment:', error);
+        res.status(500).json({ message: 'Error updating equipment.', error: error.message });
+    }
+};
+
+async function getAllEquipments(req, res) {
+    try {
+      const userId = req.userId; // User ID from token
+      const { lat, long, distance, name, category_id, delivery_by_owner } = req.query;
+  
+      // Building the query object for filtering
+      const query = {isLive: true};
+  
+      // Optional filtering based on query parameters
+      if (name) {
+        query.name = { $regex: name, $options: 'i' }; // Case-insensitive search
+      }
+  
+      if (delivery_by_owner !== undefined) {
+        query.delivery_by_owner = delivery_by_owner; // Filter by delivery_by_owner flag
+      }
+  
+      let equipments;
+  
+      // If category_id is provided, filter by sub_category_fk that matches the category
+      if (category_id) {
+        // First, fetch all sub-categories related to the provided category_id
+        const subCategories = await SubCategory.find({ category_id: category_id });
+        const subCategoryIds = subCategories.map(subCat => subCat._id);
+  
+        // Now, filter the equipments based on the sub-category ids
+        query.sub_category_fk = { $in: subCategoryIds };
+      }
+  
+      // Handling latitude and longitude for distance filtering
+      if (lat !== '0.0' && long !== '0.0') {
+        // If both lat and long are provided, use geospatial query to filter by distance
+        const maxDistanceKm = distance || 50;  // Default to 50 km if no distance is provided
+        equipments = await Equipment.find({
+          location: {
+            $nearSphere: {
+              $geometry: {
+                type: "Point",
+                coordinates: [long, lat]  // [longitude, latitude]
+              },
+              $maxDistance: maxDistanceKm * 1000  // Convert km to meters
+            }
+          },
+          ...query
+        });
+      } else {
+        // If lat and long are 0.0, return all live equipments without distance filtering
+        equipments = await Equipment.find({
+          ...query
+        });
+      }
+  
+      // Formatting the equipment data to match the required response structure
+      const formattedEquipments = equipments.map(equipment => ({
+        _id: equipment._id,
+        average_rating: 0, // Assuming the default value is 0, you can adjust if needed
+        created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
+        delivery_by_owner: equipment.delivery_by_owner,
+        description: equipment.description,
+        equipment_price: equipment.equipment_price,
+        images: equipment.images,
+        isFavorite: false, // Assuming it's false, adjust if there's a field for this
+        location: {
+          address: equipment.location.address,
+          lat: equipment.location.lat,
+          long: equipment.location.long
+        },
+        make: equipment.make,
+        maximum_trip_duration: equipment.maximum_trip_duration,
+        minimum_trip_duration: equipment.minimum_trip_duration,
+        model: equipment.model,
+        name: equipment.name,
+        notice_period: equipment.notice_period,
+        owner_id: equipment.owner_id,
+        postal_code: equipment.postal_code,
+        rental_price: equipment.rental_price,
+        serial_number: equipment.serial_number,
+        sub_category_fk: equipment.sub_category_fk
+      }));
+  
+      // Returning the formatted response
+      return res.status(200).json({
+        equipments: formattedEquipments,
+        message: 'Equipments retrieved successfully',
+        status: true
+      });
+    } catch (error) {
+      console.error('Error fetching equipments:', error);
+      return res.status(500).json({ message: 'Failed to retrieve equipments' });
+    }
+  }
+
+  async function getEquipmentDetails(req, res) {
+    try {
+      const equipmentId = req.query.equipment_id;
+  
+      // Find the equipment by ID
+      const equipment = await Equipment.findById(equipmentId);
+      if (!equipment) {
+        return res.status(404).json({
+          message: 'Equipment not found',
+          status: false
+        });
+      }
+  
+      // Fetch owner details
+      const owner = await User.findById(equipment.owner_id, 'name profile_image');
+      
+      // Formatting the equipment details
+      const equipmentDetails = {
+        _id: equipment._id,
+        average_rating: 0, // Assuming default value
+        created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
+        delivery_by_owner: equipment.delivery_by_owner || false,
+        description: equipment.description || '',
+        equipment_price: equipment.equipment_price || 0,
+        images: equipment.images || [],
+        location: {
+          address: equipment.location?.address || '',
+          lat: equipment.location?.lat || 0.0,
+          long: equipment.location?.long || 0.0
+        },
+        make: equipment.make || '',
+        maximum_trip_duration: equipment.maximum_trip_duration || { count: 0, type: '' },
+        message: 'Equipment details retrieved successfully',
+        minimum_trip_duration: equipment.minimum_trip_duration || { count: 0, type: '' },
+        model: equipment.model || '',
+        name: equipment.name || '',
+        notice_period: equipment.notice_period || { count: 0, type: '' },
+        owner: {
+          id: owner?._id || null,
+          name: owner?.name || '',
+          profile_image: owner?.profile_image || ''
+        },
+        postal_code: equipment.postal_code || '',
+        ratings: equipment.ratings || [],
+        rental_price: equipment.rental_price || 0,
+        serial_number: equipment.serial_number || '',
+        status: equipment.status || true
+      };
+  
+      // Returning the response
+      return res.status(200).json(equipmentDetails);
+    } catch (error) {
+      console.error('Error fetching equipment details:', error);
+      return res.status(500).json({
+        message: 'Failed to retrieve equipment details',
+        status: false
+      });
+    }
+  }
+  
+  async function deleteEquipment(req, res) {
+    try {
+      const equipmentId = req.query.equipment_id; // Extract equipment ID from request parameters
+      const userId = req.userId; // Assuming user ID is extracted from token middleware for authentication
+  
+      // Find the equipment by ID
+      const equipment = await Equipment.findById(equipmentId);
+  
+      if (!equipment) {
+        return res.status(404).json({
+          message: 'Equipment not found',
+          status: false
+        });
+      }
+  
+      // Delete the equipment
+      await Equipment.findByIdAndDelete(equipmentId);
+  
+      return res.status(200).json({
+        message: 'Equipment deleted successfully',
+        status: true
+      });
+    } catch (error) {
+      console.error('Error deleting equipment:', error);
+      return res.status(500).json({
+        message: 'Failed to delete equipment',
+        status: false
+      });
+    }
+  }
+
+async function getRandomEquipmentImages(req, res) {
+  try {
+    // Fetch all live equipment with populated categories
+    const equipments = await Equipment.find({isLive: true}).populate({
+        path: 'sub_category_fk',
+        model: SubCategory, // Reference to SubCategory model
+        populate: {
+          path: 'category_id',
+          model: categories, // Reference to Category model
+        },
+      });
+      
+      if (!equipments || equipments.length === 0) {
+        return res.status(404).json({
+          message: 'No equipment found',
+          status: false,
+        });
+      }
+
+    const categoryMap = {};
+    const result = [];
+    const usedEquipmentIds = new Set();
+
+    // Group equipment by categories
+    equipments.forEach((equipment) => {
+      const categoryId = equipment.sub_category_fk.category_id._id.toString();
+      if (!categoryMap[categoryId]) {
+        categoryMap[categoryId] = [];
+      }
+      categoryMap[categoryId].push(equipment);
+    });
+
+    // Flatten categories into an array
+    const categoryIds = Object.keys(categoryMap);
+
+    // Main logic to generate 20 unique images
+    while (result.length < 20) {
+      // Shuffle the category order
+      categoryIds.sort(() => Math.random() - 0.5);
+
+      for (const categoryId of categoryIds) {
+        const categoryEquipments = categoryMap[categoryId];
+
+        // Randomize equipment within the category
+        const availableEquipments = categoryEquipments.filter(
+          (equipment) => !usedEquipmentIds.has(equipment._id.toString())
+        );
+
+        // Pick random equipment from this category
+        const equipment =
+          availableEquipments.length > 0
+            ? availableEquipments[
+                Math.floor(Math.random() * availableEquipments.length)
+              ]
+            : categoryEquipments[
+                Math.floor(Math.random() * categoryEquipments.length)
+              ];
+
+        if (equipment.images && equipment.images.length > 0) {
+          // Pick a random image from this equipment
+          const randomImage =
+            equipment.images[
+              Math.floor(Math.random() * equipment.images.length)
+            ];
+
+          result.push({
+            equipment_id: equipment._id,
+            image: randomImage
+          });
+
+          usedEquipmentIds.add(equipment._id.toString());
+        }
+
+        if (result.length === 20) break;
+      }
+
+      // If all categories are exhausted, allow repeating equipment
+      if (result.length < 20 && usedEquipmentIds.size === equipments.length) {
+        break;
+      }
+    }
+
+    // Fill up to 20 results if fewer than 20 images were added
+    while (result.length < 20) {
+      const randomEquipment =
+        equipments[Math.floor(Math.random() * equipments.length)];
+      const randomImage =
+        randomEquipment.images[
+          Math.floor(Math.random() * randomEquipment.images.length)
+        ];
+      result.push({
+        equipment_id: randomEquipment._id,
+        image: randomImage
+      });
+    }
+
+    return res.status(200).json({
+      images: result,
+      message: 'Random equipment images retrieved successfully',
+      status: true
+    });
+  } catch (error) {
+    console.error('Error fetching random equipment images:', error);
+    return res.status(500).json({
+      message: 'Failed to retrieve images',
+      status: false
+    });
+  }
+}
+
+async function getUserShop(req, res) {
+    try {
+        const ownerId = req.query.owner_id;
+
+        // Fetch the user's data
+        const user = await User.findById(ownerId);
+    
+        if (!user) {
+          return res.status(404).json({
+            message: 'User not found',
+            status: false,
+          });
+        }
+    
+        // Fetch equipment related to the user (owner_id)
+        const equipments = await Equipment.find({ owner_id: ownerId, isLive: true })
+          .select('_id name make rental_price images location average_rating')
+          .lean(); // Using lean() to return plain JS objects
+    
+        // Map equipment data to match the required format
+        const formattedEquipments = equipments.map(equipment => ({
+          _id: equipment._id,
+          name: equipment.name,
+          make: equipment.make,
+          rental_price: equipment.rental_price,
+          images: equipment.images,
+          average_rating: equipment.average_rating,
+          location: equipment.location,
+          isFavorite: false, // Assuming you need this to be static for now
+        }));
+    
+        // Prepare the response
+        const response = {
+            status: true,
+            message: 'User shop retrieved successfully',
+            equipments: formattedEquipments,
+            owner: {
+                id: user._id,
+                name: user.name,
+                profile_image: user.profile_image || '',
+            },
+        };
+    
+        return res.status(200).json(response);
+      } catch (err) {
+        console.error('Error fetching user shop:', err);
+        return res.status(500).json({
+          message: 'Server error',
+          status: false,
+        });
+      }
+}
+
+async function getFavoriteEquipments(req, res) {
+  try {
+    const userId = req.userId; // Assuming user ID is extracted from token middleware for authentication
+    console.log('Received userId:', userId);  // Debug: Log the userId
+
+    // Find user by ID and populate the favorite_equipments list with equipment details
+    const user = await User.findById(userId).populate({
+      path: 'favorite_equipments', // The field to populate
+      model: 'Equipments' // Ensure this is the correct model
+    });
+    
+    if (!user) {
+      console.log('User not found with userId:', userId);  // Debug: Log if user is not found
+      return res.status(404).json({
+        message: 'User not found',
+        status: false,
+      });
+    }
+
+    // Check the favorite_equipments to ensure it was populated correctly
+    console.log('Favorite Equipments:', user.favorite_equipments);  // Debug: Log populated favorite_equipments
+
+    if (!user.favorite_equipments || user.favorite_equipments.length === 0) {
+      console.log('No favorite equipments found for user:', userId);  // Debug: Log if no favorites are found
+      return res.status(404).json({
+        message: 'No favorite equipments found',
+        status: false,
+      });
+    }
+
+    // Add "isFavorite" flag to each equipment
+    const favoriteEquipments = user.favorite_equipments.map(equipment => {
+      console.log('Processing equipment with ID:', equipment._id);  // Debug: Log the equipment ID
+      return {
+        ...equipment.toObject(),
+        isFavorite: true, // All these are favorites
+      };
+    });
+
+    return res.status(200).json({
+      message: 'Favorite equipments retrieved successfully',
+      status: true,
+      favoriteEquipments,
+    });
+  } catch (err) {
+    console.error('Error retrieving favorite equipments:', err);
+    return res.status(500).json({
+      message: 'Server error',
+      status: false,
+    });
+  }
+}
+
+
+
+async function toggleFavorite(req, res) {
+  try {
+    const userId = req.userId; // Assuming user ID is extracted from token middleware for authentication
+    const equipmentId = req.query.equipmentId; // Equipment ID from the request body
+
+    // Find the user by ID
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        message: 'User not found',
+        status: false,
+      });
+    }
+
+    // Check if equipment is already in the user's favorites
+    if (!mongoose.Types.ObjectId.isValid(equipmentId)) {
+      return res.status(400).json({ message: 'Invalid equipment ID', status: false });
+    }
+    
+    const isFavorite = user.favorite_equipments.includes(equipmentId);
+
+    if (isFavorite) {
+      // Remove equipment from favorites if it exists
+      user.favorite_equipments = user.favorite_equipments.filter(id => id.toString() !== equipmentId);
+    } else {
+      // Add equipment to favorites if it doesn't exist
+      user.favorite_equipments.push(equipmentId);
+    }
+
+    // Save the user with updated favorite equipments list
+    await user.save();
+
+    // Return success response
+    return res.status(200).json({
+      message: isFavorite ? 'Equipment removed from favorites' : 'Equipment added to favorites',
+      status: true,
+    });
+  } catch (err) {
+    console.error('Error toggling favorite status:', err);
+    return res.status(500).json({
+      message: 'Server error',
+      status: false,
+    });
+  }
+}
+
+module.exports = { addEquipment, updateEquipment, getAllEquipments, getEquipmentDetails, deleteEquipment, getRandomEquipmentImages, getUserShop, getFavoriteEquipments,  toggleFavorite};
