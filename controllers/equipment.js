@@ -66,7 +66,7 @@ const addEquipment = async (req, res) => {
         serial_number,
         description,
         images,
-        location: { address, lat, long },
+        custom_location: { address, lat, long },
         delivery_by_owner,
         rental_price,
         equipment_price,
@@ -157,7 +157,7 @@ const addEquipment = async (req, res) => {
         equipment.model = model;
         equipment.serial_number = serial_number;
         equipment.description = description;
-        equipment.location = { address, lat, long };
+        equipment.custom_location = { address, lat, long };
         equipment.delivery_by_owner = delivery_by_owner;
         equipment.rental_price = rental_price;
         equipment.equipment_price = equipment_price;
@@ -176,96 +176,112 @@ const addEquipment = async (req, res) => {
 };
 
 async function getAllEquipments(req, res) {
-    try {
-      const userId = req.userId; // User ID from token
-      const { lat, long, distance, name, category_id, delivery_by_owner } = req.query;
-  
-      // Building the query object for filtering
-      const query = {isLive: true};
-  
-      // Optional filtering based on query parameters
-      if (name) {
-        query.name = { $regex: name, $options: 'i' }; // Case-insensitive search
-      }
-  
-      if (delivery_by_owner !== undefined) {
-        query.delivery_by_owner = delivery_by_owner; // Filter by delivery_by_owner flag
-      }
-  
-      let equipments;
-  
-      // If category_id is provided, filter by sub_category_fk that matches the category
-      if (category_id) {
-        // First, fetch all sub-categories related to the provided category_id
-        const subCategories = await SubCategory.find({ category_id: category_id });
-        const subCategoryIds = subCategories.map(subCat => subCat._id);
-  
-        // Now, filter the equipments based on the sub-category ids
-        query.sub_category_fk = { $in: subCategoryIds };
-      }
-  
-      // Handling latitude and longitude for distance filtering
-      if (lat !== '0.0' && long !== '0.0') {
-        // If both lat and long are provided, use geospatial query to filter by distance
-        const maxDistanceKm = distance || 50;  // Default to 50 km if no distance is provided
-        equipments = await Equipment.find({
-          location: {
-            $nearSphere: {
-              $geometry: {
-                type: "Point",
-                coordinates: [long, lat]  // [longitude, latitude]
-              },
-              $maxDistance: maxDistanceKm * 1000  // Convert km to meters
-            }
+  try {
+    const { lat, long, distance, name, category_id, delivery_by_owner } = req.query;
+
+    // Base query for live equipments
+    const query = { isLive: true };
+
+    if (name) {
+      query.name = { $regex: name, $options: "i" }; // Case-insensitive search
+    }
+
+    if (delivery_by_owner !== undefined) {
+      query.delivery_by_owner = delivery_by_owner;
+    }
+
+    if (category_id) {
+      const subCategories = await SubCategory.find({ category_id });
+      const subCategoryIds = subCategories.map((subCat) => subCat._id);
+      query.sub_category_fk = { $in: subCategoryIds };
+    }
+
+    const geoPipeline = [];
+
+    // Geospatial filtering
+    if (lat !== "0.0" && long !== "0.0") {
+      const maxDistanceKm = distance || 50; // Default to 50 km
+
+      geoPipeline.push({
+        $geoNear: {
+          near: {
+            type: "Point",
+            coordinates: [parseFloat(long), parseFloat(lat)], // User's location
           },
-          ...query
-        });
-      } else {
-        // If lat and long are 0.0, return all live equipments without distance filtering
-        equipments = await Equipment.find({
-          ...query
-        });
-      }
-  
-      // Formatting the equipment data to match the required response structure
-      const formattedEquipments = equipments.map(equipment => ({
-        _id: equipment._id,
-        average_rating: 0, // Assuming the default value is 0, you can adjust if needed
-        created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
-        delivery_by_owner: equipment.delivery_by_owner,
-        description: equipment.description,
-        equipment_price: equipment.equipment_price,
-        images: equipment.images,
-        isFavorite: false, // Assuming it's false, adjust if there's a field for this
-        location: {
-          address: equipment.location.address,
-          lat: equipment.location.lat,
-          long: equipment.location.long
+          distanceField: "distance",
+          maxDistance: maxDistanceKm * 1000, // Convert km to meters
+          spherical: true,
         },
-        make: equipment.make,
-        maximum_trip_duration: equipment.maximum_trip_duration,
-        minimum_trip_duration: equipment.minimum_trip_duration,
-        model: equipment.model,
-        name: equipment.name,
-        notice_period: equipment.notice_period,
-        owner_id: equipment.owner_id,
-        postal_code: equipment.postal_code,
-        rental_price: equipment.rental_price,
-        serial_number: equipment.serial_number,
-        sub_category_fk: equipment.sub_category_fk
-      }));
-  
-      // Returning the formatted response
-      return res.status(200).json({
-        equipments: formattedEquipments,
-        message: 'Equipments retrieved successfully',
-        status: true
       });
-    } catch (error) {
-      console.error('Error fetching equipments:', error);
-      return res.status(500).json({ message: 'Failed to retrieve equipments' });
+    }
+
+    // Add a match stage after `$geoNear`
+    geoPipeline.push({ $match: query });
+
+    // Add any computed fields (e.g., `tempLocation`) AFTER `$geoNear`
+    geoPipeline.push({
+      $addFields: {
+        tempLocation: {
+          type: "Point",
+          coordinates: ["$location.long", "$location.lat"], // Dynamically create geospatial coordinates
+        },
+      },
+    });
+
+    const equipments = await Equipment.aggregate(geoPipeline);
+
+    // Formatting the equipment data
+    const formattedEquipments = equipments.map((equipment) => ({
+      _id: equipment._id,
+      average_rating: 0,
+      created_at: equipment.created_at
+        ? equipment.created_at.toGMTString()
+        : new Date().toGMTString(),
+      delivery_by_owner: equipment.delivery_by_owner,
+      description: equipment.description,
+      equipment_price: equipment.equipment_price,
+      images: equipment.images,
+      isFavorite: false,
+      location: equipment.custom_location,
+      make: equipment.make,
+      maximum_trip_duration: equipment.maximum_trip_duration,
+      minimum_trip_duration: equipment.minimum_trip_duration,
+      model: equipment.model,
+      name: equipment.name,
+      notice_period: equipment.notice_period,
+      owner_id: equipment.owner_id,
+      postal_code: equipment.postal_code,
+      rental_price: equipment.rental_price,
+      serial_number: equipment.serial_number,
+      sub_category_fk: equipment.sub_category_fk,
+    }));
+
+    return res.status(200).json({
+      equipments: formattedEquipments,
+      message: "Equipments retrieved successfully",
+      status: true,
+    });
+  } catch (error) {
+    console.error("Error fetching equipments:", error);
+    return res.status(500).json({ message: "Failed to retrieve equipments" });
+  }
+}
+
+
+
+// Helper function to match query filters
+function queryMatches(equipment, query) {
+  for (const key in query) {
+    if (Array.isArray(query[key]) && !query[key].includes(equipment[key])) {
+      return false;
+    }
+    if (!Array.isArray(query[key]) && equipment[key] !== query[key]) {
+      return false;
     }
   }
+  return true;
+}
+
 
   async function getEquipmentDetails(req, res) {
     try {
@@ -293,9 +309,9 @@ async function getAllEquipments(req, res) {
         equipment_price: equipment.equipment_price || 0,
         images: equipment.images || [],
         location: {
-          address: equipment.location?.address || '',
-          lat: equipment.location?.lat || 0.0,
-          long: equipment.location?.long || 0.0
+          address: equipment.custom_location?.address || '',
+          lat: equipment.custom_location?.lat || 0.0,
+          long: equipment.custom_location?.long || 0.0
         },
         make: equipment.make || '',
         maximum_trip_duration: equipment.maximum_trip_duration || { count: 0, type: '' },

@@ -7,5 +7,5 @@ const { userMiddleware } = require("../middleWares/user");
 router.use(userMiddleware);
 
 router.post('/add', orderController.addOrder);
-
+router.get('/get_rented', orderController.getRentedEquipments);
 module.exports = router;

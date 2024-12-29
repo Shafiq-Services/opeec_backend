@@ -22,7 +22,7 @@ const orderSchema = new mongoose.Schema({
   },
   rental_status: { 
     type: String, 
-    enum: ['Booked', 'Ongoing', 'Returned', 'Cancelled'],
+    enum: ['Booked', 'Ongoing', 'Returned', 'Cancelled', 'Finished'],
     default: 'Booked' 
   },
   return_status: {
