@@ -329,7 +329,8 @@ function queryMatches(equipment, query) {
         ratings: equipment.ratings || [],
         rental_price: equipment.rental_price || 0,
         serial_number: equipment.serial_number || '',
-        status: equipment.status || true
+        status: equipment.status || true,
+        sub_category_fk: equipment.sub_category_fk || '',
       };
   
       // Returning the response
