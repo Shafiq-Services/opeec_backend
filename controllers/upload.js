@@ -41,7 +41,7 @@ module.exports.uploadVideo = async (req, res) => {
             return res.status(400).send('No video file uploaded.');
         }
         const video = req.files.video;
-        const { url } = await uploadVideo('videos-circle', video);
+        const { url } = await uploadVideo('videos', video);
         if (!url) throw new Error('Failed to upload video');
         return res.status(200).json({
             success: true,
