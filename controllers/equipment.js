@@ -263,8 +263,14 @@ async function getAllEquipments(req, res) {
         description: equipment.description,
         equipment_price: equipment.equipment_price,
         images: equipment.images,
+        isLive: equipment.isLive,
         isFavorite: false,
-        location: equipment.custom_location,
+        location: {
+          address: equipment.custom_location?.address || '',
+          lat: equipment.custom_location?.lat || 0.0,
+          long: equipment.custom_location?.long || 0.0,
+          range: equipment.custom_location?.range || 0,
+        },
         make: equipment.make,
         maximum_trip_duration: equipment.maximum_trip_duration,
         minimum_trip_duration: equipment.minimum_trip_duration,
@@ -334,10 +340,12 @@ function queryMatches(equipment, query) {
         description: equipment.description || '',
         equipment_price: equipment.equipment_price || 0,
         images: equipment.images || [],
+        isLive: equipment.isLive,
         location: {
           address: equipment.custom_location?.address || '',
           lat: equipment.custom_location?.lat || 0.0,
-          long: equipment.custom_location?.long || 0.0
+          long: equipment.custom_location?.long || 0.0,
+          range: equipment.custom_location?.range || 0,
         },
         make: equipment.make || '',
         maximum_trip_duration: equipment.maximum_trip_duration || { count: 0, type: '' },
@@ -527,7 +535,7 @@ async function getUserShop(req, res) {
 
     // Fetch equipment related to the user (owner_id)
     const equipments = await Equipment.find({ owner_id: ownerId })
-      .select('_id name make rental_price images location average_rating isLive sub_category_fk')
+      .select('_id name make rental_price images isLive location average_rating isLive sub_category_fk')
       .lean(); // Using lean() to return plain JS objects
 
     if (equipments.length === 0) {
@@ -621,7 +629,7 @@ async function getFavoriteEquipments(req, res) {
 
     // Fetch the equipment details for the favorites
     const favoriteEquipments = await Equipment.find({ _id: { $in: user.favorite_equipments } })
-      .select('_id name make rental_price images location average_rating isLive sub_category_fk')
+      .select('_id name make rental_price images isLive location average_rating isLive sub_category_fk')
       .lean();
 
     if (favoriteEquipments.length === 0) {
