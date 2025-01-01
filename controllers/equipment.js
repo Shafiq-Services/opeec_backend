@@ -508,70 +508,96 @@ async function getRandomEquipmentImages(req, res) {
 }
 
 async function getUserShop(req, res) {
-    try {
-        const ownerId = req.query.owner_id;
+  try {
+    const ownerId = req.query.owner_id;
 
-        // Fetch the user's data
-        const user = await User.findById(ownerId);
-    
-        if (!user) {
-          return res.status(404).json({
-            message: 'User not found',
-            status: false,
-          });
-        }
-    
-        // Fetch equipment related to the user (owner_id)
-        const equipments = await Equipment.find({ owner_id: ownerId })
-          .select('_id name make rental_price images location average_rating isLive')
-          .lean(); // Using lean() to return plain JS objects
-    
-        // Map equipment data to match the required format
-        const formattedEquipments = equipments.map(equipment => ({
-          _id: equipment._id,
-          name: equipment.name,
-          make: equipment.make,
-          rental_price: equipment.rental_price,
-          images: equipment.images,
-          isLive: equipment.isLive,
-          average_rating: equipment.average_rating,
-          location: equipment.location,
-          isFavorite: false, // Assuming you need this to be static for now
-        }));
-    
-        // Prepare the response
-        const response = {
-            status: true,
-            message: 'User shop retrieved successfully',
-            equipments: formattedEquipments,
-            owner: {
-                id: user._id,
-                name: user.name,
-                profile_image: user.profile_image || '',
-            },
-        };
-    
-        return res.status(200).json(response);
-      } catch (err) {
-        console.error('Error fetching user shop:', err);
-        return res.status(500).json({
-          message: 'Server error',
-          status: false,
-        });
-      }
+    // Fetch the user's data
+    const user = await User.findById(ownerId);
+
+    if (!user) {
+      return res.status(404).json({
+        message: 'User not found',
+        status: false,
+      });
+    }
+
+    // Fetch equipment related to the user (owner_id)
+    const equipments = await Equipment.find({ owner_id: ownerId })
+      .select('_id name make rental_price images location average_rating isLive sub_category_fk')
+      .lean(); // Using lean() to return plain JS objects
+
+    if (equipments.length === 0) {
+      return res.status(404).json({
+        message: 'No equipment found for this user',
+        status: false,
+      });
+    }
+
+    // Fetch subcategories for the equipment
+    const subCategoryIds = equipments.map(equipment => equipment.sub_category_fk);
+    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('category_id');
+
+    // Map subcategories to equipment data
+    const subCategoryMap = subCategories.reduce((acc, subCat) => {
+      acc[subCat._id] = {
+        sub_category_name: subCat.name,
+        category_id: subCat.category_id._id,
+        category_name: subCat.category_id.name,
+      };
+      return acc;
+    }, {});
+
+    // Map equipment data to match the required format
+    const formattedEquipments = equipments.map(equipment => {
+      const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
+      return {
+        _id: equipment._id,
+        name: equipment.name,
+        make: equipment.make,
+        rental_price: equipment.rental_price,
+        images: equipment.images,
+        isLive: equipment.isLive,
+        average_rating: equipment.average_rating,
+        location: equipment.location,
+        category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
+        category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
+        sub_category_id: equipment.sub_category_fk,
+        sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
+        isFavorite: false, // Assuming you need this to be static for now
+      };
+    });
+
+    // Prepare the response
+    const response = {
+      status: true,
+      message: 'User shop retrieved successfully',
+      equipments: formattedEquipments,
+      owner: {
+        id: user._id,
+        name: user.name,
+        profile_image: user.profile_image || '',
+      },
+    };
+
+    return res.status(200).json(response);
+  } catch (err) {
+    console.error('Error fetching user shop:', err);
+    return res.status(500).json({
+      message: 'Server error',
+      status: false,
+    });
+  }
 }
+
 
 async function getFavoriteEquipments(req, res) {
   try {
     const userId = req.userId; // Assuming user ID is extracted from token middleware for authentication
     console.log('Received userId:', userId);  // Debug: Log the userId
 
-    // Find user by ID and populate the favorite_equipments list with equipment details
-    const user = await User.findById(userId).populate({
-      path: 'favorite_equipments', // The field to populate
-      model: 'Equipments' // Ensure this is the correct model
-    });
-    
+    // Find user by ID
+    const user = await User.findById(userId);
+
     if (!user) {
       console.log('User not found with userId:', userId);  // Debug: Log if user is not found
       return res.status(404).json({
@@ -580,9 +606,7 @@ async function getFavoriteEquipments(req, res) {
       });
     }
 
-    // Check the favorite_equipments to ensure it was populated correctly
-    console.log('Favorite Equipments:', user.favorite_equipments);  // Debug: Log populated favorite_equipments
-
+    // Check if the user has favorite equipments
     if (!user.favorite_equipments || user.favorite_equipments.length === 0) {
       console.log('No favorite equipments found for user:', userId);  // Debug: Log if no favorites are found
       return res.status(404).json({
@@ -591,11 +615,48 @@ async function getFavoriteEquipments(req, res) {
       });
     }
 
-    // Add "isFavorite" flag to each equipment
-    const favoriteEquipments = user.favorite_equipments.map(equipment => {
-      console.log('Processing equipment with ID:', equipment._id);  // Debug: Log the equipment ID
+    // Fetch the equipment details for the favorites
+    const favoriteEquipments = await Equipment.find({ _id: { $in: user.favorite_equipments } })
+      .select('_id name make rental_price images location average_rating isLive sub_category_fk')
+      .lean();
+
+    if (favoriteEquipments.length === 0) {
+      return res.status(404).json({
+        message: 'No equipment found for favorite equipments',
+        status: false,
+      });
+    }
+
+    // Fetch subcategories for the equipment
+    const subCategoryIds = favoriteEquipments.map(equipment => equipment.sub_category_fk);
+    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('category_id');
+
+    // Map subcategories to equipment data
+    const subCategoryMap = subCategories.reduce((acc, subCat) => {
+      acc[subCat._id] = {
+        sub_category_name: subCat.name,
+        category_id: subCat.category_id._id,
+        category_name: subCat.category_id.name,
+      };
+      return acc;
+    }, {});
+
+    // Add "isFavorite" flag and additional details to each equipment
+    const formattedFavoriteEquipments = favoriteEquipments.map(equipment => {
+      const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
       return {
-        ...equipment.toObject(),
+        _id: equipment._id,
+        name: equipment.name,
+        make: equipment.make,
+        rental_price: equipment.rental_price,
+        images: equipment.images,
+        isLive: equipment.isLive,
+        average_rating: equipment.average_rating,
+        location: equipment.location,
+        category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
+        category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
+        sub_category_id: equipment.sub_category_fk,
+        sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
         isFavorite: true, // All these are favorites
       };
     });
@@ -603,7 +664,7 @@ async function getFavoriteEquipments(req, res) {
     return res.status(200).json({
       message: 'Favorite equipments retrieved successfully',
       status: true,
-      favoriteEquipments,
+      favoriteEquipments: formattedFavoriteEquipments,
     });
   } catch (err) {
     console.error('Error retrieving favorite equipments:', err);
@@ -613,8 +674,6 @@ async function getFavoriteEquipments(req, res) {
     });
   }
 }
-
-
 
 async function toggleFavorite(req, res) {
   try {
