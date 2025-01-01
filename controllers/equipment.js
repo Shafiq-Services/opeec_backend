@@ -15,6 +15,7 @@ const addEquipment = async (req, res) => {
       address,
       lat,
       long,
+      range,
       delivery_by_owner,
       rental_price,
       equipment_price,
@@ -35,6 +36,7 @@ const addEquipment = async (req, res) => {
         { name: 'address', value: address },
         { name: 'lat', value: lat },
         { name: 'long', value: long },
+        { name: 'range', value: range },
         { name: 'rental_price', value: rental_price },
         { name: 'equipment_price', value: equipment_price },
         { name: 'notice_period', value: notice_period },
@@ -66,7 +68,7 @@ const addEquipment = async (req, res) => {
         serial_number,
         description,
         images,
-        custom_location: { address, lat, long },
+        custom_location: { address, lat, long, range },
         delivery_by_owner,
         rental_price,
         equipment_price,
@@ -97,6 +99,7 @@ const addEquipment = async (req, res) => {
         address,
         lat,
         long,
+        range,
         delivery_by_owner,
         rental_price,
         equipment_price,
@@ -120,6 +123,7 @@ const addEquipment = async (req, res) => {
             { name: 'address', value: address },
             { name: 'lat', value: lat },
             { name: 'long', value: long },
+            { name: 'range', value: range },
             { name: 'rental_price', value: rental_price },
             { name: 'equipment_price', value: equipment_price },
             { name: 'notice_period', value: notice_period },
@@ -157,7 +161,7 @@ const addEquipment = async (req, res) => {
         equipment.model = model;
         equipment.serial_number = serial_number;
         equipment.description = description;
-        equipment.custom_location = { address, lat, long };
+        equipment.custom_location = { address, lat, long, range };
         equipment.delivery_by_owner = delivery_by_owner;
         equipment.rental_price = rental_price;
         equipment.equipment_price = equipment_price;
