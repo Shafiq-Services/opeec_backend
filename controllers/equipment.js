@@ -228,33 +228,55 @@ async function getAllEquipments(req, res) {
       },
     });
 
+    // Get equipments based on the query and geospatial filter
     const equipments = await Equipment.aggregate(geoPipeline);
 
+    // Fetch subcategories and categories after equipment retrieval
+    const subCategoryIds = equipments.map(equipment => equipment.sub_category_fk);
+    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('category_id');
+    
+    // Create a mapping for subcategory_id to category name
+    const subCategoryMap = subCategories.reduce((acc, subCat) => {
+      acc[subCat._id] = {
+        sub_category_name: subCat.name,
+        category_id: subCat.category_id._id,
+        category_name: subCat.category_id.name,
+      };
+      return acc;
+    }, {});
+
+
     // Formatting the equipment data
-    const formattedEquipments = equipments.map((equipment) => ({
-      _id: equipment._id,
-      average_rating: 0,
-      created_at: equipment.created_at
-        ? equipment.created_at.toGMTString()
-        : new Date().toGMTString(),
-      delivery_by_owner: equipment.delivery_by_owner,
-      description: equipment.description,
-      equipment_price: equipment.equipment_price,
-      images: equipment.images,
-      isFavorite: false,
-      location: equipment.custom_location,
-      make: equipment.make,
-      maximum_trip_duration: equipment.maximum_trip_duration,
-      minimum_trip_duration: equipment.minimum_trip_duration,
-      model: equipment.model,
-      name: equipment.name,
-      notice_period: equipment.notice_period,
-      owner_id: equipment.owner_id,
-      postal_code: equipment.postal_code,
-      rental_price: equipment.rental_price,
-      serial_number: equipment.serial_number,
-      sub_category_fk: equipment.sub_category_fk,
-    }));
+    const formattedEquipments = equipments.map((equipment) => {
+      const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
+      return {
+        _id: equipment._id,
+        average_rating: 0,
+        created_at: equipment.created_at
+          ? equipment.created_at.toGMTString()
+          : new Date().toGMTString(),
+        delivery_by_owner: equipment.delivery_by_owner,
+        description: equipment.description,
+        equipment_price: equipment.equipment_price,
+        images: equipment.images,
+        isFavorite: false,
+        location: equipment.custom_location,
+        make: equipment.make,
+        maximum_trip_duration: equipment.maximum_trip_duration,
+        minimum_trip_duration: equipment.minimum_trip_duration,
+        model: equipment.model,
+        name: equipment.name,
+        notice_period: equipment.notice_period,
+        owner_id: equipment.owner_id,
+        postal_code: equipment.postal_code,
+        rental_price: equipment.rental_price,
+        serial_number: equipment.serial_number,
+        sub_category_id: equipment.sub_category_fk,
+        sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
+        category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
+        category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
+      };
+    });
 
     return res.status(200).json({
       equipments: formattedEquipments,
@@ -500,8 +522,8 @@ async function getUserShop(req, res) {
         }
     
         // Fetch equipment related to the user (owner_id)
-        const equipments = await Equipment.find({ owner_id: ownerId, isLive: true })
-          .select('_id name make rental_price images location average_rating')
+        const equipments = await Equipment.find({ owner_id: ownerId })
+          .select('_id name make rental_price images location average_rating isLive')
           .lean(); // Using lean() to return plain JS objects
     
         // Map equipment data to match the required format
@@ -511,6 +533,7 @@ async function getUserShop(req, res) {
           make: equipment.make,
           rental_price: equipment.rental_price,
           images: equipment.images,
+          isLive: equipment.isLive,
           average_rating: equipment.average_rating,
           location: equipment.location,
           isFavorite: false, // Assuming you need this to be static for now

@@ -99,10 +99,10 @@ exports.addOrder = async (req, res) => {
 
 exports.getRentedEquipments = async (req, res) => {
   try {
-      const someUserId = req.userId; // Assuming user ID is retrieved from authenticated user
+      const user_id = req.userId; // Assuming user ID is retrieved from authenticated user
 
       // Query with populate and transformation
-      const rentedEquipments = await Orders.find({ user_id: someUserId })
+      const rentedEquipments = await Orders.find({ user_id: user_id })
           .populate('equipment_id', 'name description rental_price') // Populate specific fields
           .lean(); // Convert to plain JavaScript objects
 

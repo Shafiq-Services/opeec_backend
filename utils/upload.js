@@ -1,4 +1,4 @@
-const { sanitizeBlobName } = require("../utils/sanitizeBlob");
+const { sanitizeBlobName } = require("./sanitizeBlob");
 const { BlobServiceClient } = require("@azure/storage-blob");
 const { fork } = require('child_process');
 const path = require('path');

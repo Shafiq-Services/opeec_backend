@@ -1,4 +1,4 @@
-const { uploadImages, uploadVideo, uploadDocument, uploadAudio } = require('./../utils/upload');
+const { uploadImages, uploadVideo, uploadDocument, uploadAudio } = require('../utils/upload');
 
 /**
  * @description This will upload the images for the post
