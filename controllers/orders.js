@@ -97,72 +97,247 @@ exports.addOrder = async (req, res) => {
   }
 };
 
-exports.getRentedEquipments = async (req, res) => {
+// Get Orders by Status
+exports.getOrdersByStatus = async (req, res) => {
+  const { status, isSeller } = req.query;
+
   try {
-      const user_id = req.userId; // Assuming user ID is retrieved from authenticated user
+    // Dynamically get allowed statuses from the schema
+    const allowedStatuses = Orders.schema.path('rental_status').enumValues;
 
-      // Query with populate and transformation
-      const rentedEquipments = await Orders.find({ user_id: user_id })
-          .populate('equipment_id', 'name description rental_price') // Populate specific fields
-          .lean(); // Convert to plain JavaScript objects
-
-        // Transform the result to keep `equipment_id` and include `equipment`
-        const transformedData = rentedEquipments.map(order => {
-          const {
-              _id, // Order ID
-              user_id,
-              equipment_id, // Populated equipment object
-              rental_schedule,
-              location,
-              total_amount,
-              security_fee,
-              rental_status,
-              cancellation,
-              return_status,
-              created_at,
-              updated_at
-          } = order;
-
-          // Calculate the number of days between rental start and end date
-          const startDate = new Date(rental_schedule.start_date);
-          const endDate = new Date(rental_schedule.end_date);
-          const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)); // Difference in days
-
-          // Calculate rental amounts
-          const perday_rent = equipment_id?.rental_price || 0;
-          const total_rent = perday_rent * days;
-          
-          return {
-            _id,
-            equipment_id: equipment_id?._id, // Keep equipment_id as ID
-            equipment: equipment_id, // Include populated equipment details
-            rental_schedule,
-            location: location.address,
-            rental_amount: {
-              days, // The number of rental days
-              perday_rent,
-              total_rent,
-              protection_money: security_fee,
-              total_amount: total_amount,
-            },
-            rental_status,
-            created_at,
-            updated_at
-          };
+    // Validate query parameters
+    if (!status || typeof isSeller === 'undefined') {
+      return res.status(400).json({
+        message: "'status' and 'isSeller' query parameters are required.",
       });
+    }
 
-      // Return the response
-      res.json({
-          message: "Rented equipment retrieved successfully.",
-          status: true,
-          data: transformedData,
+    // Convert status to an array using commas as the delimiter
+    const statuses = status.split(',').map((s) => s.trim());
+
+    // Check for invalid statuses
+    const invalidStatuses = statuses.filter((s) => !allowedStatuses.includes(s));
+    if (invalidStatuses.length > 0) {
+      return res.status(400).json({
+        message: "Invalid status values provided.",
+        invalidStatuses,
       });
+    }
+
+    const userId = req.userId; // Extract userId from authentication middleware
+    let orders;
+
+    if (isSeller === 'true') {
+      // Fetch orders for seller
+      orders = await Orders.find({
+        rental_status: { $in: statuses },
+        'equipment_id.owner_id': userId,
+      }).populate('equipment_id');
+    } else {
+      // Fetch orders for user
+      orders = await Orders.find({
+        rental_status: { $in: statuses },
+        user_id: userId,
+      }).populate('equipment_id');
+    }
+
+    // Check if orders were found
+    if (!orders || orders.length === 0) {
+      return res.status(200).json({
+        message: "Orders fetched successfully.",
+        success: true,
+        orders: [],
+      });
+    }
+
+    // Format orders using the utility function
+    const formattedOrders = orders.map(formatOrderResponse);
+
+    return res.status(200).json({
+      message: "Orders fetched successfully.",
+      success: true,
+      orders: formattedOrders,
+    });
   } catch (error) {
-      console.error("Error retrieving rented equipment:", error);
-      res.status(500).json({
-          message: "Failed to retrieve rented equipment.",
-          status: false,
-          error: error.message,
-      });
+    return res.status(500).json({
+      message: "An error occurred while fetching orders.",
+      error: error.message,
+    });
+  }
+};
+
+// Utility function for sending consistent order response
+const formatOrderResponse = (order) => ({
+  order_id: order._id,
+  user_id: order.user_id,
+  equipment_id: order.equipment_id,
+  rental_schedule: order.rental_schedule,
+  location: order.location,
+  total_amount: order.total_amount,
+  security_fee: order.security_fee,
+  rental_status: order.rental_status,
+  return_status: order.return_status,
+  cancellation: order.cancellation,
+  created_at: order.created_at,
+  updated_at: order.updated_at,
+});
+
+// 1) Cancel Order API
+exports.cancelOrder = async (req, res) => {
+  try {
+    const sellerId = req.userId; // Extracted from auth middleware
+    const { order_id, reason } = req.body;
+
+    if (!order_id) {
+      return res.status(400).json({ message: "Order ID is required." });
+    }
+
+    const order = await Orders.findById(order_id).populate('equipment_id');
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    if (order.rental_status !== "Booked") {
+      return res.status(400).json({ message: "Only 'Booked' orders can be canceled." });
+    }
+
+    if (String(order.equipment_id.owner_id) !== sellerId) {
+      return res.status(403).json({ message: "Only the seller can cancel the order." });
+    }
+
+    order.cancellation = {
+      is_cancelled: true,
+      reason,
+      cancelled_at: new Date(),
+    };
+    order.rental_status = "Cancelled";
+    await order.save();
+
+    return res.status(200).json({
+      message: "Order canceled successfully.",
+      status: true,
+    });
+  } catch (err) {
+    console.error("Error canceling order:", err);
+    return res.status(500).json({ message: "Server error." });
+  }
+};
+
+// 2) Deliver Order API
+exports.deliverOrder = async (req, res) => {
+  try {
+    const sellerId = req.userId;
+    const { order_id } = req.query;
+
+    if (!order_id) {
+      return res.status(400).json({ message: "Order ID is required." });
+    }
+
+    const order = await Orders.findById(order_id).populate('equipment_id');
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    if (order.rental_status !== "Booked") {
+      return res.status(400).json({ message: "Only 'Booked' orders can be delivered." });
+    }
+
+    if (String(order.equipment_id.owner_id) !== sellerId) {
+      return res.status(403).json({ message: "Only the seller can deliver the order." });
+    }
+
+    order.rental_status = "Ongoing";
+    order.updated_at = new Date();
+    await order.save();
+
+    return res.status(200).json({
+      message: "Order status updated to 'Ongoing'.",
+      status: true,
+    });
+  } catch (err) {
+    console.error("Error delivering order:", err);
+    return res.status(500).json({ message: "Server error." });
+  }
+};
+
+// 3) Return Order API
+exports.returnOrder = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { order_id } = req.query;
+
+    if (!order_id) {
+      return res.status(400).json({ message: "Order ID is required." });
+    }
+
+    const order = await Orders.findById(order_id);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    if (order.user_id.toString() !== userId) {
+      return res.status(403).json({ message: "Only the user can return the order." });
+    }
+
+    if (order.rental_status !== "Ongoing") {
+      return res.status(400).json({ message: "Only 'Ongoing' orders can be returned." });
+    }
+
+    order.rental_status = "Returned";
+    order.return_status = {
+      is_returned: true,
+      returned_at: new Date(),
+    };
+    order.updated_at = new Date();
+    await order.save();
+
+    return res.status(200).json({
+      message: "Order status updated to 'Returned'.",
+      status: true,
+    });
+  } catch (err) {
+    console.error("Error returning order:", err);
+    return res.status(500).json({ message: "Server error." });
+  }
+};
+
+// 4) Finish Order API
+exports.finishOrder = async (req, res) => {
+  try {
+    const sellerId = req.userId;
+    const { order_id } = req.query;
+
+    if (!order_id) {
+      return res.status(400).json({ message: "Order ID is required." });
+    }
+
+    const order = await Orders.findById(order_id).populate('equipment_id');
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    if (String(order.equipment_id.owner_id) !== sellerId) {
+      return res.status(403).json({ message: "Only the seller can finish the order." });
+    }
+
+    if (order.rental_status !== "Returned") {
+      return res.status(400).json({ message: "Only 'Returned' orders can be finished." });
+    }
+
+    order.rental_status = "Finished";
+    order.updated_at = new Date();
+    await order.save();
+
+    return res.status(200).json({
+      message: "Order status updated to 'Finished'.",
+      status: true,
+    });
+  } catch (err) {
+    console.error("Error finishing order:", err);
+    return res.status(500).json({ message: "Server error." });
   }
 };
