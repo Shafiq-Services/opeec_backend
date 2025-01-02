@@ -190,9 +190,9 @@ async function getAllEquipments(req, res) {
       query.name = { $regex: name, $options: "i" }; // Case-insensitive search
     }
 
-    if (delivery_by_owner !== undefined) {
-      query.delivery_by_owner = delivery_by_owner;
-    }
+    if (req.query.delivery_by_owner !== undefined) {
+      query.delivery_by_owner = req.query.delivery_by_owner === "true";
+    }    
 
     if (category_id) {
       const subCategories = await SubCategory.find({ category_id });
