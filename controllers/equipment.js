@@ -3,6 +3,7 @@ const Equipment = require('../models/equipment'); // Import the Equipment model
 const User = require('../models/User'); // Import the User model (for owner validation)
 const SubCategory = require('../models/sub_categories'); // Import the SubCategory model
 const categories = require('../models/categories'); // Import the categories model
+
 const addEquipment = async (req, res) => {
     const {
       sub_category_fk,
@@ -132,9 +133,10 @@ const addEquipment = async (req, res) => {
         ];
 
         for (const field of requiredFields) {
-            if (!field.value) {
-                return res.status(400).json({ message: `${field.name} is required.` });
-            }
+          if (field.value === null || field.value === undefined) 
+          {
+            return res.status(400).json({ message: `${field.name} is required.` });
+          }
         }
 
         // Validate image constraints
