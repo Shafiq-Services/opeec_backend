@@ -134,7 +134,7 @@ exports.getOrdersByStatus = async (req, res) => {
         'equipment_id.owner_id': userId,
       }).populate({
         path: 'equipment_id',
-        select: 'name make model sub_category_fk', // Include sub_category_fk for further population
+        select: 'name make model sub_category_fk images', // Include sub_category_fk for further population
         populate: {
           path: 'sub_category_fk',
           select: 'name category_id', // Include category_id for further population
@@ -151,7 +151,7 @@ exports.getOrdersByStatus = async (req, res) => {
         user_id: userId,
       }).populate({
         path: 'equipment_id',
-        select: 'name make model sub_category_fk',
+        select: 'name make model sub_category_fk images',
         populate: {
           path: 'sub_category_fk',
           select: 'name category_id',
@@ -197,6 +197,7 @@ const formatOrderResponse = (order) => ({
     name: order.equipment_id.name,
     make: order.equipment_id.make,
     model: order.equipment_id.model,
+    images: order.equipment_id.images,
     sub_category_fk: {
       _id: order.equipment_id.sub_category_fk._id,
       name: order.equipment_id.sub_category_fk.name,
