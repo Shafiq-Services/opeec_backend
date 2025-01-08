@@ -27,6 +27,7 @@ exports.addOrder = async (req, res) => {
       { name: 'lat', value: lat },
       { name: 'long', value: long },
       { name: 'total_rent', value: total_rent },
+      { name: 'security_fee', value: security_fee },
     ];
 
     for (const field of requiredFields) {
@@ -58,7 +59,7 @@ exports.addOrder = async (req, res) => {
         long,
       },
       total_amount: total_rent,
-      security_fee: security_fee?.cost || 0,
+      security_fee: security_fee,
       cancellation: {
         is_cancelled: false,
       },
@@ -128,17 +129,38 @@ exports.getOrdersByStatus = async (req, res) => {
     let orders;
 
     if (isSeller === 'true') {
-      // Fetch orders for seller
       orders = await Orders.find({
         rental_status: { $in: statuses },
         'equipment_id.owner_id': userId,
-      }).populate('equipment_id');
+      }).populate({
+        path: 'equipment_id',
+        select: 'name make model sub_category_fk', // Include sub_category_fk for further population
+        populate: {
+          path: 'sub_category_fk',
+          select: 'name category_id', // Include category_id for further population
+          populate: {
+            path: 'category_id',
+            select: 'name', // Fetch the category name
+          },
+        },
+      });
     } else {
       // Fetch orders for user
       orders = await Orders.find({
         rental_status: { $in: statuses },
         user_id: userId,
-      }).populate('equipment_id');
+      }).populate({
+        path: 'equipment_id',
+        select: 'name make model sub_category_fk',
+        populate: {
+          path: 'sub_category_fk',
+          select: 'name category_id',
+          populate: {
+            path: 'category_id',
+            select: 'name',
+          },
+        },
+      });
     }
 
     // Check if orders were found
@@ -170,7 +192,20 @@ exports.getOrdersByStatus = async (req, res) => {
 const formatOrderResponse = (order) => ({
   order_id: order._id,
   user_id: order.user_id,
-  equipment_id: order.equipment_id,
+  equipment: {
+    _id: order.equipment_id._id,
+    name: order.equipment_id.name,
+    make: order.equipment_id.make,
+    model: order.equipment_id.model,
+    sub_category_fk: {
+      _id: order.equipment_id.sub_category_fk._id,
+      name: order.equipment_id.sub_category_fk.name,
+    },
+    category: {
+      _id: order.equipment_id.sub_category_fk.category_id._id,
+      name: order.equipment_id.sub_category_fk.category_id.name,
+    },
+  },
   rental_schedule: order.rental_schedule,
   location: order.location,
   total_amount: order.total_amount,
@@ -182,11 +217,12 @@ const formatOrderResponse = (order) => ({
   updated_at: order.updated_at,
 });
 
+
 // 1) Cancel Order API
 exports.cancelOrder = async (req, res) => {
   try {
     const sellerId = req.userId; // Extracted from auth middleware
-    const { order_id, reason } = req.body;
+    const { order_id, reason } = req.query;
 
     if (!order_id) {
       return res.status(400).json({ message: "Order ID is required." });

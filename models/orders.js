@@ -14,7 +14,10 @@ const orderSchema = new mongoose.Schema({
     long: { type: Number, required: true } // Longitude of the equipment's location
   },
   total_amount: { type: Number, required: true }, // Total rental cost
-  security_fee: { type: Number, default: 0 }, // Platform fee
+  security_fee: {
+    cost: {type: Number, default: 0 },
+    insurance: {type: Boolean, default: false}
+  }, // Platform fee
   cancellation: {
     is_cancelled: { type: Boolean, default: false }, // Cancellation flag
     reason: { type: String }, // Reason for cancellation (if applicable)

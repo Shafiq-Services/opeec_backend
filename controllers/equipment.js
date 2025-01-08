@@ -301,8 +301,6 @@ async function getAllEquipments(req, res) {
   }
 }
 
-
-
 // Helper function to match query filters
 function queryMatches(equipment, query) {
   for (const key in query) {
