@@ -11,6 +11,8 @@ const { initializeSocket } = require("./utils/socketService");
 
 const app = express();
 const server = http.createServer(app);
+
+// Initialize WebSockets
 initializeSocket(server);
 
 // Middleware
@@ -32,11 +34,8 @@ app.get('/', (req, res) => res.send('Hello from Node API server'));
 // Handle 404 errors
 app.use((req, res) => res.status(404).send('Route not found'));
 
-// Start the server
-app.listen(config.PORT, () => {
-  console.log(`Server running on port ${config.PORT}`);
-});
-// Start the server
-server.listen(5001, () => {
-  console.log(`Server running on http://localhost:${config.PORT}`);
+// Use only one listen statement
+const PORT = config.PORT || 5001;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
