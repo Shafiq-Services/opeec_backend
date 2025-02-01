@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
-
+const User = require("../models/User");
 const JWT_SECRET = process.env.JWT_SECRET || "Opeec";
 const connectedUsers = new Map();
 
@@ -65,6 +65,26 @@ const initializeSocket = (server) => {
       socket.emit(event, { success: true, received: data });
     });
 
+    socket.on("getUserData", async () => {
+      try {
+        const user = await User.findById(userId);
+        if (user) {
+          sendEventToUser(userId, "getUserData", {
+            _id: user._id,
+            isUserVerified: user.isUserVerified,
+            rejection_reason: user.rejection_reason,
+            isOtpVerified: user.isOtpVerified,
+            is_blocked: user.is_blocked,
+          });
+        } else {
+          sendEventToUser(userId, "getUserData", "User not found");
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        sendEventToUser(userId, "getUserData", error);
+      }
+    });
+    
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${userId}`);
       connectedUsers.delete(userId);
