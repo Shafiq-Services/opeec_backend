@@ -91,7 +91,7 @@ const initializeSocket = (server) => {
         if (user) {
           sendEventToUser(userId, "isVerified", {
             _id: user._id,
-            isUserVerified: user.isUserVerified,
+            isVerified: user.isUserVerified,
             rejection_reason: user.rejection_reason
           });
         } else {

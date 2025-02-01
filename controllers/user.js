@@ -100,12 +100,12 @@ const startUserMonitoring = (userId) => {
         // Emit socket event when 'isUserVerified' becomes true
         sendEventToUser(userId, 'isVerified', {
           isVerified: true,
-          rejectionReason: ""
+          rejection_reason: ""
         });
       } else if (updatedUser.isUserVerified === false && updatedUser.rejection_reason !== "") {
         sendEventToUser(userId, 'isVerified', {
           isVerified: false,
-          rejectionReason: updatedUser.rejection_reason
+          rejection_reason: updatedUser.rejection_reason
         });
       }
     } else {
@@ -114,8 +114,6 @@ const startUserMonitoring = (userId) => {
     }
   });
 };
-
-
 
 // Send OTP to email
 exports.sendOtp = async (req, res) => {
