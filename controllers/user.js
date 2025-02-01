@@ -3,18 +3,18 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { sendOtp } = require('../utils/send_otp');
 const config = require('../config/config');
+const { io, sendEventToUser } = require('../utils/socketService'); // assuming `io` is imported from the socket.js file
 
 // User Signup
 exports.signup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, id_card_selfie } = req.body;
 
     // Check if the email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'Email is already registered' });
     }
-
     
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -25,11 +25,13 @@ exports.signup = async (req, res) => {
       email,
       password: hashedPassword,
       verified: false,
+      id_card_selfie,
+      isUserVerified: false,
+      rejection_reason: ''
     });
 
     await user.save();
-
-    const otp = await sendOtp(email);
+    await sendOtp(email);
 
     // Return success message
     res.status(201).json({ message: 'User created successfully' });
@@ -55,18 +57,65 @@ exports.login = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    if(user.isOtpVerified === false){
+    if (user.isOtpVerified === false) {
       return res.status(400).json({ message: 'User is not verified' });
     }
 
-    // Generate JWT token
+    if (user.isUserVerified !== true) {
+      user.isUserVerified = false;
+      await user.save();
+    }    
+
+    if (!user.rejection_reason) {
+      user.rejection_reason = '';
+      await user.save();
+    }    
+    
+      // Generate JWT token
     const token = jwt.sign({ userId: user._id }, config.JWT_SECRET);
 
-    res.status(200).json({ message: 'Login successful', token, _id: user._id });
+    // Start monitoring user changes
+    
+    startUserMonitoring(user._id);
+
+    res.status(200).json({ message: 'Login successful', token, _id: user._id, isUserVerified: user.isUserVerified, rejectionReason: user.rejection_reason });
   } catch (error) {
     res.status(500).json({ message: 'Error in login', error });
   }
 };
+
+const startUserMonitoring = (userId) => {
+  const userChangeStream = User.watch(
+    [{ $match: { 'documentKey._id': userId } }],
+    { fullDocument: 'updateLookup' } // Fetch the full document after an update
+  );
+
+  userChangeStream.on('change', (change) => {
+    // Check if the fullDocument exists
+    console.log('Change event received:', change);
+    const updatedUser = change.fullDocument;
+
+    if (updatedUser) {
+      if (updatedUser.isUserVerified === true && updatedUser.rejection_reason === "") {
+        // Emit socket event when 'isUserVerified' becomes true
+        sendEventToUser(userId, 'isVerified', {
+          isVerified: true,
+          rejectionReason: ""
+        });
+      } else if (updatedUser.isUserVerified === false && updatedUser.rejection_reason !== "") {
+        sendEventToUser(userId, 'isVerified', {
+          isVerified: false,
+          rejectionReason: updatedUser.rejection_reason
+        });
+      }
+    } else {
+      // Handle case where fullDocument is undefined
+      console.error("Change document is undefined", change);
+    }
+  });
+};
+
+
 
 // Send OTP to email
 exports.sendOtp = async (req, res) => {

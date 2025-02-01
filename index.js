@@ -1,3 +1,4 @@
+const http = require("http");
 const express = require('express');
 const config = require('./config/config');
 const connectDB = require('./config/db');
@@ -6,8 +7,11 @@ const categoryRoutes = require('./routes/categories');
 const equipmentRoutes = require('./routes/equipment');
 const orderRoutes = require('./routes/order');
 const uploadRoutes = require('./routes/upload');
+const { initializeSocket } = require("./utils/socketService");
 
 const app = express();
+const server = http.createServer(app);
+initializeSocket(server);
 
 // Middleware
 app.use(express.json());
@@ -31,4 +35,8 @@ app.use((req, res) => res.status(404).send('Route not found'));
 // Start the server
 app.listen(config.PORT, () => {
   console.log(`Server running on port ${config.PORT}`);
+});
+// Start the server
+server.listen(5001, () => {
+  console.log(`Server running on http://localhost:${config.PORT}`);
 });
