@@ -572,6 +572,12 @@ async function getUserShop(req, res) {
         sub_category_id: equipment.sub_category_fk,
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
         isFavorite: false, // Assuming you need this to be static for now
+        "owner": {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        profile_image: user.profile_image,
+        }
       };
     });
 

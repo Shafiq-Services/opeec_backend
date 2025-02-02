@@ -121,7 +121,7 @@ const startUserMonitoring = (userId) => {
       }
 
       sendEventToUser(userId, 'isBlocked', { isBlocked: updatedUser.is_blocked });
-      
+
     } else {
       console.error("Change document is undefined", change);
     }
@@ -217,7 +217,7 @@ exports.getprofile = async (req, res) => {
         name: user.name,
         email: user.email,
         profile_image: user.profile_image,
-        isOtpVerified: true
+        isOtpVerified: user.isOtpVerified
     } });
   } catch (error) {
     res.status(500).json({ message: 'Error in updating user', error });
@@ -295,7 +295,7 @@ exports.resendIdCardSelfie = async (req, res) => {
 
     // Check if the user is already verified
     if (user.isUserVerified) {
-      return res.status(400).json({ message: 'User is already verified' });
+      return res.status(200).json({ message: 'User is already verified' });
     }
 
     user.id_card_selfie = id_card_selfie;
