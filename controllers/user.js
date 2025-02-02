@@ -86,18 +86,29 @@ exports.login = async (req, res) => {
 
 const startUserMonitoring = (userId) => {
   const userChangeStream = User.watch(
-    [{ $match: { 'documentKey._id': userId } }],
-    { fullDocument: 'updateLookup' } // Fetch the full document after an update
+    [
+      {
+        $match: {
+          'documentKey._id': userId,
+          'updateDescription.updatedFields': { $exists: true }, // Ensure fields are updated
+          $or: [
+            { 'updateDescription.updatedFields.isUserVerified': { $exists: true } },
+            { 'updateDescription.updatedFields.rejection_reason': { $exists: true } },
+            { 'updateDescription.updatedFields.is_blocked': { $exists: true } }
+          ]
+        }
+      }
+    ],
+    { fullDocument: 'updateLookup' } // Fetch full document after update
   );
 
   userChangeStream.on('change', (change) => {
-    // Check if the fullDocument exists
-    console.log('Change event received:', change);
+    console.log('Relevant Change detected:', change);
     const updatedUser = change.fullDocument;
 
     if (updatedUser) {
       if (updatedUser.isUserVerified === true && updatedUser.rejection_reason === "") {
-        // Emit socket event when 'isUserVerified' becomes true
+        // Emit socket event when user is verified
         sendEventToUser(userId, 'isVerified', {
           isVerified: true,
           rejection_reason: ""
@@ -108,12 +119,15 @@ const startUserMonitoring = (userId) => {
           rejection_reason: updatedUser.rejection_reason
         });
       }
+
+      sendEventToUser(userId, 'isBlocked', { isBlocked: updatedUser.is_blocked });
+      
     } else {
-      // Handle case where fullDocument is undefined
       console.error("Change document is undefined", change);
     }
   });
 };
+
 
 // Send OTP to email
 exports.sendOtp = async (req, res) => {
