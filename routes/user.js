@@ -26,5 +26,7 @@ router.use(userMiddleware);
 router.get('/profile', userController.getprofile);
 // Update user profile
 router.put('/update', userController.updateUser);
+// Update user profile
+router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
 
 module.exports = router;

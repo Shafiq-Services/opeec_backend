@@ -265,3 +265,33 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({ message: 'Error in resetting password', error });
   }
 };
+
+exports.resendIdCardSelfie = async (req, res) => {
+  const { id_card_selfie } = req.body;
+
+  try {
+    console.log(id_card_selfie);
+    const userId = req.userId;
+    console.log(userId);
+    const user = await User.findById(userId);
+    console.log("user");
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if the user is already verified
+    if (user.isUserVerified) {
+      return res.status(400).json({ message: 'User is already verified' });
+    }
+
+    user.id_card_selfie = id_card_selfie;
+    user.isUserVerified = false;
+    user.rejection_reason = '';
+    await user.save();
+
+    res.status(200).json({ message: 'Verification request sent successfully' });
+  }
+  catch (error) {
+    res.status(500).json({ message: 'Error in resending ID card selfie', error });
+  }
+};
