@@ -26,7 +26,11 @@ const equipmentSchema = new mongoose.Schema({
     type: { type: String, required: true, enum: ['hour', 'day', 'month'] },
     count: { type: Number, required: true }
   },
-  isLive: { type: Boolean, default: false },
+  equipment_status: { 
+    type: String, 
+    enum: ['Pending', 'Rejected', 'InAdtive', 'Active'],
+    default: 'Pending' 
+  },
   custom_location: {
     address: { type: String, required: true },
     lat: { type: Number, required: true },

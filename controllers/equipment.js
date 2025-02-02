@@ -76,7 +76,7 @@ const addEquipment = async (req, res) => {
         notice_period,
         minimum_trip_duration,
         maximum_trip_duration,
-        isLive: false,
+        equipment_status: "Pending",
       });
   
       const savedEquipment = await newEquipment.save();
@@ -186,8 +186,6 @@ async function getAllEquipments(req, res) {
     const { lat, long, distance, name, category_id, delivery_by_owner } = req.query;
 
     // Base query for live equipments
-    const query = { isLive: true };
-
     if (name) {
       query.name = { $regex: name, $options: "i" }; // Case-insensitive search
     }
@@ -265,7 +263,6 @@ async function getAllEquipments(req, res) {
         description: equipment.description,
         equipment_price: equipment.equipment_price,
         images: equipment.images,
-        isLive: equipment.isLive,
         isFavorite: false,
         location: {
           address: equipment.custom_location?.address || '',
@@ -340,7 +337,7 @@ function queryMatches(equipment, query) {
         description: equipment.description || '',
         equipment_price: equipment.equipment_price || 0,
         images: equipment.images || [],
-        isLive: equipment.isLive,
+        equipment_status: equipment.equipment_status,
         location: {
           address: equipment.custom_location?.address || '',
           lat: equipment.custom_location?.lat || 0.0,
@@ -412,7 +409,7 @@ function queryMatches(equipment, query) {
 async function getRandomEquipmentImages(req, res) {
   try {
     // Fetch all live equipment with populated categories
-    const equipments = await Equipment.find({isLive: true}).populate({
+    const equipments = await Equipment.find({equipment_status: "Active"}).populate({
         path: 'sub_category_fk',
         model: SubCategory, // Reference to SubCategory model
         populate: {
@@ -534,8 +531,8 @@ async function getUserShop(req, res) {
     }
 
     // Fetch equipment related to the user (owner_id)
-    const equipments = await Equipment.find({ owner_id: ownerId })
-      .select('_id name make rental_price images isLive location average_rating isLive sub_category_fk')
+    const equipments = await Equipment.find({ owner_id: ownerId, equipment_status: "Active" })
+      .select('_id name make rental_price images location average_rating sub_category_fk')
       .lean(); // Using lean() to return plain JS objects
 
     if (equipments.length === 0) {
@@ -568,7 +565,6 @@ async function getUserShop(req, res) {
         make: equipment.make,
         rental_price: equipment.rental_price,
         images: equipment.images,
-        isLive: equipment.isLive,
         average_rating: equipment.average_rating,
         location: equipment.location,
         category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
@@ -628,8 +624,8 @@ async function getFavoriteEquipments(req, res) {
     }
 
     // Fetch the equipment details for the favorites
-    const favoriteEquipments = await Equipment.find({ _id: { $in: user.favorite_equipments } })
-      .select('_id name make rental_price images isLive location average_rating isLive sub_category_fk')
+    const favoriteEquipments = await Equipment.find({ _id: { $in: user.favorite_equipments }, equipment_status: "Active" })
+      .select('_id name make rental_price images location average_rating sub_category_fk')
       .lean();
 
     if (favoriteEquipments.length === 0) {
@@ -662,7 +658,6 @@ async function getFavoriteEquipments(req, res) {
         make: equipment.make,
         rental_price: equipment.rental_price,
         images: equipment.images,
-        isLive: equipment.isLive,
         average_rating: equipment.average_rating,
         location: equipment.location,
         category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
