@@ -419,7 +419,7 @@ async function getRandomEquipmentImages(req, res) {
       });
       
       if (!equipments || equipments.length === 0) {
-        return res.status(404).json({
+        return res.status(200).json({
           message: 'No equipment found',
           status: false,
         });
@@ -536,7 +536,7 @@ async function getUserShop(req, res) {
       .lean(); // Using lean() to return plain JS objects
 
     if (equipments.length === 0) {
-      return res.status(404).json({
+      return res.status(200).json({
         message: 'No equipment found for this user',
         status: false,
       });
@@ -617,7 +617,7 @@ async function getFavoriteEquipments(req, res) {
     // Check if the user has favorite equipments
     if (!user.favorite_equipments || user.favorite_equipments.length === 0) {
       console.log('No favorite equipments found for user:', userId);  // Debug: Log if no favorites are found
-      return res.status(404).json({
+      return res.status(200).json({
         message: 'No favorite equipments found',
         status: false,
       });
@@ -629,7 +629,7 @@ async function getFavoriteEquipments(req, res) {
       .lean();
 
     if (favoriteEquipments.length === 0) {
-      return res.status(404).json({
+      return res.status(200).json({
         message: 'No equipment found for favorite equipments',
         status: false,
       });
