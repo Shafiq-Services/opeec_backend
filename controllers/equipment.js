@@ -183,35 +183,57 @@ const addEquipment = async (req, res) => {
 
 async function getAllEquipments(req, res) {
   try {
-    const { lat, long, distance, name, category_id, delivery_by_owner } = req.query;
+    const { lat, long, distance, name, category_id, delivery_by_owner, equipment_status } = req.query;
 
-    // Base query for live equipments
+    // ✅ Validate required parameters
+    if (!lat || !long) {
+      return res.status(400).json({ message: "Latitude and longitude are required." });
+    }
+
+    if (!equipment_status) {
+      return res.status(400).json({ message: "Equipment status is required." });
+    }
+
+    const validStatuses = ["Pending", "Rejected", "InActive", "Active", "All"];
+    if (!validStatuses.includes(equipment_status)) {
+      return res.status(400).json({ message: "Invalid equipment status." });
+    }
+
+    let query = {};
+
+    // ✅ Exclude equipment owned by the logged-in user if token is provided
+    if (req.user && req.user._id) {
+      query.owner_id = { $ne: req.user._id };
+    }
+
+    // ✅ Filter by `equipment_status` (only one status or "all")
+    if (equipment_status !== "All") {
+      query.equipment_status = equipment_status;
+    }
+
+    // ✅ Optional filters
     if (name) {
       query.name = { $regex: name, $options: "i" }; // Case-insensitive search
     }
 
-    if (req.query.delivery_by_owner !== undefined) {
-      query.delivery_by_owner = req.query.delivery_by_owner === "true";
-    }    
+    if (delivery_by_owner !== undefined) {
+      query.delivery_by_owner = delivery_by_owner === "true";
+    }
 
     if (category_id) {
       const subCategories = await SubCategory.find({ category_id });
-      const subCategoryIds = subCategories.map((subCat) => subCat._id);
+      const subCategoryIds = subCategories.map(subCat => subCat._id);
       query.sub_category_fk = { $in: subCategoryIds };
     }
 
-    const geoPipeline = [];
-
-    // Geospatial filtering
-    if (lat !== "0.0" && long !== "0.0") {
-      const maxDistanceKm = distance || 50; // Default to 50 km
+    // ✅ Geospatial filtering
+    let geoPipeline = [];
+    if (parseFloat(lat) !== 0.0 || parseFloat(long) !== 0.0) {
+      const maxDistanceKm = distance ? parseFloat(distance) : 50; // Default to 50km
 
       geoPipeline.push({
         $geoNear: {
-          near: {
-            type: "Point",
-            coordinates: [parseFloat(long), parseFloat(lat)], // User's location
-          },
+          near: { type: "Point", coordinates: [parseFloat(long), parseFloat(lat)] },
           distanceField: "distance",
           maxDistance: maxDistanceKm * 1000, // Convert km to meters
           spherical: true,
@@ -219,27 +241,25 @@ async function getAllEquipments(req, res) {
       });
     }
 
-    // Add a match stage after `$geoNear`
     geoPipeline.push({ $match: query });
 
-    // Add any computed fields (e.g., `tempLocation`) AFTER `$geoNear`
     geoPipeline.push({
       $addFields: {
         tempLocation: {
           type: "Point",
-          coordinates: ["$location.long", "$location.lat"], // Dynamically create geospatial coordinates
+          coordinates: ["$custom_location.long", "$custom_location.lat"],
         },
       },
     });
 
-    // Get equipments based on the query and geospatial filter
+    // ✅ Fetch filtered equipment
     const equipments = await Equipment.aggregate(geoPipeline);
 
-    // Fetch subcategories and categories after equipment retrieval
+    // ✅ Fetch subcategories and categories
     const subCategoryIds = equipments.map(equipment => equipment.sub_category_fk);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('category_id');
-    
-    // Create a mapping for subcategory_id to category name
+    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate("category_id");
+
+    // ✅ Map subcategory details
     const subCategoryMap = subCategories.reduce((acc, subCat) => {
       acc[subCat._id] = {
         sub_category_name: subCat.name,
@@ -249,23 +269,21 @@ async function getAllEquipments(req, res) {
       return acc;
     }, {});
 
-
-    // Formatting the equipment data
-    const formattedEquipments = equipments.map((equipment) => {
+    // ✅ Format response
+    const formattedEquipments = equipments.map(equipment => {
       const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
+
       return {
         _id: equipment._id,
         average_rating: 0,
-        created_at: equipment.created_at
-          ? equipment.created_at.toGMTString()
-          : new Date().toGMTString(),
+        created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
         delivery_by_owner: equipment.delivery_by_owner,
         description: equipment.description,
         equipment_price: equipment.equipment_price,
         images: equipment.images,
         isFavorite: false,
         location: {
-          address: equipment.custom_location?.address || '',
+          address: equipment.custom_location?.address || "",
           lat: equipment.custom_location?.lat || 0.0,
           long: equipment.custom_location?.long || 0.0,
           range: equipment.custom_location?.range || 0,
@@ -284,6 +302,8 @@ async function getAllEquipments(req, res) {
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
         category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
+        equipment_status: equipment.equipment_status, // ✅ Include status in response
+        reason: equipment.equipment_status === "Rejected" ? equipment.reason : "", // ✅ Include reason if rejected
       };
     });
 
@@ -735,4 +755,39 @@ async function toggleFavorite(req, res) {
   }
 }
 
-module.exports = { addEquipment, updateEquipment, getAllEquipments, getEquipmentDetails, deleteEquipment, getRandomEquipmentImages, getUserShop, getFavoriteEquipments,  toggleFavorite};
+async function updateEquipmentStatus(req, res) {
+  try {
+    const { equipment_id, equipment_status, reason } = req.query;
+    if (!equipment_id || !status) return res.status(400).json({ message: "Equipment ID and status are required." });
+
+    const validTransitions = {
+      Pending: ["Active", "Rejected", "Blocked"],
+      Active: ["InActive", "Blocked"],
+      InActive: ["Active", "Blocked"],
+      Blocked: ["Active"]
+    };
+
+    const requiresReason = ["Rejected", "Blocked"];
+    if (requiresReason.includes(status) && !reason) return res.status(400).json({ message: `${status} reason is required.` });
+
+    const equipment = await Equipment.findById(equipment_id);
+    if (!equipment) return res.status(404).json({ message: "Equipment not found." });
+
+    if (!validTransitions[equipment.equipment_status]?.includes(status)) {
+      return res.status(400).json({ message: `Cannot change status from ${equipment.equipment_status} to ${status}.` });
+    }
+
+    equipment.equipment_status = status;
+    equipment.reason = requiresReason.includes(status) ? reason : "";
+
+    await equipment.save();
+    return res.status(200).json({ message: `Equipment status updated to ${status}`, status: true, equipment });
+
+  } catch (error) {
+    console.error("Error updating equipment status:", error);
+    return res.status(500).json({ message: "Failed to update equipment status" });
+  }
+}
+
+
+module.exports = { addEquipment, updateEquipment, getAllEquipments, getEquipmentDetails, deleteEquipment, getRandomEquipmentImages, getUserShop, getFavoriteEquipments,  toggleFavorite, updateEquipmentStatus};

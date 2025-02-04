@@ -15,5 +15,6 @@ router.get('/get_listing', equipmentController.getRandomEquipmentImages);
 router.get('/get_user_shop', equipmentController.getUserShop);
 router.post('/favorite', equipmentController.toggleFavorite);
 router.get('/favorites', equipmentController.getFavoriteEquipments);
+router.put("/update_status", equipmentController.updateEquipmentStatus);
 
 module.exports = router;

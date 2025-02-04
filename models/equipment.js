@@ -28,9 +28,10 @@ const equipmentSchema = new mongoose.Schema({
   },
   equipment_status: { 
     type: String, 
-    enum: ['Pending', 'Rejected', 'InAdtive', 'Active'],
+    enum: ['Pending', 'Rejected', 'InActive', 'Active', 'Blocked'],
     default: 'Pending' 
   },
+  reason: { type: String, default: "" },
   custom_location: {
     address: { type: String, required: true },
     lat: { type: Number, required: true },
