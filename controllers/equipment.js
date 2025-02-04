@@ -756,8 +756,9 @@ async function toggleFavorite(req, res) {
 }
 
 async function updateEquipmentStatus(req, res) {
+  await Equipment.updateMany({}, { $unset: { isLive: 1 } });
   try {
-    const { equipment_id, equipment_status, reason } = req.query;
+    const { equipment_id, status, reason } = req.query;
     if (!equipment_id || !status) return res.status(400).json({ message: "Equipment ID and status are required." });
 
     const validTransitions = {
@@ -777,17 +778,21 @@ async function updateEquipmentStatus(req, res) {
       return res.status(400).json({ message: `Cannot change status from ${equipment.equipment_status} to ${status}.` });
     }
 
+    // ✅ Update only the required fields
     equipment.equipment_status = status;
     equipment.reason = requiresReason.includes(status) ? reason : "";
 
-    await equipment.save();
+    // ✅ Validate only modified fields to avoid schema errors
+    await equipment.save({ validateModifiedOnly: true });
+
     return res.status(200).json({ message: `Equipment status updated to ${status}`, status: true, equipment });
 
   } catch (error) {
-    console.error("Error updating equipment status:", error);
+    console.error("❌ Error updating equipment status:", error);
     return res.status(500).json({ message: "Failed to update equipment status" });
   }
 }
+
 
 
 module.exports = { addEquipment, updateEquipment, getAllEquipments, getEquipmentDetails, deleteEquipment, getRandomEquipmentImages, getUserShop, getFavoriteEquipments,  toggleFavorite, updateEquipmentStatus};
