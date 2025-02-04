@@ -15,6 +15,8 @@ const userSchema = new mongoose.Schema({
   isUserVerified: { type: Boolean, default: false },
   rejection_reason: { type: String, default: "" }, // Rejection reason for user verification
   is_blocked: { type: Boolean, default: false }, // User blocking status
+  block_reason: { type: String, default: "" }, // Reason for blocking the user
+
 });
 
 module.exports = mongoose.model('users', userSchema);

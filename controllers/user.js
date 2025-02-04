@@ -9,7 +9,7 @@ const Equipment = require('../models/equipment'); // Import the Equipment model
 // User Signup
 exports.signup = async (req, res) => {
   try {
-    const { name, email, password, id_card_selfie } = req.body;
+    const { name, email, password, id_card_selfie, phone_number } = req.body;
 
     // Check if the email already exists
     const existingUser = await User.findOne({ email });
@@ -27,6 +27,7 @@ exports.signup = async (req, res) => {
       password: hashedPassword,
       verified: false,
       id_card_selfie,
+      phone_number,
       isUserVerified: false,
       rejection_reason: ''
     });
@@ -309,5 +310,130 @@ exports.resendIdCardSelfie = async (req, res) => {
   }
   catch (error) {
     res.status(500).json({ message: 'Error in resending ID card selfie', error });
+  }
+};
+
+
+
+///////////////////Admin//////////////////////////
+
+// Approve New User
+exports.approveUser = async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    // Find user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Approve user
+    user.isUserVerified = true;
+    user.rejection_reason = ''; // Clear any previous rejection reason
+    await user.save();
+
+    // Send real-time event notification to the user
+    sendEventToUser(userId, 'isVerified', {
+      isVerified: true,
+      rejection_reason: "",
+    });
+
+    res.status(200).json({ message: 'User approved successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error approving user', error });
+  }
+};
+
+// Reject User with Reason
+exports.rejectUser = async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const { rejection_reason } = req.body;
+
+    if (!rejection_reason) {
+      return res.status(400).json({ message: 'Rejection reason is required' });
+    }
+
+    // Find user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Reject user
+    user.isUserVerified = false;
+    user.rejection_reason = rejection_reason;
+    await user.save();
+
+    // Send real-time event notification to the user
+    sendEventToUser(userId, 'isVerified', {
+      isVerified: false,
+      rejection_reason: rejection_reason,
+    });
+
+    res.status(200).json({ message: 'User rejected successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error rejecting user', error });
+  }
+};
+
+// Block User with Reason
+exports.blockUser = async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const { block_reason } = req.body;
+
+    if (!block_reason) {
+      return res.status(400).json({ message: 'Block reason is required' });
+    }
+
+    // Find user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Block user
+    user.is_blocked = true;
+    user.block_reason = block_reason;
+    await user.save();
+
+    // Send real-time event notification to the user
+    sendEventToUser(userId, 'isBlock', {
+      message: `Your account has been blocked due to: ${block_reason}`,
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(200).json({ message: 'User blocked successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error blocking user', error });
+  }
+};
+
+exports.unBlockUser = async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    // Find user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Approve user
+    user.is_blocked = false;
+    user.block_reason = ''; // Clear any previous block reason
+    await user.save();
+
+    // Send real-time event notification to the user
+    sendEventToUser(userId, 'isBlock', {
+      is_blocked: false,
+      block_reason: "",
+    });
+
+    res.status(200).json({ message: 'User unblocked successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error unblocking user', error });
   }
 };

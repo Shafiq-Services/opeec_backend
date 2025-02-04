@@ -10,7 +10,9 @@ const adminSchema = new mongoose.Schema({
   about: { type: String, default: "", trim: true },
   password: { type: String, required: true },
   profile_picture: { type: String, default: "" },
-  created_at: { type: Date, default: Date.now }
+  created_at: { type: Date, default: Date.now },
+  otp: { type: Number }, // OTP for password reset
+  otpExpiry: { type: Date }, // OTP Expiry time
 });
 
 module.exports = mongoose.model('Admin', adminSchema);

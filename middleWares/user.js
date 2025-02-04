@@ -15,6 +15,7 @@ module.exports.userMiddleware = async (req, res, next) => {
     
     // Attach userId to the request object
     req.userId = decodedToken.userId;
+    
     // Check if user exists in the database
     const user = await User.findById(req.userId);
     
@@ -22,7 +23,7 @@ module.exports.userMiddleware = async (req, res, next) => {
       return res.status(404).json({ message: "Invalid or expired token" });  // User not found
     }
 
-    // If the user exists, proceed to the next middleware/route handler
+    // Proceed to the next middleware or route handler
     next();  
   } catch (error) {
     return res.status(401).json({ message: "Invalid or expired token", error: error.message });  // If token is invalid or expired

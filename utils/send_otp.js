@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const User = require('../models/User'); // Import the User model
+const Admin = require('../models/admin'); // Import the Admin model
 
 // Function to generate and send OTP
 const sendOtp = async (email) => {
@@ -15,8 +16,14 @@ const sendOtp = async (email) => {
       { new: true } // Return the updated user document
     );
 
-    if (!user) {
-      throw new Error('User not found');
+    const admin = await Admin.findOneAndUpdate(
+      { email },
+      { otp, otpExpiry: new Date(expiry) }, // Save OTP and expiry to DB
+      { new: true } // Return the updated user document
+    );
+
+    if (!user && !admin) {
+      throw new Error('User not found'); 
     }
 
     // Create a transporter for sending emails
@@ -30,7 +37,7 @@ const sendOtp = async (email) => {
 
     // Mail options
     const mailOptions = {
-      from: 'Cook Like Me',
+      from: 'Opeec',
       to: email,
       subject: 'Your OTP for Login Verification',
       text: `Your OTP is: ${otp}. This OTP is valid for 10 minutes.`

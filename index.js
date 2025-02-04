@@ -2,6 +2,7 @@ const http = require("http");
 const express = require('express');
 const config = require('./config/config');
 const connectDB = require('./config/db');
+const adminRoutes = require('./routes/admin');
 const userRoutes = require('./routes/user');
 const categoryRoutes = require('./routes/categories');
 const equipmentRoutes = require('./routes/equipment');
@@ -22,6 +23,7 @@ app.use(express.json());
 connectDB();
 
 // Routes
+app.use('/admin', adminRoutes);
 app.use('/user', userRoutes);
 app.use('/categories', categoryRoutes);
 app.use('/equipment', equipmentRoutes);
