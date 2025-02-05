@@ -5,8 +5,8 @@ const orderController = require('../controllers/orders');
 const { userMiddleware } = require("../middleWares/user");
 
 router.use(userMiddleware);
-router.get('/orders', orderController.getOrdersByStatus);
-
+router.get('/current-rentals', orderController.getCurrentRentals);
+router.get('/history-rentals', orderController.getHistoryRentals);
 //seller
 router.put('/deliver', orderController.deliverOrder);
 router.put('/finish', orderController.finishOrder);

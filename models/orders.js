@@ -25,7 +25,7 @@ const orderSchema = new mongoose.Schema({
   },
   rental_status: { 
     type: String, 
-    enum: ['Booked', 'Ongoing', 'Returned', 'Cancelled', 'Finished', 'Late'],
+    enum: ['Booked', 'Delivered', 'Ongoing', 'Returned', 'Cancelled', 'Finished', 'Late'],
     default: 'Booked' 
   },
   return_status: {

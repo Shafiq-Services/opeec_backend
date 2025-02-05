@@ -98,126 +98,193 @@ exports.addOrder = async (req, res) => {
   }
 };
 
-// Get Orders by Status
-exports.getOrdersByStatus = async (req, res) => {
+exports.getCurrentRentals = async (req, res) => {
   const { status, isSeller } = req.query;
+  const userId = req.userId;
 
   try {
-    // Dynamically get allowed statuses from the schema
-    const allowedStatuses = Orders.schema.path('rental_status').enumValues;
+    const allowedStatuses = ["Booked", "Ongoing", "Returned", "Late", "All"];
 
     // Validate query parameters
-    if (!status || typeof isSeller === 'undefined') {
+    if (!status || typeof isSeller === "undefined") {
       return res.status(400).json({
         message: "'status' and 'isSeller' query parameters are required.",
       });
     }
 
-    // Convert status to an array using commas as the delimiter
-    const statuses = status.split(',').map((s) => s.trim());
-
-    // Check for invalid statuses
-    const invalidStatuses = statuses.filter((s) => !allowedStatuses.includes(s));
-    if (invalidStatuses.length > 0) {
+    if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
-        message: "Invalid status values provided.",
-        invalidStatuses,
+        message: "Invalid status value provided.",
       });
     }
 
-    const userId = req.userId; // Extract userId from authentication middleware
-    let orders;
-
-    if (isSeller === 'true') {
-      orders = await Orders.find({
-        rental_status: { $in: statuses },
-        'equipment_id.owner_id': userId,
-      }).populate({
-        path: 'equipment_id',
-        select: 'name make model sub_category_fk images', // Include sub_category_fk for further population
-        populate: {
-          path: 'sub_category_fk',
-          select: 'name category_id', // Include category_id for further population
-          populate: {
-            path: 'category_id',
-            select: 'name', // Fetch the category name
-          },
-        },
-      });
+    let statusFilter = {};
+    if (status !== "All") {
+      statusFilter.rental_status = status;
     } else {
-      // Fetch orders for user
-      orders = await Orders.find({
-        rental_status: { $in: statuses },
-        user_id: userId,
-      }).populate({
-        path: 'equipment_id',
-        select: 'name make model sub_category_fk images',
+      statusFilter.rental_status = { $in: allowedStatuses.filter((s) => s !== "All") };
+    }
+
+    const orders = await Orders.find({
+      ...statusFilter,
+      ...(isSeller === "true" ? { "equipment_id.owner_id": userId } : { user_id: userId }),
+    }).populate({
+      path: "equipment_id",
+      select: "name make model sub_category_fk images custom_location",
+      populate: {
+        path: "sub_category_fk",
+        select: "name category_id",
         populate: {
-          path: 'sub_category_fk',
-          select: 'name category_id',
-          populate: {
-            path: 'category_id',
-            select: 'name',
-          },
+          path: "category_id",
+          select: "name",
         },
-      });
-    }
+      },
+    });
 
-    // Check if orders were found
-    if (!orders || orders.length === 0) {
-      return res.status(200).json({
-        message: "Orders fetched successfully.",
-        success: true,
-        orders: [],
-      });
-    }
-
-    // Format orders using the utility function
-    const formattedOrders = orders.map(formatOrderResponse);
+    // Format response as per required structure
+    const formattedOrders = orders.map((order) => ({
+      _id: order._id,
+      user_id: order.user_id,
+      rental_schedule: order.rental_schedule,
+      location: order.location,
+      cancellation: order.cancellation,
+      return_status: order.return_status,
+      equipment_id: order.equipment_id
+        ? {
+            _id: order.equipment_id._id,
+            name: order.equipment_id.name,
+            make: order.equipment_id.make,
+            model: order.equipment_id.model,
+            address: order.equipment_id.custom_location.address,
+            images: order.equipment_id.images,
+            sub_category_fk: order.equipment_id.sub_category_fk
+              ? {
+                  _id: order.equipment_id.sub_category_fk._id,
+                  name: order.equipment_id.sub_category_fk.name,
+                  category_id: order.equipment_id.sub_category_fk.category_id
+                    ? {
+                        _id: order.equipment_id.sub_category_fk.category_id._id,
+                        name: order.equipment_id.sub_category_fk.category_id.name,
+                      }
+                    : null,
+                }
+              : null,
+          }
+        : null,
+      security_fee: order.security_fee,
+      total_amount: order.total_amount,
+      rental_status: order.rental_status,
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+      __v: order.__v,
+    }));
 
     return res.status(200).json({
-      message: "Orders fetched successfully.",
+      message: "Current rentals fetched successfully.",
       success: true,
       orders: formattedOrders,
     });
   } catch (error) {
     return res.status(500).json({
-      message: "An error occurred while fetching orders.",
+      message: "An error occurred while fetching current rentals.",
       error: error.message,
     });
   }
 };
 
-// Utility function for sending consistent order response
-const formatOrderResponse = (order) => ({
-  order_id: order._id,
-  user_id: order.user_id,
-  equipment: {
-    _id: order.equipment_id._id,
-    name: order.equipment_id.name,
-    make: order.equipment_id.make,
-    model: order.equipment_id.model,
-    images: order.equipment_id.images,
-    sub_category_fk: {
-      _id: order.equipment_id.sub_category_fk._id,
-      name: order.equipment_id.sub_category_fk.name,
-    },
-    category: {
-      _id: order.equipment_id.sub_category_fk.category_id._id,
-      name: order.equipment_id.sub_category_fk.category_id.name,
-    },
-  },
-  rental_schedule: order.rental_schedule,
-  location: order.location,
-  total_amount: order.total_amount,
-  security_fee: order.security_fee,
-  rental_status: order.rental_status,
-  return_status: order.return_status,
-  cancellation: order.cancellation,
-  created_at: order.created_at,
-  updated_at: order.updated_at,
-});
+exports.getHistoryRentals = async (req, res) => {
+  const { status, isSeller } = req.query;
+  const userId = req.userId;
 
+  try {
+    const allowedStatuses = ["Cancelled", "Finished", "All"];
+
+    // Validate query parameters
+    if (!status || typeof isSeller === "undefined") {
+      return res.status(400).json({
+        message: "'status' and 'isSeller' query parameters are required.",
+      });
+    }
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        message: "Invalid status value provided.",
+      });
+    }
+
+    let statusFilter = {};
+    if (status !== "All") {
+      statusFilter.rental_status = status;
+    } else {
+      statusFilter.rental_status = { $in: allowedStatuses.filter((s) => s !== "All") };
+    }
+
+    const orders = await Orders.find({
+      ...statusFilter,
+      ...(isSeller === "true" ? { "equipment_id.owner_id": userId } : { user_id: userId }),
+    }).populate({
+      path: "equipment_id",
+      select: "name make model sub_category_fk images custom_location",
+      populate: {
+        path: "sub_category_fk",
+        select: "name category_id",
+        populate: {
+          path: "category_id",
+          select: "name",
+        },
+      },
+    });
+
+    // Format response as per required structure
+    const formattedOrders = orders.map((order) => ({
+      _id: order._id,
+      user_id: order.user_id,
+      rental_schedule: order.rental_schedule,
+      location: order.location,
+      cancellation: order.cancellation,
+      return_status: order.return_status,
+      equipment_id: order.equipment_id
+        ? {
+            _id: order.equipment_id._id,
+            name: order.equipment_id.name,
+            make: order.equipment_id.make,
+            model: order.equipment_id.model,
+            images: order.equipment_id.images,
+            address: order.equipment_id.custom_location.address,
+            sub_category_fk: order.equipment_id.sub_category_fk
+              ? {
+                  _id: order.equipment_id.sub_category_fk._id,
+                  name: order.equipment_id.sub_category_fk.name,
+                  category_id: order.equipment_id.sub_category_fk.category_id
+                    ? {
+                        _id: order.equipment_id.sub_category_fk.category_id._id,
+                        name: order.equipment_id.sub_category_fk.category_id.name,
+                      }
+                    : null,
+                }
+              : null,
+          }
+        : null,
+      security_fee: order.security_fee,
+      total_amount: order.total_amount,
+      rental_status: order.rental_status,
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+      __v: order.__v,
+    }));
+
+    return res.status(200).json({
+      message: "History rentals fetched successfully.",
+      success: true,
+      orders: formattedOrders,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "An error occurred while fetching history rentals.",
+      error: error.message,
+    });
+  }
+};
 
 // 1) Cancel Order API
 exports.cancelOrder = async (req, res) => {
