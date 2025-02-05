@@ -4,6 +4,22 @@ const userController = require('../controllers/user');
 const { userMiddleware } = require("../middleWares/user");
 const { adminMiddleware } = require('../middleWares/adminMiddleWare');
 
+
+
+///Temp
+// Approve User
+router.put('/approve_user', userController.approveUser);
+
+// Reject User with Reason
+router.put('/reject_user', userController.rejectUser);
+
+// Block User with Reason
+router.put('/block_user', userController.blockUser);
+
+// Block User with Reason
+router.put('/unblock_user', userController.blockUser);
+
+
 // ---------------------- Customer Routes ----------------------
 
 // User Signup Route
@@ -39,16 +55,6 @@ router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
 
 router.use(adminMiddleware);
 
-// Approve User
-router.put('/approve_user', userController.approveUser);
 
-// Reject User with Reason
-router.put('/reject_user', userController.rejectUser);
-
-// Block User with Reason
-router.put('/block_user', userController.blockUser);
-
-// Block User with Reason
-router.put('/unblock_user', userController.blockUser);
 
 module.exports = router;
