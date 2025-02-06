@@ -256,42 +256,49 @@ async function getAllEquipments(req, res) {
     }, {});
 
     // ✅ Format response
-    const formattedEquipments = equipments.map(equipment => {
-      const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
-
-      return {
-        _id: equipment._id,
-        average_rating: 0,
-        created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
-        delivery_by_owner: equipment.delivery_by_owner,
-        description: equipment.description,
-        equipment_price: equipment.equipment_price,
-        images: equipment.images,
-        isFavorite: false,
-        location: {
-          address: equipment.custom_location?.address || "",
-          lat: equipment.custom_location?.lat || 0.0,
-          long: equipment.custom_location?.long || 0.0,
-          range: equipment.custom_location?.range || 0,
-        },
-        make: equipment.make,
-        maximum_trip_duration: equipment.maximum_trip_duration,
-        minimum_trip_duration: equipment.minimum_trip_duration,
-        model: equipment.model,
-        name: equipment.name,
-        notice_period: equipment.notice_period,
-        owner_id: equipment.owner_id,
-        postal_code: equipment.postal_code,
-        rental_price: equipment.rental_price,
-        serial_number: equipment.serial_number,
-        sub_category_id: equipment.sub_category_fk,
-        sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
-        category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
-        category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
-        equipment_status: equipment.equipment_status, // ✅ Include status in response
-        reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
-      };
-    });
+    const formattedEquipments = await Promise.all(
+      equipments.map(async (equipment) => {
+        const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
+    
+        // Fetch category asynchronously
+        const subCategory = await SubCategory.findById(equipment.sub_category_fk);
+        const category = await categories.findById(subCategory.category_id);
+    
+        return {
+          _id: equipment._id,
+          average_rating: 0,
+          created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
+          delivery_by_owner: equipment.delivery_by_owner,
+          description: equipment.description,
+          equipment_price: equipment.equipment_price,
+          images: equipment.images,
+          isFavorite: false,
+          location: {
+            address: equipment.custom_location?.address || "",
+            lat: equipment.custom_location?.lat || 0.0,
+            long: equipment.custom_location?.long || 0.0,
+            range: equipment.custom_location?.range || 0,
+          },
+          make: equipment.make,
+          maximum_trip_duration: equipment.maximum_trip_duration,
+          minimum_trip_duration: equipment.minimum_trip_duration,
+          model: equipment.model,
+          name: equipment.name,
+          notice_period: equipment.notice_period,
+          owner_id: equipment.owner_id,
+          postal_code: equipment.postal_code,
+          rental_price: equipment.rental_price,
+          serial_number: equipment.serial_number,
+          sub_category_id: equipment.sub_category_fk._id,
+          sub_category_name: equipment.sub_category_fk.name,
+          category_id: category ? category._id : null, // ✅ Fixed category reference
+          category_name: category ? category.name : null,
+          equipment_status: equipment.equipment_status,
+          reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
+        };
+      })
+    );
+    
 
     return res.status(200).json({
       equipments: formattedEquipments,
@@ -313,7 +320,7 @@ async function getMyEquipments(req, res) {
       return res.status(400).json({ message: "Equipment status is required." });
     }
 
-    const validStatuses = ["Pending", "Rejected", "InActive", "Active", "All"];
+    const validStatuses = ["Pending", "Rejected", "InActive", "Active", 'Blocked', "All"];
     if (!validStatuses.includes(equipment_status)) {
       return res.status(400).json({ message: "Invalid equipment status." });
     }
@@ -337,52 +344,58 @@ async function getMyEquipments(req, res) {
     const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate("category_id");
 
     // ✅ Map subcategory details
-    const subCategoryMap = subCategories.reduce((acc, subCat) => {
-      acc[subCat._id] = {
-        sub_category_name: subCat.name,
-        category_id: subCat.category_id._id,
-        category_name: subCat.category_id.name,
-      };
-      return acc;
-    }, {});
+    // const subCategoryMap = subCategories.reduce((acc, subCat) => {
+    //   acc[subCat._id] = {
+    //     sub_category_name: subCat.name,
+    //     category_id: subCat.category_id._id,
+    //   };
+    //   return acc;
+    // }, {});
 
     // ✅ Format response
-    const formattedEquipments = equipments.map(equipment => {
-      const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
-
-      return {
-        _id: equipment._id,
-        average_rating: 0,
-        created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
-        delivery_by_owner: equipment.delivery_by_owner,
-        description: equipment.description,
-        equipment_price: equipment.equipment_price,
-        images: equipment.images,
-        isFavorite: false,
-        location: {
-          address: equipment.custom_location?.address || "",
-          lat: equipment.custom_location?.lat || 0.0,
-          long: equipment.custom_location?.long || 0.0,
-          range: equipment.custom_location?.range || 0,
-        },
-        make: equipment.make,
-        maximum_trip_duration: equipment.maximum_trip_duration,
-        minimum_trip_duration: equipment.minimum_trip_duration,
-        model: equipment.model,
-        name: equipment.name,
-        notice_period: equipment.notice_period,
-        owner_id: equipment.owner_id,
-        postal_code: equipment.postal_code,
-        rental_price: equipment.rental_price,
-        serial_number: equipment.serial_number,
-        sub_category_id: equipment.sub_category_fk,
-        sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
-        category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
-        category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
-        equipment_status: equipment.equipment_status, // ✅ Include status in response
-        reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
-      };
-    });
+    const formattedEquipments = await Promise.all(
+      equipments.map(async (equipment) => {
+        // const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
+    
+        // Fetch category asynchronously
+        const subCategory = await SubCategory.findById(equipment.sub_category_fk);
+        const category = await categories.findById(subCategory.category_id);
+    
+        return {
+          _id: equipment._id,
+          average_rating: 0,
+          created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
+          delivery_by_owner: equipment.delivery_by_owner,
+          description: equipment.description,
+          equipment_price: equipment.equipment_price,
+          images: equipment.images,
+          isFavorite: false,
+          location: {
+            address: equipment.custom_location?.address || "",
+            lat: equipment.custom_location?.lat || 0.0,
+            long: equipment.custom_location?.long || 0.0,
+            range: equipment.custom_location?.range || 0,
+          },
+          make: equipment.make,
+          maximum_trip_duration: equipment.maximum_trip_duration,
+          minimum_trip_duration: equipment.minimum_trip_duration,
+          model: equipment.model,
+          name: equipment.name,
+          notice_period: equipment.notice_period,
+          owner_id: equipment.owner_id,
+          postal_code: equipment.postal_code,
+          rental_price: equipment.rental_price,
+          serial_number: equipment.serial_number,
+          sub_category_id: equipment.sub_category_fk._id,
+          sub_category_name: equipment.sub_category_fk.name,
+          category_id: category ? category._id : null, // ✅ Use category details
+          category_name: category ? category.name : null,
+          equipment_status: equipment.equipment_status,
+          reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
+        };
+      })
+    );
+    
 
     return res.status(200).json({
       equipments: formattedEquipments,
