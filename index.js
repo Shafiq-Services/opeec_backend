@@ -9,6 +9,7 @@ const equipmentRoutes = require('./routes/equipment');
 const orderRoutes = require('./routes/order');
 const uploadRoutes = require('./routes/upload');
 const { initializeSocket } = require("./utils/socketService");
+require('./controllers/orders');
 
 const app = express();
 const server = http.createServer(app);

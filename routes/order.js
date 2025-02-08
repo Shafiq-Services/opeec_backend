@@ -8,10 +8,11 @@ router.use(userMiddleware);
 router.get('/current-rentals', orderController.getCurrentRentals);
 router.get('/history-rentals', orderController.getHistoryRentals);
 //seller
+router.put('/cancel', orderController.cancelOrder);
 router.put('/deliver', orderController.deliverOrder);
 router.put('/finish', orderController.finishOrder);
-router.put('/cancel', orderController.cancelOrder);
 //customer
 router.post('/add', orderController.addOrder);
+router.post('/add', orderController.collectOrder);
 router.put('/return', orderController.returnOrder);
 module.exports = router;

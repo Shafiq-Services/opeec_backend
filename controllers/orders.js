@@ -1,5 +1,6 @@
   const Equipments = require('../models/equipment');
   const Orders = require('../models/orders');
+  const cron = require('node-cron');
 
 // Add Order
 exports.addOrder = async (req, res) => {
@@ -296,6 +297,10 @@ exports.cancelOrder = async (req, res) => {
       return res.status(400).json({ message: "Order ID is required." });
     }
 
+    if(!reason) {
+      return res.status(400).json({ message: "Cancellation Reason is required." });
+    }
+
     const order = await Orders.findById(order_id).populate('equipment_id');
 
     if (!order) {
@@ -307,7 +312,7 @@ exports.cancelOrder = async (req, res) => {
     }
 
     if (String(order.equipment_id.owner_id) !== sellerId) {
-      return res.status(403).json({ message: "Only the seller can cancel the order." });
+      return res.status(403).json({ message: "Only the owner can cancel the order." });
     }
 
     order.cancellation = {
@@ -333,10 +338,15 @@ exports.deliverOrder = async (req, res) => {
   try {
     const sellerId = req.userId;
     const { order_id } = req.query;
+    const { images } = req.body;
 
     if (!order_id) {
       return res.status(400).json({ message: "Order ID is required." });
     }
+
+    if(!!images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ message: "At least one image is required." });
+    };
 
     const order = await Orders.findById(order_id).populate('equipment_id');
 
@@ -349,10 +359,49 @@ exports.deliverOrder = async (req, res) => {
     }
 
     if (String(order.equipment_id.owner_id) !== sellerId) {
-      return res.status(403).json({ message: "Only the seller can deliver the order." });
+      return res.status(403).json({ message: "Only the owner can deliver the order." });
+    }
+
+    order.rental_status = "Delivered";
+    order.owner_images = images;
+    order.updated_at = new Date();
+    await order.save();
+
+    return res.status(200).json({
+      message: "Order status updated to 'Delivered'.",
+      status: true,
+    });
+  } catch (err) {
+    console.error("Error delivering order:", err);
+    return res.status(500).json({ message: "Server error." });
+  }
+};
+
+exports.collectOrder = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { order_id } = req.query;
+
+    if (!order_id) {
+      return res.status(400).json({ message: "Order ID is required." });
+    }
+
+    const order = await Orders.findById(order_id).populate('equipment_id');
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    if (order.rental_status !== "Delivered") {
+      return res.status(400).json({ message: "Only 'Delivered' orders can be collected." });
+    }
+
+    if (String(order.equipment_id.owner_id) !== userId) {
+      return res.status(403).json({ message: "Only the user can collect the order." });
     }
 
     order.rental_status = "Ongoing";
+    order.owner_images = images;
     order.updated_at = new Date();
     await order.save();
 
@@ -371,30 +420,32 @@ exports.returnOrder = async (req, res) => {
   try {
     const userId = req.userId;
     const { order_id } = req.query;
+    const { images } = req.body;
 
     if (!order_id) {
       return res.status(400).json({ message: "Order ID is required." });
     }
 
-    const order = await Orders.findById(order_id);
+    if(!!images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ message: "At least one image is required." });
+    };
+
+    const order = await Orders.findById(order_id).populate('equipment_id');
 
     if (!order) {
       return res.status(404).json({ message: "Order not found." });
-    }
-
-    if (order.user_id.toString() !== userId) {
-      return res.status(403).json({ message: "Only the user can return the order." });
     }
 
     if (order.rental_status !== "Ongoing") {
       return res.status(400).json({ message: "Only 'Ongoing' orders can be returned." });
     }
 
+    if (String(order.equipment_id.owner_id) !== userId) {
+      return res.status(403).json({ message: "Only the user can return the order." });
+    }
+
     order.rental_status = "Returned";
-    order.return_status = {
-      is_returned: true,
-      returned_at: new Date(),
-    };
+    order.owner_images = images;
     order.updated_at = new Date();
     await order.save();
 
@@ -403,7 +454,7 @@ exports.returnOrder = async (req, res) => {
       status: true,
     });
   } catch (err) {
-    console.error("Error returning order:", err);
+    console.error("Error delivering order:", err);
     return res.status(500).json({ message: "Server error." });
   }
 };
@@ -425,11 +476,11 @@ exports.finishOrder = async (req, res) => {
     }
 
     if (String(order.equipment_id.owner_id) !== sellerId) {
-      return res.status(403).json({ message: "Only the seller can finish the order." });
+      return res.status(403).json({ message: "Only the owner can finish the order." });
     }
 
-    if (order.rental_status !== "Returned") {
-      return res.status(400).json({ message: "Only 'Returned' orders can be finished." });
+    if (order.rental_status !== "Returned" || order.rental_status !== "Late") {
+      return res.status(400).json({ message: "Only 'Returned' or 'Late' orders can be finished." });
     }
 
     order.rental_status = "Finished";
@@ -445,3 +496,69 @@ exports.finishOrder = async (req, res) => {
     return res.status(500).json({ message: "Server error." });
   }
 };
+
+
+
+/**
+ * 1️⃣ Auto-Update: Change Ongoing → Late if End Date Passed
+ */
+const markLateOrders = async () => {
+  try {
+    const now = new Date();
+
+    const updatedOrders = await Orders.updateMany(
+      { 'rental_schedule.end_date': { $lt: now }, rental_status: 'Ongoing' },
+      { $set: { rental_status: 'Late', updated_at: now } }
+    );
+
+    console.log(`Updated ${updatedOrders.modifiedCount} orders to Late`);
+  } catch (error) {
+    console.error('Error updating Late orders:', error);
+  }
+};
+
+/**
+ * 2️⃣ Auto-Update: Change Delivered → Ongoing After 3 Hours
+ */
+const updateDeliveredToOngoing = async () => {
+  try {
+    const threeHoursAgo = moment().subtract(3, 'hours').toDate();
+
+    const updatedOrders = await Orders.updateMany(
+      { rental_status: 'Delivered', updated_at: { $lte: threeHoursAgo } },
+      { $set: { rental_status: 'Ongoing', updated_at: new Date() } }
+    );
+
+    console.log(`Updated ${updatedOrders.modifiedCount} Delivered orders to Ongoing`);
+  } catch (error) {
+    console.error('Error updating Delivered to Ongoing:', error);
+  }
+};
+
+/**
+ * 3️⃣ Auto-Update: Change Returned → Finished After 3 Hours
+ */
+const updateReturnedToFinished = async () => {
+  try {
+    const threeHoursAgo = moment().subtract(3, 'hours').toDate();
+
+    const updatedOrders = await Orders.updateMany(
+      { rental_status: 'Returned', updated_at: { $lte: threeHoursAgo } },
+      { $set: { rental_status: 'Finished', updated_at: new Date() } }
+    );
+
+    console.log(`Updated ${updatedOrders.modifiedCount} Returned orders to Finished`);
+  } catch (error) {
+    console.error('Error updating Returned to Finished:', error);
+  }
+};
+
+/**
+ * 🕒 **Cron Job**: Run every 10 minutes to update order statuses
+ */
+cron.schedule('*/10 * * * *', () => { // Runs every 10 minutes
+  console.log('Running scheduled tasks...');
+  markLateOrders();
+  updateDeliveredToOngoing();
+  updateReturnedToFinished();
+});

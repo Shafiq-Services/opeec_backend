@@ -32,6 +32,8 @@ const orderSchema = new mongoose.Schema({
     is_returned: { type: Boolean, default: false }, // Return flag
     returned_at: { type: Date } // Return timestamp
   },
+  owner_images: [{ type: String }], // Images of the equipment returned by the user
+  buyer_images: [{ type: String }], // Images of the equipment returned by the owner
   created_at: { type: Date, default: Date.now }, // Order creation timestamp
   updated_at: { type: Date, default: Date.now } // Last updated timestamp
 });
