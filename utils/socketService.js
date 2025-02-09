@@ -103,6 +103,24 @@ const initializeSocket = (server) => {
       }
     });
 
+    socket.on("isBlocked", async () => {
+      try {
+        const user = await User.findById(userId);
+        if (user) {
+          sendEventToUser(userId, "isBlocked", {
+            _id: user._id,
+            isBlocked: user.is_blocked,
+            block_reason: user.block_reason
+          });
+        } else {
+          sendEventToUser(userId, "isBlocked", "User not found");
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        sendEventToUser(userId, "isBlocked", error);
+      }
+    });
+
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${userId}`);
       connectedUsers.delete(userId);
