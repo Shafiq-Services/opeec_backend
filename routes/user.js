@@ -17,7 +17,7 @@ router.put('/reject_user', userController.rejectUser);
 router.put('/block_user', userController.blockUser);
 
 // Block User with Reason
-router.put('/unblock_user', userController.blockUser);
+router.put('/unblock_user', userController.unBlockUser);
 
 
 // ---------------------- Customer Routes ----------------------
