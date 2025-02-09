@@ -104,7 +104,7 @@ exports.getCurrentRentals = async (req, res) => {
   const userId = req.userId;
 
   try {
-    const allowedStatuses = ["Booked", "Ongoing", "Returned", "Late", "All"];
+    const allowedStatuses = ["Booked", , "Delivered", "Ongoing", "Returned", "Late", "All"];
 
     // Validate query parameters
     if (!status || typeof isSeller === "undefined") {
@@ -174,7 +174,11 @@ exports.getCurrentRentals = async (req, res) => {
         : null,
       security_fee: order.security_fee,
       total_amount: order.total_amount,
+      owner_images: order.owner_images,
+      buyer_images: order.buyer_images,
+      security_fee: order.security_fee,
       rental_status: order.rental_status,
+      expiry_at: new Date(order.updated_at.getTime() + 3 * 60 * 60 * 1000),
       created_at: order.created_at,
       updated_at: order.updated_at,
       __v: order.__v,
@@ -266,9 +270,12 @@ exports.getHistoryRentals = async (req, res) => {
               : null,
           }
         : null,
+      owner_images: order.owner_images,
+      buyer_images: order.buyer_images,
       security_fee: order.security_fee,
       total_amount: order.total_amount,
       rental_status: order.rental_status,
+      expiry_at: new Date(order.updated_at.getTime() + 3 * 60 * 60 * 1000),
       created_at: order.created_at,
       updated_at: order.updated_at,
       __v: order.__v,
@@ -344,7 +351,7 @@ exports.deliverOrder = async (req, res) => {
       return res.status(400).json({ message: "Order ID is required." });
     }
 
-    if(!!images || !Array.isArray(images) || images.length === 0) {
+    if(!images || images.length === 0) {
       return res.status(400).json({ message: "At least one image is required." });
     };
 
@@ -426,7 +433,7 @@ exports.returnOrder = async (req, res) => {
       return res.status(400).json({ message: "Order ID is required." });
     }
 
-    if(!!images || !Array.isArray(images) || images.length === 0) {
+    if(!images || images.length === 0) {
       return res.status(400).json({ message: "At least one image is required." });
     };
 
@@ -445,7 +452,7 @@ exports.returnOrder = async (req, res) => {
     }
 
     order.rental_status = "Returned";
-    order.owner_images = images;
+    order.buyer_images = images;
     order.updated_at = new Date();
     await order.save();
 
