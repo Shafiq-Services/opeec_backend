@@ -400,7 +400,7 @@ exports.blockUser = async (req, res) => {
     await user.save();
 
     // Send real-time event notification to the user
-    sendEventToUser(userId, 'isBlock', {
+    sendEventToUser(userId, 'isBlocked', {
       message: `Your account has been blocked due to: ${block_reason}`,
       timestamp: new Date().toISOString(),
     });
@@ -427,7 +427,7 @@ exports.unBlockUser = async (req, res) => {
     await user.save();
 
     // Send real-time event notification to the user
-    sendEventToUser(userId, 'isBlock', {
+    sendEventToUser(userId, 'isBlocked', {
       is_blocked: false,
       block_reason: "",
     });
