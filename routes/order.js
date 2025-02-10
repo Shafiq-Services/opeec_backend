@@ -13,6 +13,6 @@ router.put('/deliver', orderController.deliverOrder);
 router.put('/finish', orderController.finishOrder);
 //customer
 router.post('/add', orderController.addOrder);
-router.post('/collect', orderController.collectOrder);
+router.put('/collect', orderController.collectOrder);
 router.put('/return', orderController.returnOrder);
 module.exports = router;
