@@ -1,6 +1,7 @@
   const Equipments = require('../models/equipment');
   const Orders = require('../models/orders');
   const cron = require('node-cron');
+  const mongoose = require('mongoose');
 
 // Add Order
 exports.addOrder = async (req, res) => {
@@ -104,7 +105,7 @@ exports.getCurrentRentals = async (req, res) => {
   const userId = req.userId;
 
   try {
-    const allowedStatuses = ["Booked", , "Delivered", "Ongoing", "Returned", "Late", "All"];
+    const allowedStatuses = ["Booked", "Delivered", "Ongoing", "Returned", "Late", "All"];
 
     // Validate query parameters
     if (!status || typeof isSeller === "undefined") {
@@ -126,23 +127,63 @@ exports.getCurrentRentals = async (req, res) => {
       statusFilter.rental_status = { $in: allowedStatuses.filter((s) => s !== "All") };
     }
 
-    const orders = await Orders.find({
-      ...statusFilter,
-      ...(isSeller === "true" ? { "equipment_id.owner_id": userId } : { user_id: userId }),
-    }).populate({
-      path: "equipment_id",
-      select: "name make model sub_category_fk images custom_location",
-      populate: {
-        path: "sub_category_fk",
-        select: "name category_id",
-        populate: {
-          path: "category_id",
-          select: "name",
-        },
-      },
-    });
+    let orders = [];
 
-    // Format response as per required structure
+    if (isSeller === "true") {
+      orders = await Orders.aggregate([
+        {
+          $lookup: {
+            from: "equipments",
+            localField: "equipment_id",
+            foreignField: "_id",
+            as: "equipment",
+          },
+        },
+        { $unwind: "$equipment" },
+        {
+          $lookup: {
+            from: "sub_categories",
+            localField: "equipment.sub_category_fk",
+            foreignField: "_id",
+            as: "subcategory",
+          },
+        },
+        { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: "categories",
+            localField: "subcategory.category_id",
+            foreignField: "_id",
+            as: "category",
+          },
+        },
+        { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
+        {
+          $match: {
+            "equipment.owner_id": new mongoose.Types.ObjectId(userId),
+            ...statusFilter,
+          },
+        },
+      ]);
+    } else {
+      orders = await Orders.find({
+        user_id: new mongoose.Types.ObjectId(userId),
+        ...statusFilter,
+      }).populate({
+        path: "equipment_id",
+        select: "name make model sub_category_fk images custom_location owner_id",
+        populate: {
+          path: "sub_category_fk",
+          select: "name category_id",
+          populate: {
+            path: "category_id",
+            select: "name",
+          },
+        },
+      });
+    }
+
+    // Format response
     const formattedOrders = orders.map((order) => ({
       _id: order._id,
       user_id: order.user_id,
@@ -150,33 +191,25 @@ exports.getCurrentRentals = async (req, res) => {
       location: order.location,
       cancellation: order.cancellation,
       return_status: order.return_status,
-      equipment_id: order.equipment_id
+      equipment_id: order.equipment
         ? {
-            _id: order.equipment_id._id,
-            name: order.equipment_id.name,
-            make: order.equipment_id.make,
-            model: order.equipment_id.model,
-            address: order.equipment_id.custom_location.address,
-            images: order.equipment_id.images,
-            sub_category_fk: order.equipment_id.sub_category_fk
-              ? {
-                  _id: order.equipment_id.sub_category_fk._id,
-                  name: order.equipment_id.sub_category_fk.name,
-                  category_id: order.equipment_id.sub_category_fk.category_id
-                    ? {
-                        _id: order.equipment_id.sub_category_fk.category_id._id,
-                        name: order.equipment_id.sub_category_fk.category_id.name,
-                      }
-                    : null,
-                }
-              : null,
+            _id: order.equipment._id,
+            name: order.equipment.name,
+            make: order.equipment.make,
+            model: order.equipment.model,
+            address: order.equipment.custom_location?.address || null,
+            images: order.equipment.images,
+            owner_id: order.equipment.owner_id,
+            category_id: order.category?._id?.toString() || "",
+            category_name: order.category?.name || "",
+            subcategory_id: order.subcategory?._id?.toString() || "",
+            subcategory_name: order.subcategory?.name || "",
           }
         : null,
       security_fee: order.security_fee,
       total_amount: order.total_amount,
       owner_images: order.owner_images,
       buyer_images: order.buyer_images,
-      security_fee: order.security_fee,
       rental_status: order.rental_status,
       expiry_at: new Date(order.updated_at.getTime() + 3 * 60 * 60 * 1000),
       created_at: order.created_at,
@@ -196,6 +229,7 @@ exports.getCurrentRentals = async (req, res) => {
     });
   }
 };
+
 
 exports.getHistoryRentals = async (req, res) => {
   const { status, isSeller } = req.query;
