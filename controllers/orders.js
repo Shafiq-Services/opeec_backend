@@ -437,7 +437,7 @@ exports.collectOrder = async (req, res) => {
       return res.status(400).json({ message: "Only 'Delivered' orders can be collected." });
     }
 
-    if (String(order.equipment_id.owner_id) !== userId) {
+    if (String(order.user_id) !== userId) {
       return res.status(403).json({ message: "Only the user can collect the order." });
     }
 
