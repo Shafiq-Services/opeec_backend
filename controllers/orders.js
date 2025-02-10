@@ -442,7 +442,6 @@ exports.collectOrder = async (req, res) => {
     }
 
     order.rental_status = "Ongoing";
-    order.owner_images = images;
     order.updated_at = new Date();
     await order.save();
 
