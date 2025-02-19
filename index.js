@@ -8,6 +8,7 @@ const categoryRoutes = require('./routes/categories');
 const equipmentRoutes = require('./routes/equipment');
 const orderRoutes = require('./routes/order');
 const uploadRoutes = require('./routes/upload');
+const chatRoutes = require('./routes/chatRoutes');
 const { initializeSocket } = require("./utils/socketService");
 require('./controllers/orders');
 
@@ -29,6 +30,7 @@ app.use('/user', userRoutes);
 app.use('/categories', categoryRoutes);
 app.use('/equipment', equipmentRoutes);
 app.use('/order', orderRoutes);
+app.use("/chat", chatRoutes);
 app.use('/upload', uploadRoutes);
 
 // Base route
