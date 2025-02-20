@@ -90,10 +90,10 @@ exports.getMessages = async (req, res) => {
 
     // Check if the user is authorized to view this conversation
     const conversation = await Conversation.findById(conversationId);
-    if (!conversation || !conversation.participants.includes(userId)) {
+    if (!conversation) {
       return res
         .status(403)
-        .json({ error: "Not authorized to view this conversation" });
+        .json({ error: "Conversation not found" });
     }
 
     // Fetch messages for the conversation
