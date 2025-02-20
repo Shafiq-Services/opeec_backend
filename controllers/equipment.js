@@ -643,7 +643,7 @@ async function getUserShop(req, res) {
 
     // Fetch equipment related to the user (owner_id)
     const equipments = await Equipment.find({ owner_id: ownerId, equipment_status: "Active" })
-      .select('_id name make rental_price images location average_rating sub_category_fk')
+      .select('_id name make rental_price images location average_rating sub_category_fk custom_location')
       .lean(); // Using lean() to return plain JS objects
 
     if (equipments.length === 0) {
@@ -677,7 +677,12 @@ async function getUserShop(req, res) {
         rental_price: equipment.rental_price,
         images: equipment.images,
         average_rating: 0,
-        location: equipment.location,
+        location: {
+          address: equipment.custom_location?.address || "",
+          lat: equipment.custom_location?.lat || 0.0,
+          long: equipment.custom_location?.long || 0.0,
+          range: equipment.custom_location?.range || 0,
+        },
         category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
         sub_category_id: equipment.sub_category_fk,
@@ -776,7 +781,12 @@ async function getFavoriteEquipments(req, res) {
         rental_price: equipment.rental_price,
         images: equipment.images,
         average_rating: 0,
-        location: equipment.location,
+        location: {
+          address: equipment.custom_location?.address || "",
+          lat: equipment.custom_location?.lat || 0.0,
+          long: equipment.custom_location?.long || 0.0,
+          range: equipment.custom_location?.range || 0,
+        },
         category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
         sub_category_id: equipment.sub_category_fk,
