@@ -234,6 +234,7 @@ exports.getHistoryRentals = async (req, res) => {
       });
     }
 
+    // Build status filter
     let statusFilter = {};
     if (status !== "All") {
       statusFilter.rental_status = status;
@@ -241,21 +242,47 @@ exports.getHistoryRentals = async (req, res) => {
       statusFilter.rental_status = { $in: allowedStatuses.filter((s) => s !== "All") };
     }
 
-    const orders = await Orders.find({
+    // Build match criteria based on the caller type
+    const matchQuery = {
       ...statusFilter,
-      ...(isSeller === "true" ? { "equipment_id.owner_id": userId } : { user_id: userId }),
-    }).populate({
-      path: "equipment_id",
-      select: "name make model sub_category_fk images custom_location",
-      populate: {
-        path: "sub_category_fk",
-        select: "name category_id",
-        populate: {
-          path: "category_id",
-          select: "name",
+      ...(isSeller === "true"
+        ? { "equipment.owner_id": new mongoose.Types.ObjectId(userId) }
+        : { user_id: new mongoose.Types.ObjectId(userId) }
+      ),
+    };
+
+    const orders = await Orders.aggregate([
+      {
+        $lookup: {
+          from: "equipments",
+          localField: "equipment_id",
+          foreignField: "_id",
+          as: "equipment",
         },
       },
-    });
+      { $unwind: "$equipment" },
+      {
+        $lookup: {
+          from: "sub_categories",
+          localField: "equipment.sub_category_fk",
+          foreignField: "_id",
+          as: "subcategory",
+        },
+      },
+      { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "categories",
+          localField: "subcategory.category_id",
+          foreignField: "_id",
+          as: "category",
+        },
+      },
+      { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
+      {
+        $match: matchQuery,
+      },
+    ]);
 
     // Format response as per required structure
     const formattedOrders = orders.map((order) => ({
@@ -265,28 +292,19 @@ exports.getHistoryRentals = async (req, res) => {
       location: order.location,
       cancellation: order.cancellation,
       return_status: order.return_status,
-      equipment_id: order.equipment_id
-        ? {
-            _id: order.equipment_id._id,
-            name: order.equipment_id.name,
-            make: order.equipment_id.make,
-            model: order.equipment_id.model,
-            images: order.equipment_id.images,
-            address: order.equipment_id.custom_location.address,
-            sub_category_fk: order.equipment_id.sub_category_fk
-              ? {
-                  _id: order.equipment_id.sub_category_fk._id,
-                  name: order.equipment_id.sub_category_fk.name,
-                  category_id: order.equipment_id.sub_category_fk.category_id
-                    ? {
-                        _id: order.equipment_id.sub_category_fk.category_id._id,
-                        name: order.equipment_id.sub_category_fk.category_id.name,
-                      }
-                    : null,
-                }
-              : null,
-          }
-        : null,
+      equipment_id: {
+        _id: order.equipment._id,
+        name: order.equipment.name,
+        make: order.equipment.make,
+        model: order.equipment.model,
+        address: order.equipment.custom_location?.address || null,
+        images: order.equipment.images,
+        owner_id: order.equipment.owner_id,
+        category_id: order.category?._id?.toString() || "",
+        category_name: order.category?.name || "",
+        subcategory_id: order.subcategory?._id?.toString() || "",
+        subcategory_name: order.subcategory?.name || "",
+      },
       owner_images: order.owner_images,
       buyer_images: order.buyer_images,
       security_fee: order.security_fee,
