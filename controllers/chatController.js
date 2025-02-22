@@ -2,6 +2,9 @@ const { text } = require("express");
 const Conversation = require("../models/conversation");
 const Message = require("../models/message");
 const User = require("../models/User");
+const Equipment = require("../models/equipment");
+const Categories = require("../models/categories");
+const SubCategory = require("../models/sub_categories");
 
 exports.getConversations = async (req, res) => {
   try {
@@ -88,12 +91,31 @@ exports.getMessages = async (req, res) => {
     const itemsPerPage = parseInt(req.query.itemsPerPage) || 50;
     const skip = (pageNumber - 1) * itemsPerPage;
 
-    // Check if the user is authorized to view this conversation
+    // Retrieve the conversation and ensure it exists
     const conversation = await Conversation.findById(conversationId);
     if (!conversation) {
       return res
         .status(403)
         .json({ error: "Conversation not found" });
+    }
+
+    // Prepare equipment details only if conversation.equipment exists
+    let equipmentResponse;
+    if (conversation.equipment) {
+      const equipment = await Equipment.findById(conversation.equipment);
+      if (equipment) {
+        const subCategory = await SubCategory.findById(equipment.sub_category_fk);
+        const category = subCategory && await Categories.findById(subCategory.category_id);
+        
+        equipmentResponse = {
+          name: equipment.name,
+          images: equipment.images,
+          category: category ? category.name : "Unknown",
+          rental_price: equipment.rental_price,
+          address: equipment.custom_location.address,
+          rating: 0,
+        };
+      }
     }
 
     // Fetch messages for the conversation
@@ -109,7 +131,7 @@ exports.getMessages = async (req, res) => {
       conversation: conversationId,
     });
 
-    // Process messages: Remove sender, receiver, and read fields
+    // Process messages: remove unnecessary fields and add a sentByYou flag
     const messagesWithSentByYou = messages.map((message) => {
       const { _id, content, createdAt } = message.toObject();
       return {
@@ -120,7 +142,7 @@ exports.getMessages = async (req, res) => {
       };
     });
 
-    // Mark messages as read
+    // Mark messages as read for the receiver
     await Message.updateMany(
       {
         conversation: conversationId,
@@ -130,8 +152,8 @@ exports.getMessages = async (req, res) => {
       { read: true }
     );
 
-    // Respond with the messages and pagination
-    res.json({
+    // Build the response object
+    const response = {
       message: "Messages retrieved successfully",
       messages: messagesWithSentByYou,
       pagination: {
@@ -140,52 +162,49 @@ exports.getMessages = async (req, res) => {
         totalMessages,
         hasMore: skip + messages.length < totalMessages,
       },
-    });
+    };
+
+    // Add equipment info only if it was retrieved
+    if (equipmentResponse) {
+      response.equipment = equipmentResponse;
+    }
+
+    res.json(response);
   } catch (error) {
     res.status(500).json({ error: "Server error" });
   }
 };
 
+
 exports.sendMessage = async (req, res) => {
   try {
-    const senderId = req.userId;
-    const { receiverId } = req.query; // Get receiverId from the query
-    const { text } = req.body;
-
-    // Validate required fields
-    if (!receiverId || !text) {
+    const { userId: senderId, query: { receiverId, equipmentId }, body: { text } } = req;
+    if (!receiverId || !text)
       return res.status(400).json({ error: "Receiver ID and text are required" });
-    }
 
     const receiver = await User.findById(receiverId);
-    if (!receiver) {
+    if (!receiver)
       return res.status(404).json({ error: "Receiver not found" });
-    }
-    
-    // Check if a conversation already exists between sender and receiver
-    let conversation = await Conversation.findOne({
-      participants: { $all: [senderId, receiverId] }, // Check for both participants
-    });
 
-    // If no conversation exists, create a new one
+    let conversation = await Conversation.findOne({ participants: { $all: [senderId, receiverId] } });
     if (!conversation) {
       conversation = new Conversation({
         participants: [senderId, receiverId],
+        ...(equipmentId && { equipment: equipmentId }),
       });
+      await conversation.save();
+    } else if (equipmentId && (!conversation.equipment || conversation.equipment.toString() !== equipmentId)) {
+      conversation.equipment = equipmentId;
       await conversation.save();
     }
 
-    // Create and save the message
-    const message = new Message({
+    const message = await new Message({
       conversation: conversation._id,
       sender: senderId,
       receiver: receiverId,
       content: text,
-    });
+    }).save();
 
-    await message.save();
-
-    // Update the conversation's last message
     conversation.lastMessage = message._id;
     await conversation.save();
 
@@ -197,3 +216,4 @@ exports.sendMessage = async (req, res) => {
     res.status(500).json({ error: "Unable to send message", details: error.message });
   }
 };
+

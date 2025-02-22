@@ -13,6 +13,11 @@ const conversationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Message",
     },
+    equipment: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Equipment",
+      required: false,
+    }
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields

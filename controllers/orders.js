@@ -127,63 +127,48 @@ exports.getCurrentRentals = async (req, res) => {
       statusFilter.rental_status = { $in: allowedStatuses.filter((s) => s !== "All") };
     }
 
-    let orders = [];
+    // Build match criteria depending on the caller type.
+    const matchQuery = {
+      ...statusFilter,
+      ...(isSeller === "true"
+        ? { "equipment.owner_id": new mongoose.Types.ObjectId(userId) }
+        : { user_id: new mongoose.Types.ObjectId(userId) }
+      ),
+    };
 
-    if (isSeller === "true") {
-      orders = await Orders.aggregate([
-        {
-          $lookup: {
-            from: "equipments",
-            localField: "equipment_id",
-            foreignField: "_id",
-            as: "equipment",
-          },
+    const orders = await Orders.aggregate([
+      {
+        $lookup: {
+          from: "equipments",
+          localField: "equipment_id",
+          foreignField: "_id",
+          as: "equipment",
         },
-        { $unwind: "$equipment" },
-        {
-          $lookup: {
-            from: "sub_categories",
-            localField: "equipment.sub_category_fk",
-            foreignField: "_id",
-            as: "subcategory",
-          },
+      },
+      { $unwind: "$equipment" },
+      {
+        $lookup: {
+          from: "sub_categories",
+          localField: "equipment.sub_category_fk",
+          foreignField: "_id",
+          as: "subcategory",
         },
-        { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
-        {
-          $lookup: {
-            from: "categories",
-            localField: "subcategory.category_id",
-            foreignField: "_id",
-            as: "category",
-          },
+      },
+      { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "categories",
+          localField: "subcategory.category_id",
+          foreignField: "_id",
+          as: "category",
         },
-        { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
-        {
-          $match: {
-            "equipment.owner_id": new mongoose.Types.ObjectId(userId),
-            ...statusFilter,
-          },
-        },
-      ]);
-    } else {
-      orders = await Orders.find({
-        user_id: new mongoose.Types.ObjectId(userId),
-        ...statusFilter,
-      }).populate({
-        path: "equipment_id",
-        select: "name make model sub_category_fk images custom_location owner_id",
-        populate: {
-          path: "sub_category_fk",
-          select: "name category_id",
-          populate: {
-            path: "category_id",
-            select: "name",
-          },
-        },
-      });
-    }
+      },
+      { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
+      {
+        $match: matchQuery,
+      },
+    ]);
 
-    // Format response
     const formattedOrders = orders.map((order) => ({
       _id: order._id,
       user_id: order.user_id,
@@ -191,21 +176,19 @@ exports.getCurrentRentals = async (req, res) => {
       location: order.location,
       cancellation: order.cancellation,
       return_status: order.return_status,
-      equipment_id: order.equipment
-        ? {
-            _id: order.equipment._id,
-            name: order.equipment.name,
-            make: order.equipment.make,
-            model: order.equipment.model,
-            address: order.equipment.custom_location?.address || null,
-            images: order.equipment.images,
-            owner_id: order.equipment.owner_id,
-            category_id: order.category?._id?.toString() || "",
-            category_name: order.category?.name || "",
-            subcategory_id: order.subcategory?._id?.toString() || "",
-            subcategory_name: order.subcategory?.name || "",
-          }
-        : null,
+      equipment_id: {
+        _id: order.equipment._id,
+        name: order.equipment.name,
+        make: order.equipment.make,
+        model: order.equipment.model,
+        address: order.equipment.custom_location?.address || null,
+        images: order.equipment.images,
+        owner_id: order.equipment.owner_id,
+        category_id: order.category?._id?.toString() || "",
+        category_name: order.category?.name || "",
+        subcategory_id: order.subcategory?._id?.toString() || "",
+        subcategory_name: order.subcategory?.name || "",
+      },
       security_fee: order.security_fee,
       total_amount: order.total_amount,
       owner_images: order.owner_images,
