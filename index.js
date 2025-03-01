@@ -32,6 +32,7 @@ app.use('/equipment', equipmentRoutes);
 app.use('/order', orderRoutes);
 app.use("/chat", chatRoutes);
 app.use('/upload', uploadRoutes);
+app.use("/notification", notificationRoutes);
 
 // Base route
 app.get('/', (req, res) => res.send('Hello from Node API server'));
