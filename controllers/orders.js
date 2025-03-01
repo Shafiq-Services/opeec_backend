@@ -481,7 +481,7 @@ exports.returnOrder = async (req, res) => {
       return res.status(400).json({ message: "Only 'Ongoing' orders can be returned." });
     }
 
-    if (String(order.equipment_id.owner_id) !== userId) {
+    if (String(order.equipment_id.user_id) !== userId) {
       return res.status(403).json({ message: "Only the user can return the order." });
     }
 
