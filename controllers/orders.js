@@ -523,8 +523,7 @@ exports.finishOrder = async (req, res) => {
 
     if (order.rental_status !== "Returned" && order.rental_status !== "Late") {
       return res.status(400).json({ message: "Only 'Returned' or 'Late' orders can be finished." });
-    }
-    
+    }     
 
     order.rental_status = "Finished";
     order.updated_at = new Date();
