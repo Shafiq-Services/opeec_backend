@@ -427,7 +427,7 @@ function queryMatches(equipment, query) {
   async function getEquipmentDetails(req, res) {
     try {
       const equipmentId = req.query.equipment_id;
-  
+
       // Find the equipment by ID
       const equipment = await Equipment.findById(equipmentId);
       if (!equipment) {
@@ -436,9 +436,31 @@ function queryMatches(equipment, query) {
           status: false
         });
       }
-  
+        
       // Fetch owner details
       const owner = await User.findById(equipment.owner_id, 'name profile_image');
+      const ownerId = owner._id;
+      const token = req.headers.authorization?.split(" ")[1];
+      var conversationId = "";
+
+      if (token && token.trim() !== "") {  // Ensure token is not empty or just whitespace
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          const currentUserId = decoded.userId;
+          console.log(ownerId);
+          console.log(currentUserId);
+      
+          conversationId = await Conversation.findOne({ 
+            participants: { $all: [ownerId, currentUserId] } 
+          }).select('_id').lean();
+      
+          conversationId = conversationId?._id || "";
+          console.log(conversationId);
+        } catch (error) {
+          console.error("Invalid token:", error);
+          return res.status(401).json({ message: "Invalid or malformed token" });
+        }
+      }
       
       // Formatting the equipment details
       const equipmentDetails = {
@@ -475,6 +497,7 @@ function queryMatches(equipment, query) {
         status: equipment.status || true,
         reason: equipment.reason || '',
         sub_category_fk: equipment.sub_category_fk || '',
+        conversationId,
       };
   
       // Returning the response
