@@ -4,8 +4,16 @@ const User = require("../models/User"); // User model to fetch sender details
 
 // Send Notification API
 async function sendNotification(req, res) {
-  const { title, body, fcmToken, receiverId, details } = req.body;
+  const { title, body, fcmToken, details } = req.body;
   const senderId = req.userId;
+
+  const user = await User.findOne({ fcm_token: fcmToken});
+
+  if (!user) {
+    return res.status(404).json({ message: "FCM Token not found" });
+  }
+
+  const receiverId = user._id;
 
   try {
     // Validate body
@@ -13,10 +21,7 @@ async function sendNotification(req, res) {
       return res.status(400).json({ message: "Body must be a valid string" });
     }
 
-    // Validate receiverId and fcmToken
-    if (!receiverId) {
-      return res.status(400).json({ message: "Receiver ID is required" });
-    }
+    // Validate fcmToken
     if (!fcmToken) {
       return res.status(400).json({ message: "FCM token is required" });
     }

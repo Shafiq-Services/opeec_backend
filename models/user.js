@@ -16,7 +16,7 @@ const userSchema = new mongoose.Schema({
   rejection_reason: { type: String, default: "" }, // Rejection reason for user verification
   is_blocked: { type: Boolean, default: false }, // User blocking status
   block_reason: { type: String, default: "" }, // Reason for blocking the user
-
+  fcm_token: { type: String, default: "" }, // FCM token for push notifications
 });
 
 module.exports = mongoose.model('users', userSchema);

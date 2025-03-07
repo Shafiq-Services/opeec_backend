@@ -45,7 +45,12 @@ exports.signup = async (req, res) => {
 // User Login
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, fcm_token } = req.body;
+
+    if(!fcm_token)
+    {
+      return res.status(400).json({ message: 'FCM token is required' });
+    }
 
     // Find user by email
     const user = await User.findOne({ email });
