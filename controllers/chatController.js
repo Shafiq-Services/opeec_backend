@@ -46,7 +46,7 @@ exports.getConversations = async (req, res) => {
     // Fetch opponent details
     const opponentIds = conversations.map((c) => c.opponentId);
     const opponents = await User.find({ _id: { $in: opponentIds } })
-      .select("name picture")
+      .select("name profile_image")
       .lean();
 
     // Map opponent details to conversations
@@ -60,7 +60,7 @@ exports.getConversations = async (req, res) => {
       opponent: {
         id: conv.opponentId, // Include opponent ID inside the opponent object
         name: opponentsMap[conv.opponentId]?.name || "",
-        picture: opponentsMap[conv.opponentId]?.picture || "",
+        picture: opponentsMap[conv.opponentId]?.profile_image || "",
       },
     }));
 
@@ -178,13 +178,13 @@ exports.getMessages = async (req, res) => {
 
 exports.sendMessage = async (req, res) => {
   try {
-    const { userId: senderId, query: { receiverId, equipmentId }, body: { text } } = req;
-    if (!receiverId || !text)
-      return res.status(400).json({ error: "Receiver ID and text are required" });
+    const { userId: senderId, query: { equipmentId }, body: { text } } = req;
+    if (!equipmentId || !text)
+      return res.status(400).json({ error: "Equipment ID and text are required" });
 
-    const receiver = await User.findById(receiverId);
-    if (!receiver)
-      return res.status(404).json({ error: "Receiver not found" });
+    const equipment = await Equipment.findById(equipmentId);
+    const receiver = await User.findById(equipment.owner_id);
+    const receiverId = receiver._id;
 
     let conversation = await Conversation.findOne({ participants: { $all: [senderId, receiverId] } });
     if (!conversation) {

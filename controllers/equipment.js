@@ -3,6 +3,8 @@ const Equipment = require('../models/equipment'); // Import the Equipment model
 const User = require('../models/User'); // Import the User model (for owner validation)
 const SubCategory = require('../models/sub_categories'); // Import the SubCategory model
 const categories = require('../models/categories'); // Import the categories model
+const Conversation = require('../models/conversation');
+const jwt = require('jsonwebtoken');  // Import jsonwebtoken
 
 const addEquipment = async (req, res) => {
     const {
@@ -517,119 +519,163 @@ function queryMatches(equipment, query) {
     }
   }
 
-async function getRandomEquipmentImages(req, res) {
-  try {
-    // Fetch all live equipment with populated categories
-    const equipments = await Equipment.find({equipment_status: "Active"}).populate({
-        path: 'sub_category_fk',
-        model: SubCategory, // Reference to SubCategory model
-        populate: {
-          path: 'category_id',
-          model: categories, // Reference to Category model
-        },
-      });
-      
+  async function getRandomEquipmentImages(req, res) {
+    try {
+      // Fetch all live equipment with populated categories and owner details
+      const equipments = await Equipment.find({ equipment_status: "Active" })
+        .populate({
+          path: 'sub_category_fk',
+          model: SubCategory, // Reference to SubCategory model
+          populate: {
+            path: 'category_id',
+            model: categories, // Reference to Category model
+          },
+        })
+        .populate({
+          path: 'owner_id',
+          model: User, // Reference to User model
+          select: '_id name email profile_image' // Selecting only necessary fields
+        });
+  
       if (!equipments || equipments.length === 0) {
         return res.status(200).json({
           message: 'No equipment found',
           status: false,
         });
       }
-
-    const categoryMap = {};
-    const result = [];
-    const usedEquipmentIds = new Set();
-
-    // Group equipment by categories
-    equipments.forEach((equipment) => {
-      const categoryId = equipment.sub_category_fk.category_id._id.toString();
-      if (!categoryMap[categoryId]) {
-        categoryMap[categoryId] = [];
-      }
-      categoryMap[categoryId].push(equipment);
-    });
-
-    // Flatten categories into an array
-    const categoryIds = Object.keys(categoryMap);
-
-    // Main logic to generate 20 unique images
-    while (result.length < 20) {
-      // Shuffle the category order
-      categoryIds.sort(() => Math.random() - 0.5);
-
-      for (const categoryId of categoryIds) {
-        const categoryEquipments = categoryMap[categoryId];
-
-        // Randomize equipment within the category
-        const availableEquipments = categoryEquipments.filter(
-          (equipment) => !usedEquipmentIds.has(equipment._id.toString())
-        );
-
-        // Pick random equipment from this category
-        const equipment =
-          availableEquipments.length > 0
-            ? availableEquipments[
-                Math.floor(Math.random() * availableEquipments.length)
-              ]
-            : categoryEquipments[
-                Math.floor(Math.random() * categoryEquipments.length)
-              ];
-
-        if (equipment.images && equipment.images.length > 0) {
-          // Pick a random image from this equipment
-          const randomImage =
-            equipment.images[
-              Math.floor(Math.random() * equipment.images.length)
-            ];
-
-          result.push({
-            equipment_id: equipment._id,
-            image: randomImage
-          });
-
-          usedEquipmentIds.add(equipment._id.toString());
+  
+      const categoryMap = {};
+      const result = [];
+      const usedEquipmentIds = new Set();
+  
+      // Group equipment by categories
+      equipments.forEach((equipment) => {
+        const categoryId = equipment.sub_category_fk.category_id._id.toString();
+        if (!categoryMap[categoryId]) {
+          categoryMap[categoryId] = [];
         }
-
-        if (result.length === 20) break;
+        categoryMap[categoryId].push(equipment);
+      });
+  
+      // Flatten categories into an array
+      const categoryIds = Object.keys(categoryMap);
+  
+      // Main logic to generate 20 unique images
+      while (result.length < 20) {
+        // Shuffle the category order
+        categoryIds.sort(() => Math.random() - 0.5);
+  
+        for (const categoryId of categoryIds) {
+          const categoryEquipments = categoryMap[categoryId];
+  
+          // Randomize equipment within the category
+          const availableEquipments = categoryEquipments.filter(
+            (equipment) => !usedEquipmentIds.has(equipment._id.toString())
+          );
+  
+          // Pick random equipment from this category
+          const equipment =
+            availableEquipments.length > 0
+              ? availableEquipments[
+                  Math.floor(Math.random() * availableEquipments.length)
+                ]
+              : categoryEquipments[
+                  Math.floor(Math.random() * categoryEquipments.length)
+                ];
+  
+          if (equipment.images && equipment.images.length > 0) {
+            // Pick a random image from this equipment
+            const randomImage =
+              equipment.images[
+                Math.floor(Math.random() * equipment.images.length)
+              ];
+  
+            result.push({
+              equipment_id: equipment._id,
+              image: randomImage,
+              owner: equipment.owner_id
+                ? {
+                    _id: equipment.owner_id._id,
+                    name: equipment.owner_id.name,
+                    email: equipment.owner_id.email,
+                    profile_image: equipment.owner_id.profile_image,
+                  }
+                : null,
+            });
+  
+            usedEquipmentIds.add(equipment._id.toString());
+          }
+  
+          if (result.length === 20) break;
+        }
+  
+        // If all categories are exhausted, allow repeating equipment
+        if (result.length < 20 && usedEquipmentIds.size === equipments.length) {
+          break;
+        }
       }
-
-      // If all categories are exhausted, allow repeating equipment
-      if (result.length < 20 && usedEquipmentIds.size === equipments.length) {
-        break;
+  
+      // Fill up to 20 results if fewer than 20 images were added
+      while (result.length < 20) {
+        const randomEquipment =
+          equipments[Math.floor(Math.random() * equipments.length)];
+        const randomImage =
+          randomEquipment.images[
+            Math.floor(Math.random() * randomEquipment.images.length)
+          ];
+        result.push({
+          equipment_id: randomEquipment._id,
+          image: randomImage,
+          owner: randomEquipment.owner_id
+            ? {
+                _id: randomEquipment.owner_id._id,
+                name: randomEquipment.owner_id.name,
+                email: randomEquipment.owner_id.email,
+                profile_image: randomEquipment.owner_id.profile_image,
+              }
+            : null,
+        });
       }
-    }
-
-    // Fill up to 20 results if fewer than 20 images were added
-    while (result.length < 20) {
-      const randomEquipment =
-        equipments[Math.floor(Math.random() * equipments.length)];
-      const randomImage =
-        randomEquipment.images[
-          Math.floor(Math.random() * randomEquipment.images.length)
-        ];
-      result.push({
-        equipment_id: randomEquipment._id,
-        image: randomImage
+  
+      return res.status(200).json({
+        images: result,
+        message: 'Random equipment images retrieved successfully',
+        status: true,
+      });
+    } catch (error) {
+      console.error('Error fetching random equipment images:', error);
+      return res.status(500).json({
+        message: 'Failed to retrieve images',
+        status: false,
       });
     }
-
-    return res.status(200).json({
-      images: result,
-      message: 'Random equipment images retrieved successfully',
-      status: true
-    });
-  } catch (error) {
-    console.error('Error fetching random equipment images:', error);
-    return res.status(500).json({
-      message: 'Failed to retrieve images',
-      status: false
-    });
   }
-}
+  
 
 async function getUserShop(req, res) {
   try {
     const ownerId = req.query.owner_id;
+    const token = req.headers.authorization?.split(" ")[1];
+    var conversationId = "";
+
+    if (token && token.trim() !== "") {  // Ensure token is not empty or just whitespace
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const currentUserId = decoded.userId;
+        console.log(ownerId);
+        console.log(currentUserId);
+    
+        conversationId = await Conversation.findOne({ 
+          participants: { $all: [ownerId, currentUserId] } 
+        }).select('_id').lean();
+    
+        conversationId = conversationId?._id || "";
+        console.log(conversationId);
+      } catch (error) {
+        console.error("Invalid token:", error);
+        return res.status(401).json({ message: "Invalid or malformed token" });
+      }
+    }
 
     // Fetch the user's data
     const user = await User.findById(ownerId);
@@ -693,7 +739,8 @@ async function getUserShop(req, res) {
         name: user.name,
         email: user.email,
         profile_image: user.profile_image,
-        }
+        },
+        conversationId
       };
     });
 
@@ -746,9 +793,18 @@ async function getFavoriteEquipments(req, res) {
     }
 
     // Fetch the equipment details for the favorites
-    const favoriteEquipments = await Equipment.find({ _id: { $in: user.favorite_equipments }, equipment_status: "Active" })
-      .select('_id name make rental_price images location average_rating sub_category_fk')
-      .lean();
+    const favoriteEquipments = await Equipment.find({ 
+      _id: { $in: user.favorite_equipments }, 
+      equipment_status: "Active" 
+    })
+    .select('_id name make rental_price images location average_rating sub_category_fk owner_id')
+    .populate({
+      path: 'owner_id',
+      model: 'users', // Ensure correct model name
+      select: '_id name email profile_image' // Select required fields
+    })
+    .lean();
+  
 
     if (favoriteEquipments.length === 0) {
       return res.status(200).json({
@@ -781,6 +837,12 @@ async function getFavoriteEquipments(req, res) {
         rental_price: equipment.rental_price,
         images: equipment.images,
         average_rating: 0,
+        owner: equipment.owner_id ? {
+          _id: equipment.owner_id._id,
+          name: equipment.owner_id.name,
+          email: equipment.owner_id.email,
+          profile_image: equipment.owner_id.profile_image
+        } : null,
         location: {
           address: equipment.custom_location?.address || "",
           lat: equipment.custom_location?.lat || 0.0,
