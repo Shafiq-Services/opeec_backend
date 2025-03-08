@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const JWT_SECRET = process.env.JWT_SECRET || "Opeec";
 const connectedUsers = new Map();
+const eventStore = new Map();
 
 let io;
 
@@ -124,6 +125,42 @@ const initializeSocket = (server) => {
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${userId}`);
       connectedUsers.delete(userId);
+    });
+
+    // **📌 Save Data with a Key**
+    socket.on("saveEvent", ({ key, eventData }) => {
+      if (!key || !eventData) {
+        return sendEventToUser(socket.userId, "eventError", { error: "Invalid key or data" });
+      }
+      eventStore.set(key, eventData);
+      sendEventToUser(socket.userId, "eventSaved", { success: true, key, eventData });
+    });
+
+    // **📌 Get Data by Key**
+    socket.on("getEvent", ({ key }) => {
+      if (!key) {
+        return sendEventToUser(socket.userId, "eventError", { error: "Key is required" });
+      }
+      const eventData = eventStore.get(key);
+      if (eventData) {
+        sendEventToUser(socket.userId, "eventData", { key, eventData });
+      } else {
+        sendEventToUser(socket.userId, "eventError", { error: "Data not found" });
+      }
+    });
+
+    // **📌 Update Data for a Key**
+    socket.on("updateEvent", ({ key, newEventData }) => {
+      if (!key || !newEventData) {
+        return sendEventToUser(socket.userId, "eventError", { error: "Invalid key or new data" });
+      }
+      if (eventStore.has(key)) {
+        eventStore.set(key, newEventData);
+        sendEventToUser(socket.userId, "eventUpdated", { key, newEventData });
+        io.emit("eventUpdated", { key, newEventData }); // Notify all users
+      } else {
+        sendEventToUser(socket.userId, "eventError", { error: "Data not found" });
+      }
     });
   });
 
