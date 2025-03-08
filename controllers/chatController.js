@@ -5,6 +5,8 @@ const User = require("../models/User");
 const Equipment = require("../models/equipment");
 const Categories = require("../models/categories");
 const SubCategory = require("../models/sub_categories");
+const socket = require("../utils/socketService");
+const { eventStore } = require("../socket"); // Import eventStore from socket.js
 
 exports.getConversations = async (req, res) => {
   try {
@@ -199,6 +201,19 @@ exports.sendMessage = async (req, res) => {
       await conversation.save();
     }
 
+
+    const equipmentData = {
+      id: equipment._id,
+      name: equipment.name,
+      images: equipment.images,
+      category: equipment.category,
+      rentalPrice: equipment.rental_price,
+      address: equipment.address,
+      rating: equipment.rating,
+    };
+
+    eventStore.set(conversation._id.toString(), equipmentData);
+    
     const message = await new Message({
       conversation: conversation._id,
       sender: senderId,

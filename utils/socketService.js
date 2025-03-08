@@ -167,4 +167,4 @@ const initializeSocket = (server) => {
   return io;
 };
 
-module.exports = { initializeSocket, sendEventToUser, io };
+module.exports = { initializeSocket, sendEventToUser, io, eventStore };
