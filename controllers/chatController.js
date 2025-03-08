@@ -5,8 +5,7 @@ const User = require("../models/User");
 const Equipment = require("../models/equipment");
 const Categories = require("../models/categories");
 const SubCategory = require("../models/sub_categories");
-const socket = require("../utils/socketService");
-const { eventStore } = require("../socket"); // Import eventStore from socket.js
+const { eventStore } = require("../utils/socketService"); // Import eventStore from socket.js
 
 exports.getConversations = async (req, res) => {
   try {
