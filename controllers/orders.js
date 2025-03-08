@@ -1,8 +1,8 @@
-  const Equipments = require('../models/equipment');
-  const Orders = require('../models/orders');
-  const cron = require('node-cron');
-  const mongoose = require('mongoose');
-  const moment = require('moment');
+const Equipments = require('../models/equipment');
+const Orders = require('../models/orders');
+const cron = require('node-cron');
+const mongoose = require('mongoose');
+const moment = require('moment');
 
 // Add Order
 exports.addOrder = async (req, res) => {
@@ -42,10 +42,7 @@ exports.addOrder = async (req, res) => {
     // Check if equipment exists
     const equipment = await Equipments.findById(equipment_id);
     if (!equipment) {
-      return res.status(404).json({
-        message: 'Equipment not found',
-        status: false,
-      });
+      return res.status(404).json({ message: 'Equipment not found', status: false });
     }
 
     // Create new order
@@ -63,19 +60,16 @@ exports.addOrder = async (req, res) => {
       },
       total_amount: total_rent,
       security_fee: security_fee,
-      cancellation: {
-        is_cancelled: false,
-      },
+      cancellation: { is_cancelled: false },
       rental_status: 'Booked',
-      return_status: {
-        is_returned: false,
-      },
+      return_status: { is_returned: false },
+      penalty_apply: false,
+      penalty_amount: 0,
     });
 
     // Save order to database
     await newOrder.save();
 
-    // Response with order details
     return res.status(201).json({
       message: 'Order created successfully',
       status: true,
@@ -90,17 +84,17 @@ exports.addOrder = async (req, res) => {
         rental_status: newOrder.rental_status,
         return_status: newOrder.return_status,
         created_at: newOrder.created_at,
+        penalty_apply: newOrder.penalty_apply,
+        penalty_amount: newOrder.penalty_amount,
       },
     });
   } catch (err) {
     console.error('Error creating order:', err);
-    return res.status(500).json({
-      message: 'Server error',
-      status: false,
-    });
+    return res.status(500).json({ message: 'Server error', status: false });
   }
 };
 
+// Get Current Rentals
 exports.getCurrentRentals = async (req, res) => {
   const { status, isSeller } = req.query;
   const userId = req.userId;
@@ -108,33 +102,19 @@ exports.getCurrentRentals = async (req, res) => {
   try {
     const allowedStatuses = ["Booked", "Delivered", "Ongoing", "Returned", "Late", "All"];
 
-    // Validate query parameters
     if (!status || typeof isSeller === "undefined") {
-      return res.status(400).json({
-        message: "'status' and 'isSeller' query parameters are required.",
-      });
+      return res.status(400).json({ message: "'status' and 'isSeller' query parameters are required." });
     }
-
     if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({
-        message: "Invalid status value provided.",
-      });
+      return res.status(400).json({ message: "Invalid status value provided." });
     }
 
-    let statusFilter = {};
-    if (status !== "All") {
-      statusFilter.rental_status = status;
-    } else {
-      statusFilter.rental_status = { $in: allowedStatuses.filter((s) => s !== "All") };
-    }
-
-    // Build match criteria depending on the caller type.
+    let statusFilter = status !== "All" ? { rental_status: status } : {};
     const matchQuery = {
       ...statusFilter,
       ...(isSeller === "true"
         ? { "equipment.owner_id": new mongoose.Types.ObjectId(userId) }
-        : { user_id: new mongoose.Types.ObjectId(userId) }
-      ),
+        : { user_id: new mongoose.Types.ObjectId(userId) }),
     };
 
     const orders = await Orders.aggregate([
@@ -165,40 +145,13 @@ exports.getCurrentRentals = async (req, res) => {
         },
       },
       { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
-      {
-        $match: matchQuery,
-      },
+      { $match: matchQuery },
     ]);
 
-    const formattedOrders = orders.map((order) => ({
-      _id: order._id,
-      user_id: order.user_id,
-      rental_schedule: order.rental_schedule,
-      location: order.location,
-      cancellation: order.cancellation,
-      return_status: order.return_status,
-      equipment_id: {
-        _id: order.equipment._id,
-        name: order.equipment.name,
-        make: order.equipment.make,
-        model: order.equipment.model,
-        address: order.equipment.custom_location?.address || null,
-        images: order.equipment.images,
-        owner_id: order.equipment.owner_id,
-        category_id: order.category?._id?.toString() || "",
-        category_name: order.category?.name || "",
-        subcategory_id: order.subcategory?._id?.toString() || "",
-        subcategory_name: order.subcategory?.name || "",
-      },
-      security_fee: order.security_fee,
-      total_amount: order.total_amount,
-      owner_images: order.owner_images,
-      buyer_images: order.buyer_images,
-      rental_status: order.rental_status,
-      expiry_at: new Date(order.updated_at.getTime() + 3 * 60 * 60 * 1000),
-      created_at: order.created_at,
-      updated_at: order.updated_at,
-      __v: order.__v,
+    const formattedOrders = orders.map(order => ({
+      ...order,
+      penalty_apply: order.penalty_apply ?? false,
+      penalty_amount: order.penalty_amount ?? 0,
     }));
 
     return res.status(200).json({
@@ -207,14 +160,11 @@ exports.getCurrentRentals = async (req, res) => {
       orders: formattedOrders,
     });
   } catch (error) {
-    return res.status(500).json({
-      message: "An error occurred while fetching current rentals.",
-      error: error.message,
-    });
+    return res.status(500).json({ message: "Error fetching current rentals.", error: error.message });
   }
 };
 
-
+// Get History Rentals
 exports.getHistoryRentals = async (req, res) => {
   const { status, isSeller } = req.query;
   const userId = req.userId;
@@ -222,34 +172,19 @@ exports.getHistoryRentals = async (req, res) => {
   try {
     const allowedStatuses = ["Cancelled", "Finished", "All"];
 
-    // Validate query parameters
     if (!status || typeof isSeller === "undefined") {
-      return res.status(400).json({
-        message: "'status' and 'isSeller' query parameters are required.",
-      });
+      return res.status(400).json({ message: "'status' and 'isSeller' query parameters are required." });
     }
-
     if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({
-        message: "Invalid status value provided.",
-      });
+      return res.status(400).json({ message: "Invalid status value provided." });
     }
 
-    // Build status filter
-    let statusFilter = {};
-    if (status !== "All") {
-      statusFilter.rental_status = status;
-    } else {
-      statusFilter.rental_status = { $in: allowedStatuses.filter((s) => s !== "All") };
-    }
-
-    // Build match criteria based on the caller type
+    let statusFilter = status !== "All" ? { rental_status: status } : {};
     const matchQuery = {
       ...statusFilter,
       ...(isSeller === "true"
         ? { "equipment.owner_id": new mongoose.Types.ObjectId(userId) }
-        : { user_id: new mongoose.Types.ObjectId(userId) }
-      ),
+        : { user_id: new mongoose.Types.ObjectId(userId) }),
     };
 
     const orders = await Orders.aggregate([
@@ -280,41 +215,13 @@ exports.getHistoryRentals = async (req, res) => {
         },
       },
       { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
-      {
-        $match: matchQuery,
-      },
+      { $match: matchQuery },
     ]);
 
-    // Format response as per required structure
-    const formattedOrders = orders.map((order) => ({
-      _id: order._id,
-      user_id: order.user_id,
-      rental_schedule: order.rental_schedule,
-      location: order.location,
-      cancellation: order.cancellation,
-      return_status: order.return_status,
-      equipment_id: {
-        _id: order.equipment._id,
-        name: order.equipment.name,
-        make: order.equipment.make,
-        model: order.equipment.model,
-        address: order.equipment.custom_location?.address || null,
-        images: order.equipment.images,
-        owner_id: order.equipment.owner_id,
-        category_id: order.category?._id?.toString() || "",
-        category_name: order.category?.name || "",
-        subcategory_id: order.subcategory?._id?.toString() || "",
-        subcategory_name: order.subcategory?.name || "",
-      },
-      owner_images: order.owner_images,
-      buyer_images: order.buyer_images,
-      security_fee: order.security_fee,
-      total_amount: order.total_amount,
-      rental_status: order.rental_status,
-      expiry_at: new Date(order.updated_at.getTime() + 3 * 60 * 60 * 1000),
-      created_at: order.created_at,
-      updated_at: order.updated_at,
-      __v: order.__v,
+    const formattedOrders = orders.map(order => ({
+      ...order,
+      penalty_apply: order.penalty_apply ?? false,
+      penalty_amount: order.penalty_amount ?? 0,
     }));
 
     return res.status(200).json({
@@ -323,12 +230,10 @@ exports.getHistoryRentals = async (req, res) => {
       orders: formattedOrders,
     });
   } catch (error) {
-    return res.status(500).json({
-      message: "An error occurred while fetching history rentals.",
-      error: error.message,
-    });
+    return res.status(500).json({ message: "Error fetching history rentals.", error: error.message });
   }
 };
+
 
 // 1) Cancel Order API
 exports.cancelOrder = async (req, res) => {
@@ -539,23 +444,90 @@ exports.finishOrder = async (req, res) => {
   }
 };
 
+exports.togglePenalty = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { orderId } = req.query; // Order ID is passed as a query parameter
+
+    // Find the order and populate equipment details in one query
+    const order = await Orders.findById(orderId).populate("equipment_id");
+    
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    const ownerId = order.equipment_id.owner_id;
+
+    // Ensure only the owner can toggle the penalty
+    if (String(ownerId) !== String(userId)) {
+      return res.status(403).json({ message: "Only the owner can toggle penalty." });
+    }
+    
+    // Toggle penalty
+    const updatedOrder = await Orders.findByIdAndUpdate(
+      orderId,
+      { penalty_apply: !order.penalty_apply, updated_at: new Date() },
+      { new: true } // Return updated document
+    );
+
+    return res.status(200).json({
+      message: `Penalty ${updatedOrder.penalty_apply ? "enabled" : "disabled"} successfully.`,
+      penalty_apply: updatedOrder.penalty_apply,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      message: "Error toggling penalty status.",
+      error: error.message,
+    });
+  }
+};
+
 
 
 /**
  * 1️⃣ Auto-Update: Change Ongoing → Late if End Date Passed
  */
+// Function to Update Late Orders and Apply Daily Penalty
 const markLateOrders = async () => {
   try {
     const now = new Date();
 
-    const updatedOrders = await Orders.updateMany(
+    // Step 1: Mark overdue "Ongoing" orders as "Late"
+    await Orders.updateMany(
       { 'rental_schedule.end_date': { $lt: now }, rental_status: 'Ongoing' },
       { $set: { rental_status: 'Late', updated_at: now } }
     );
 
-    console.log(`Updated ${updatedOrders.modifiedCount} orders to Late`);
+    // Step 2: Find all "Late" orders with penalty enabled
+    const lateOrders = await Orders.find({
+      rental_status: 'Late',
+      penalty_apply: true,
+    });
+
+    for (const order of lateOrders) {
+      const equipment = await Equipments.findById(order.equipment_id);
+      if (!equipment) continue; // Skip if equipment not found
+
+      // Calculate number of days late
+      const daysLate = Math.ceil((now - order.rental_schedule.end_date) / (1000 * 60 * 60 * 24));
+
+      // Calculate total penalty (5% daily)
+      const penaltyAmount = (equipment.equipment_price * 0.05) * daysLate;
+
+      // Update the order with the new penalty amount
+      await Orders.updateOne(
+        { _id: order._id },
+        { 
+          $set: { updated_at: now },
+          $inc: { penalty_amount: penaltyAmount } // Increase penalty amount
+        }
+      );
+    }
+
+    console.log(`Processed ${lateOrders.length} late orders and applied daily penalties.`);
   } catch (error) {
-    console.error('Error updating Late orders:', error);
+    console.error('Error updating Late orders and penalties:', error);
   }
 };
 

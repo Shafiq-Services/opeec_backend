@@ -15,9 +15,9 @@ const orderSchema = new mongoose.Schema({
   },
   total_amount: { type: Number, required: true }, // Total rental cost
   security_fee: {
-    cost: {type: Number, default: 0 },
-    insurance: {type: Boolean, default: false}
-  }, // Platform fee
+    cost: { type: Number, default: 0 },
+    insurance: { type: Boolean, default: false }
+  },
   cancellation: {
     is_cancelled: { type: Boolean, default: false }, // Cancellation flag
     reason: { type: String }, // Reason for cancellation (if applicable)
@@ -35,7 +35,9 @@ const orderSchema = new mongoose.Schema({
   owner_images: [{ type: String }], // Images of the equipment returned by the user
   buyer_images: [{ type: String }], // Images of the equipment returned by the owner
   created_at: { type: Date, default: Date.now }, // Order creation timestamp
-  updated_at: { type: Date, default: Date.now } // Last updated timestamp
+  updated_at: { type: Date, default: Date.now }, // Last updated timestamp
+  penalty_apply: { type: Boolean, default: true }, // New field - default to false
+  penalty_amount: { type: Number, default: 0 }, // New field - default to 0
 });
 
 module.exports = mongoose.model('Orders', orderSchema);

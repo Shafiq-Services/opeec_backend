@@ -15,4 +15,5 @@ router.put('/finish', orderController.finishOrder);
 router.post('/add', orderController.addOrder);
 router.put('/collect', orderController.collectOrder);
 router.put('/return', orderController.returnOrder);
+router.put('/change-penalty', orderController.togglePenalty);
 module.exports = router;
