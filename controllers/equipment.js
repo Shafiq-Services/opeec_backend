@@ -265,7 +265,8 @@ async function getAllEquipments(req, res) {
         // Fetch category asynchronously
         const subCategory = await SubCategory.findById(equipment.sub_category_fk);
         const category = await categories.findById(subCategory.category_id);
-    
+        const owner = await User.findById(equipment.owner_id);
+
         return {
           _id: equipment._id,
           average_rating: 0,
@@ -274,7 +275,7 @@ async function getAllEquipments(req, res) {
           description: equipment.description,
           equipment_price: equipment.equipment_price,
           images: equipment.images,
-          isFavorite: false,
+          isFavorite: owner.favorite_equipments.includes(equipment._id), // All these are favorites
           location: {
             address: equipment.custom_location?.address || "",
             lat: equipment.custom_location?.lat || 0.0,
@@ -362,7 +363,8 @@ async function getMyEquipments(req, res) {
         // Fetch category asynchronously
         const subCategory = await SubCategory.findById(equipment.sub_category_fk);
         const category = await categories.findById(subCategory.category_id);
-    
+        const owner = await User.findById(equipment.owner_id);
+
         return {
           _id: equipment._id,
           average_rating: 0,
@@ -371,7 +373,7 @@ async function getMyEquipments(req, res) {
           description: equipment.description,
           equipment_price: equipment.equipment_price,
           images: equipment.images,
-          isFavorite: false,
+          isFavorite: owner.favorite_equipments.includes(equipment._id), // All these are favorites
           location: {
             address: equipment.custom_location?.address || "",
             lat: equipment.custom_location?.lat || 0.0,
@@ -756,7 +758,7 @@ async function getUserShop(req, res) {
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
         sub_category_id: equipment.sub_category_fk,
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
-        isFavorite: false, // Assuming you need this to be static for now
+        isFavorite: user.favorite_equipments.includes(equipment._id), // All these are favorites
         "owner": {
         _id: user._id,
         name: user.name,
@@ -876,7 +878,7 @@ async function getFavoriteEquipments(req, res) {
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
         sub_category_id: equipment.sub_category_fk,
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
-        isFavorite: true, // All these are favorites
+        isFavorite: user.favorite_equipments.includes(equipment._id), // All these are favorites
       };
     });
 
