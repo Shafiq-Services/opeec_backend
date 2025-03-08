@@ -79,10 +79,11 @@ exports.login = async (req, res) => {
     }    
     
       // Generate JWT token
+      user.fcm_token = fcm_token; 
+      await user.save();
     const token = jwt.sign({ userId: user._id }, config.JWT_SECRET);
 
     // Start monitoring user changes
-    
     startUserMonitoring(user._id);
 
     res.status(200).json({ message: 'Login successful', token, _id: user._id, isUserVerified: user.isUserVerified, rejectionReason: user.rejection_reason });

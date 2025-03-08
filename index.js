@@ -11,7 +11,6 @@ const uploadRoutes = require('./routes/upload');
 const chatRoutes = require('./routes/chatRoutes');
 const notificationRoutes = require('./routes/notification');
 const { initializeSocket } = require("./utils/socketService");
-require('./controllers/orders');
 
 const app = express();
 const server = http.createServer(app);

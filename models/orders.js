@@ -38,6 +38,7 @@ const orderSchema = new mongoose.Schema({
   updated_at: { type: Date, default: Date.now }, // Last updated timestamp
   penalty_apply: { type: Boolean, default: true }, // New field - default to false
   penalty_amount: { type: Number, default: 0 }, // New field - default to 0
+  status_change_timestamp: { type: Date, default: Date.now }, // New field - default to current timestamp
 });
 
 module.exports = mongoose.model('Orders', orderSchema);

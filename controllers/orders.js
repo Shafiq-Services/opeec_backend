@@ -4,6 +4,13 @@ const cron = require('node-cron');
 const mongoose = require('mongoose');
 const moment = require('moment');
 
+const timeOffsetHours = parseFloat(process.env.TIME_OFFSET_HOURS) || 3;
+const intervalMinutes = parseInt(process.env.INTERVAL_MINUTES) || 1;
+const DAILY_PENALTY = parseFloat(process.env.DAILY_PENALTY) || 50; // Default penalty if not set
+
+console.log(`⏳ Monitoring every ${intervalMinutes} minute(s)`);
+console.log(`⏳ Status changes after ${timeOffsetHours * 60} minutes`);
+
 // Add Order
 exports.addOrder = async (req, res) => {
   try {
@@ -94,7 +101,6 @@ exports.addOrder = async (req, res) => {
   }
 };
 
-// Get Current Rentals
 exports.getCurrentRentals = async (req, res) => {
   const { status, isSeller } = req.query;
   const userId = req.userId;
@@ -148,11 +154,23 @@ exports.getCurrentRentals = async (req, res) => {
       { $match: matchQuery },
     ]);
 
-    const formattedOrders = orders.map(order => ({
-      ...order,
-      penalty_apply: order.penalty_apply ?? false,
-      penalty_amount: order.penalty_amount ?? 0,
-    }));
+    const formattedOrders = orders.map(order => {
+      let statusChangeTime = "";
+
+      // Convert timestamp if conditions match
+      if (order.rental_status === "Delivered" && isSeller === "false") {
+        statusChangeTime = moment(order.status_change_timestamp).format("HH:mm");
+      } else if (order.rental_status === "Returned" && isSeller === "true") {
+        statusChangeTime = moment(order.status_change_timestamp).format("HH:mm");
+      }
+
+      return {
+        ...order,
+        penalty_apply: order.penalty_apply ?? false,
+        penalty_amount: order.penalty_amount ?? 0,
+        status_change_timestamp: statusChangeTime, // Converted or empty string
+      };
+    });
 
     return res.status(200).json({
       message: "Current rentals fetched successfully.",
@@ -163,6 +181,7 @@ exports.getCurrentRentals = async (req, res) => {
     return res.status(500).json({ message: "Error fetching current rentals.", error: error.message });
   }
 };
+
 
 // Get History Rentals
 exports.getHistoryRentals = async (req, res) => {
@@ -483,96 +502,102 @@ exports.togglePenalty = async (req, res) => {
   }
 };
 
+// Helper: Calculates future time offset
+const getFutureTime = (timestamp, offsetMinutes) => {
+  return moment(timestamp).add(offsetMinutes, 'minutes').toDate();
+};
 
+// Helper: Fetch the latest order from the database
+const getLatestOrder = async (orderId) => {
+  return await Orders.findById(orderId);
+};
 
-/**
- * 1️⃣ Auto-Update: Change Ongoing → Late if End Date Passed
- */
-// Function to Update Late Orders and Apply Daily Penalty
-const markLateOrders = async () => {
+// Helper: Updates order safely, checking for external status changes
+const updateOrder = async (order, updates) => {
+  const latestOrder = await getLatestOrder(order._id);
+
+  // If status changed externally, stop processing now but recheck in the next cycle
+  if (latestOrder.rental_status !== order.rental_status) {
+    console.log(`🔄 Order ${order._id} status changed externally to ${latestOrder.rental_status}. Skipping this run.`);
+    return;
+  }
+
+  Object.assign(order, updates, { updated_at: new Date() });
+  await order.save();
+  console.log(`✅ Order ${order._id} updated:`, updates);
+};
+
+// Helper: Applies penalty if order is late
+const applyLatePenalty = async (order) => {
+  const now = new Date();
+  const timeElapsed = now - order.status_change_timestamp;
+  const daysLate = Math.floor(timeElapsed / (1000 * 60 * 60 * 24)); // Full 24-hour periods
+
+  const expectedPenalty = (daysLate + 1) * DAILY_PENALTY; // +1 ensures penalty applies immediately
+
+  if (order.penalty_amount !== expectedPenalty) {
+    await updateOrder(order, { penalty_amount: expectedPenalty });
+    console.log(`💰 Penalty updated: $${expectedPenalty}`);
+  }
+};
+
+// Main process
+const processOrders = async () => {
+  console.log("🔍 Checking orders...");
+
   try {
     const now = new Date();
-
-    // Step 1: Mark overdue "Ongoing" orders as "Late"
-    await Orders.updateMany(
-      { 'rental_schedule.end_date': { $lt: now }, rental_status: 'Ongoing' },
-      { $set: { rental_status: 'Late', updated_at: now } }
-    );
-
-    // Step 2: Find all "Late" orders with penalty enabled
-    const lateOrders = await Orders.find({
-      rental_status: 'Late',
-      penalty_apply: true,
+    const orders = await Orders.find({
+      rental_status: { $in: ['Delivered', 'Returned', 'Ongoing', 'Late'] }
     });
 
-    for (const order of lateOrders) {
-      const equipment = await Equipments.findById(order.equipment_id);
-      if (!equipment) continue; // Skip if equipment not found
+    for (const order of orders) {
+      const latestOrder = await getLatestOrder(order._id);
+      if (!latestOrder) continue; // Order might have been deleted
 
-      // Calculate number of days late
-      const daysLate = Math.ceil((now - order.rental_schedule.end_date) / (1000 * 60 * 60 * 24));
+      // If the order status changed externally, do NOT process now but recheck in the next cycle
+      if (latestOrder.rental_status !== order.rental_status) {
+        console.log(`⏳ Order ${order._id} status changed externally to ${latestOrder.rental_status}. Skipping for now.`);
+        continue;
+      }
 
-      // Calculate total penalty (5% daily)
-      const penaltyAmount = (equipment.equipment_price * 0.05) * daysLate;
+      const futureTimestamp = getFutureTime(order.updated_at, timeOffsetHours * 60);
 
-      // Update the order with the new penalty amount
-      await Orders.updateOne(
-        { _id: order._id },
-        { 
-          $set: { updated_at: now },
-          $inc: { penalty_amount: penaltyAmount } // Increase penalty amount
-        }
-      );
+      // ✅ 1. Handle "Delivered" → "Ongoing"
+      if (order.rental_status === 'Delivered' && now >= futureTimestamp) {
+        await updateOrder(order, { rental_status: 'Ongoing' });
+        console.log(`🚀 Order ${order._id} changed from Delivered → Ongoing`);
+      }
+
+      // ✅ 2. Handle "Ongoing" → "Late"
+      if (order.rental_status === 'Ongoing' && now > order.rental_schedule.end_date) {
+        await updateOrder(order, {
+          rental_status: 'Late',
+          penalty_apply: true,
+          status_change_timestamp: order.rental_schedule.end_date, // First time turning Late
+          penalty_amount: DAILY_PENALTY, // Immediate penalty application
+        });
+        console.log(`⏳ Order ${order._id} changed from Ongoing → Late!`);
+      }
+
+      // ✅ 3. Handle "Late" → Apply Daily Penalty
+      if (order.rental_status === 'Late') {
+        await applyLatePenalty(order);
+      }
+
+      // ✅ 4. Handle "Returned" → "Finished"
+      if (order.rental_status === 'Returned' && now >= futureTimestamp) {
+        await updateOrder(order, { rental_status: 'Finished' });
+        console.log(`🚀 Order ${order._id} changed from Returned → Finished`);
+      }
     }
 
-    console.log(`Processed ${lateOrders.length} late orders and applied daily penalties.`);
+    console.log("✅ Orders Monitored...");
   } catch (error) {
-    console.error('Error updating Late orders and penalties:', error);
+    console.error('❌ Error processing orders:', error);
   }
 };
 
-/**
- * 2️⃣ Auto-Update: Change Delivered → Ongoing After 3 Hours
- */
-const updateDeliveredToOngoing = async () => {
-  try {
-    const threeHoursAgo = moment().subtract(3, 'hours').toDate();
-
-    const updatedOrders = await Orders.updateMany(
-      { rental_status: 'Delivered', updated_at: { $lte: threeHoursAgo } },
-      { $set: { rental_status: 'Ongoing', updated_at: new Date() } }
-    );
-
-    console.log(`Updated ${updatedOrders.modifiedCount} Delivered orders to Ongoing`);
-  } catch (error) {
-    console.error('Error updating Delivered to Ongoing:', error);
-  }
-};
-
-/**
- * 3️⃣ Auto-Update: Change Returned → Finished After 3 Hours
- */
-const updateReturnedToFinished = async () => {
-  try {
-    const threeHoursAgo = moment().subtract(3, 'hours').toDate();
-
-    const updatedOrders = await Orders.updateMany(
-      { rental_status: 'Returned', updated_at: { $lte: threeHoursAgo } },
-      { $set: { rental_status: 'Finished', updated_at: new Date() } }
-    );
-
-    console.log(`Updated ${updatedOrders.modifiedCount} Returned orders to Finished`);
-  } catch (error) {
-    console.error('Error updating Returned to Finished:', error);
-  }
-};
-
-/**
- * 🕒 **Cron Job**: Run every 10 minutes to update order statuses
- */
-cron.schedule('*/10 * * * *', () => { // Runs every 10 minutes
-  console.log('Running scheduled tasks...');
-  markLateOrders();
-  updateDeliveredToOngoing();
-  updateReturnedToFinished();
-});
+// Run job every hour
+cron.schedule(`*/${intervalMinutes} * * * *`, processOrders);
+console.log(`✅ Order monitoring started.`);

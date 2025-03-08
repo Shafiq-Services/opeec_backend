@@ -108,6 +108,7 @@ exports.getMessages = async (req, res) => {
         const category = subCategory && await Categories.findById(subCategory.category_id);
         
         equipmentResponse = {
+          _id: equipment._id,
           name: equipment.name,
           images: equipment.images,
           category: category ? category.name : "Unknown",
