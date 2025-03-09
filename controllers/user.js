@@ -151,6 +151,23 @@ exports.sendOtp = async (req, res) => {
   }
 };
 
+exports.getFCMToken = async (req, res) => {
+  const { userId } = req.query;
+
+  try {
+    // Find the user by email
+    const user = await User.findOne({ _id: userId });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.status(200).json({ message: 'FCM token retrieved successfully', fcmToken: user.fcm_token });
+  }
+    catch (error) {
+    res.status(500).json({ message: 'Error in updating FCM token', error });
+  }
+};
+
 // Verify OTP
 exports.verifyUserOtp = async (req, res) => {
   const { email, otp } = req.body;

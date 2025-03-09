@@ -51,6 +51,7 @@ router.put('/update', userController.updateUser);
 // Resend ID card selfie for verification
 router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
 
+router.get('/get_fcm', userController.getFCMToken);
 // ---------------------- Admin Routes ----------------------
 
 router.use(adminMiddleware);
