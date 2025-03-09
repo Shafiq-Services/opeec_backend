@@ -5,8 +5,17 @@ const Redis = require("ioredis");
 
 const JWT_SECRET = process.env.JWT_SECRET || "Opeec";
 const connectedUsers = new Map();
-const redis = new Redis(); // Redis instance
+const redis = new Redis({
+  host: "opeec.redis.cache.windows.net", // Azure Redis Cache hostname
+  port: 6380, // Azure Redis default port
+  password: "4aEfpKy1SEO1VINcik6cakXHZFpBjhli8AzCaAw7494=", // Found in Azure Portal
+  tls: { rejectUnauthorized: false } // Required for Azure Redis SSL connections
+});
 
+redis.ping()
+  .then((result) => console.log("Redis Connected:", result))
+  .catch((err) => console.error("Redis Connection Error:", err));
+  
 let io;
 
 // Helper functions to interact with Redis
