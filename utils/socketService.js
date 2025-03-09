@@ -67,6 +67,42 @@ const initializeSocket = (server) => {
       socket.emit(event, { success: true, received: data });
     });
 
+    socket.on("isVerified", async () => {
+      try {
+        const user = await User.findById(userId);
+        if (user) {
+          sendEventToUser(userId, "isVerified", {
+            _id: user._id,
+            isVerified: user.isUserVerified,
+            rejection_reason: user.rejection_reason
+          });
+        } else {
+          sendEventToUser(userId, "isVerified", "User not found");
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        sendEventToUser(userId, "isVerified", error);
+      }
+    });
+
+    socket.on("isBlocked", async () => {
+      try {
+        const user = await User.findById(userId);
+        if (user) {
+          sendEventToUser(userId, "isBlocked", {
+            _id: user._id,
+            isBlocked: user.is_blocked,
+            block_reason: user.block_reason
+          });
+        } else {
+          sendEventToUser(userId, "isBlocked", "User not found");
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        sendEventToUser(userId, "isBlocked", error);
+      }
+    });
+    
     socket.on("getUserData", async () => {
       try {
         const user = await User.findById(userId);
