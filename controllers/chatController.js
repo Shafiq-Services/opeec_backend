@@ -6,6 +6,7 @@ const Equipment = require("../models/equipment");
 const Categories = require("../models/categories");
 const SubCategory = require("../models/sub_categories");
 const EventStore = require("../models/EventStore");
+const {sendEventToUser} = require("../utils/socketService");
 
 exports.getConversations = async (req, res) => {
   try {
@@ -219,21 +220,27 @@ exports.sendMessage = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // const message = await new Message({
-    //   conversation: conversation._id,
-    //   sender: senderId,
-    //   receiver: receiverId,
-    //   content: text,
-    // }).save();
+    const message = await new Message({
+      conversation: conversation._id,
+      sender: senderId,
+      receiver: receiverId,
+      content: text,
+    }).save();
 
     // conversation.lastMessage = message._id;
-    // await conversation.save();
+    await conversation.save();
+
+    sendEventToUser(receiverId, "eventSaved", {
+      key: conversation._id,
+      eventData: equipmentData,
+    });
 
     res.status(201).json({
       message: "Message sent successfully",
       conversationId: conversation._id,
     });
   } catch (error) {
+    console.error("Error in sendMessage:", error);
     res.status(500).json({ error: "Unable to send message", details: error.message });
   }
 };

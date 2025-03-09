@@ -19,6 +19,12 @@ const sendEventToUser = (userId, event, data) => {
   }
 };
 
+const saveEvent = (key, data) => {
+    console.log("Emitting saveEvent with key:", key, "data:", data);
+    io.emit("eventSaved", { key, eventData: data });
+    console.log("Event Saved");
+};
+
 const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
@@ -124,22 +130,35 @@ const initializeSocket = (server) => {
     });
 
     socket.on("saveEvent", async ({ key, eventData }) => {
+      console.log("Received saveEvent request:", { key, eventData });
+    
       if (!key || !eventData) {
+        console.warn("Invalid key or eventData:", { key, eventData });
         return sendEventToUser(socket.userId, "eventError", { error: "Invalid key or data" });
       }
-
+    
       try {
-        await EventStore.findOneAndUpdate(
+        console.log("Attempting to save or update event with key:", key);
+    
+        const updatedEvent = await EventStore.findOneAndUpdate(
           { key },
           { eventData },
           { upsert: true, new: true }
         );
-        sendEventToUser(socket.userId, "eventSaved", { success: true, key, eventData });
+    
+        if (updatedEvent) {
+          console.log("Event saved/updated successfully:", updatedEvent);
+          sendEventToUser(socket.userId, "eventSaved", { success: true, key, eventData });
+        } else {
+          console.warn("No event was saved or updated for key:", key);
+          sendEventToUser(socket.userId, "eventError", { error: "No event was saved" });
+        }
       } catch (error) {
         console.error("Error saving event:", error);
         sendEventToUser(socket.userId, "eventError", { error: "Failed to save event" });
       }
     });
+    
 
     socket.on("getEvent", async ({ key }) => {
       if (!key) {
@@ -192,4 +211,4 @@ const initializeSocket = (server) => {
   return io;
 };
 
-module.exports = { initializeSocket, sendEventToUser, io };
+module.exports = { initializeSocket, sendEventToUser, io, saveEvent };
