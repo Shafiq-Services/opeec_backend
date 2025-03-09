@@ -187,6 +187,8 @@ exports.sendMessage = async (req, res) => {
     const equipment = await Equipment.findById(equipmentId);
     const receiver = await User.findById(equipment.owner_id);
     const receiverId = receiver._id;
+    const subCategory = await SubCategory.findById(equipment.sub_category_fk);
+    const category = await Categories.findById(subCategory.category_id);
 
     let conversation = await Conversation.findOne({ participants: { $all: [senderId, receiverId] } });
     if (!conversation) {
@@ -204,10 +206,10 @@ exports.sendMessage = async (req, res) => {
       id: equipment._id,
       name: equipment.name,
       images: equipment.images,
-      category: equipment.category,
+      category: category.name,
       rentalPrice: equipment.rental_price,
-      address: equipment.address,
-      rating: equipment.rating,
+      address: equipment.custom_location.address,
+      rating: equipment.average_rating,
     };
 
     // Store event persistently
@@ -217,15 +219,15 @@ exports.sendMessage = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    const message = await new Message({
-      conversation: conversation._id,
-      sender: senderId,
-      receiver: receiverId,
-      content: text,
-    }).save();
+    // const message = await new Message({
+    //   conversation: conversation._id,
+    //   sender: senderId,
+    //   receiver: receiverId,
+    //   content: text,
+    // }).save();
 
-    conversation.lastMessage = message._id;
-    await conversation.save();
+    // conversation.lastMessage = message._id;
+    // await conversation.save();
 
     res.status(201).json({
       message: "Message sent successfully",
