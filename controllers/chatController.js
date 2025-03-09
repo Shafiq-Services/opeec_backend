@@ -5,8 +5,6 @@ const User = require("../models/User");
 const Equipment = require("../models/equipment");
 const Categories = require("../models/categories");
 const SubCategory = require("../models/sub_categories");
-const Redis = require("ioredis");
-const redis = new Redis();
 const EventStore = require("../models/EventStore");
 
 exports.getConversations = async (req, res) => {
