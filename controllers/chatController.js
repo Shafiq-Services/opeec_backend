@@ -5,7 +5,8 @@ const User = require("../models/User");
 const Equipment = require("../models/equipment");
 const Categories = require("../models/categories");
 const SubCategory = require("../models/sub_categories");
-const { eventStore } = require("../utils/socketService"); // Import eventStore from socket.js
+const Redis = require("ioredis");
+const redis = new Redis();
 
 exports.getConversations = async (req, res) => {
   try {
@@ -211,8 +212,13 @@ exports.sendMessage = async (req, res) => {
       rating: equipment.rating,
     };
 
-    eventStore.set(conversation._id.toString(), equipmentData);
-    
+    await redis.set(conversation._id.toString(), JSON.stringify(equipmentData));
+    console.log(`✅ Equipment data stored in Redis for conversation ID: ${conversation._id}`);
+
+    // Retrieve equipment data from Redis (For debugging)
+    const storedData = await redis.get(conversation._id.toString());
+    console.log(`🔍 Retrieved from Redis:`, JSON.parse(storedData));
+
     const message = await new Message({
       conversation: conversation._id,
       sender: senderId,

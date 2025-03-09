@@ -20,6 +20,7 @@
     "express-fileupload": "^1.5.1",
     "firebase-admin": "^13.1.0",
     "http": "^0.0.1-security",
+    "ioredis": "^5.6.0",
     "jsonwebtoken": "^9.0.2",
     "moment": "^2.30.1",
     "mongoose": "^8.8.3",
@@ -27,6 +28,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
     "otp-generator": "^4.0.1",
+    "redis": "^4.7.0",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
