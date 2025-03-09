@@ -7,6 +7,7 @@ const Categories = require("../models/categories");
 const SubCategory = require("../models/sub_categories");
 const Redis = require("ioredis");
 const redis = new Redis();
+const EventStore = require("../models/EventStore");
 
 exports.getConversations = async (req, res) => {
   try {
@@ -201,7 +202,6 @@ exports.sendMessage = async (req, res) => {
       await conversation.save();
     }
 
-
     const equipmentData = {
       id: equipment._id,
       name: equipment.name,
@@ -212,12 +212,12 @@ exports.sendMessage = async (req, res) => {
       rating: equipment.rating,
     };
 
-    await redis.set(conversation._id.toString(), JSON.stringify(equipmentData));
-    console.log(`✅ Equipment data stored in Redis for conversation ID: ${conversation._id}`);
-
-    // Retrieve equipment data from Redis (For debugging)
-    const storedData = await redis.get(conversation._id.toString());
-    console.log(`🔍 Retrieved from Redis:`, JSON.parse(storedData));
+    // Store event persistently
+    await EventStore.findOneAndUpdate(
+      { key: conversation._id.toString() },
+      { eventData: equipmentData },
+      { upsert: true, new: true }
+    );
 
     const message = await new Message({
       conversation: conversation._id,
@@ -237,4 +237,3 @@ exports.sendMessage = async (req, res) => {
     res.status(500).json({ error: "Unable to send message", details: error.message });
   }
 };
-
