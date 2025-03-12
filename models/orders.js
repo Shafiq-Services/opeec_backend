@@ -41,7 +41,7 @@ const orderSchema = new mongoose.Schema({
   status_change_timestamp: { type: Date, default: Date.now }, // New field - default to current timestamp
   buyer_review: {
     comment: { type: String },
-    rating: { type: Number, min: 1, max: 5, default: 0 }
+    rating: { type: Number, min: 0, max: 5, default: 0 }
   }
 });
 
