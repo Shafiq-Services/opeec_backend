@@ -227,7 +227,7 @@ exports.sendMessage = async (req, res) => {
       content: text,
     }).save();
 
-    // conversation.lastMessage = message._id;
+    conversation.lastMessage = message._id;
     await conversation.save();
 
     sendEventToUser(receiverId, "eventSaved", {

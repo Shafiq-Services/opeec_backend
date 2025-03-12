@@ -166,6 +166,10 @@ exports.getCurrentRentals = async (req, res) => {
 
       return {
         ...order,
+        equipment: {
+          ...order.equipment,
+          average_rating: 0, // Add default average rating
+        },
         penalty_apply: order.penalty_apply ?? false,
         penalty_amount: order.penalty_amount ?? 0,
         status_change_timestamp: statusChangeTime, // Converted or empty string
@@ -239,6 +243,10 @@ exports.getHistoryRentals = async (req, res) => {
 
     const formattedOrders = orders.map(order => ({
       ...order,
+      equipment: {
+        ...order.equipment,
+        average_rating: 0, // Add default average rating
+      },
       penalty_apply: order.penalty_apply ?? false,
       penalty_amount: order.penalty_amount ?? 0,
     }));
