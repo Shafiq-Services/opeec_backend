@@ -510,6 +510,55 @@ exports.togglePenalty = async (req, res) => {
   }
 };
 
+exports.addBuyerReview = async (req, res) => {
+  const { rating, comment } = req.body;
+  const { orderId } = req.query;
+
+  // Validate request parameters
+  if (!orderId) {
+    return res.status(400).json({ message: "orderId is required in query parameters." });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(orderId)) {
+    return res.status(400).json({ message: "Invalid orderId format." });
+  }
+
+  if (rating === undefined || rating === null) {
+    return res.status(400).json({ message: "Rating is required." });
+  }
+
+  if (typeof rating !== "number" || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: "Rating must be a number between 1 and 5." });
+  }
+
+  if (comment && typeof comment !== "string") {
+    return res.status(400).json({ message: "Comment must be a string." });
+  }
+
+  try {
+    const order = await Orders.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+
+    // Update the buyer review
+    order.buyer_review = {
+      rating,
+      comment: comment || "", // Default to empty string if no comment
+    };
+
+    await order.save();
+
+    return res.status(200).json({
+      message: "Buyer review added successfully.",
+      success: true,
+      order,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Error adding buyer review.", error: error.message });
+  }
+};
+
 // Helper: Calculates future time offset
 const getFutureTime = (timestamp, offsetMinutes) => {
   return moment(timestamp).add(offsetMinutes, 'minutes').toDate();

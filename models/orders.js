@@ -39,6 +39,10 @@ const orderSchema = new mongoose.Schema({
   penalty_apply: { type: Boolean, default: true }, // New field - default to false
   penalty_amount: { type: Number, default: 0 }, // New field - default to 0
   status_change_timestamp: { type: Date, default: Date.now }, // New field - default to current timestamp
+  buyer_review: {
+    comment: { type: String },
+    rating: { type: Number, min: 1, max: 5, default: 0 }
+  }
 });
 
 module.exports = mongoose.model('Orders', orderSchema);

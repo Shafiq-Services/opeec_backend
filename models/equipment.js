@@ -38,7 +38,6 @@ const equipmentSchema = new mongoose.Schema({
     long: { type: Number, required: true },
     range: { type: Number, required: true },
   },
-  average_rating: { type: Number, default: 0 },
 });
 
 // Adding 2dsphere index for geospatial queries

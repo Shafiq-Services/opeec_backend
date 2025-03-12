@@ -16,4 +16,5 @@ router.post('/add', orderController.addOrder);
 router.put('/collect', orderController.collectOrder);
 router.put('/return', orderController.returnOrder);
 router.put('/change-penalty', orderController.togglePenalty);
+router.post('/add-review', orderController.addBuyerReview);
 module.exports = router;

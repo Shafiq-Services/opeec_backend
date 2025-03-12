@@ -5,6 +5,7 @@ const SubCategory = require('../models/sub_categories'); // Import the SubCatego
 const categories = require('../models/categories'); // Import the categories model
 const Conversation = require('../models/conversation');
 const jwt = require('jsonwebtoken');  // Import jsonwebtoken
+const { getAverageRating, getEquipmentRatingsList, getUserAverageRating } = require("../utils/common_methods");
 
 const addEquipment = async (req, res) => {
     const {
@@ -269,7 +270,7 @@ async function getAllEquipments(req, res) {
 
         return {
           _id: equipment._id,
-          average_rating: 0,
+          average_rating: await getAverageRating(equipment._id),
           created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
           delivery_by_owner: equipment.delivery_by_owner,
           description: equipment.description,
@@ -367,7 +368,7 @@ async function getMyEquipments(req, res) {
 
         return {
           _id: equipment._id,
-          average_rating: 0,
+          average_rating: await getAverageRating(equipment._id),
           created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
           delivery_by_owner: equipment.delivery_by_owner,
           description: equipment.description,
@@ -467,7 +468,6 @@ function queryMatches(equipment, query) {
       // Formatting the equipment details
       const equipmentDetails = {
         _id: equipment._id,
-        average_rating: 0, // Assuming default value
         created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
         delivery_by_owner: equipment.delivery_by_owner || false,
         description: equipment.description || '',
@@ -493,7 +493,8 @@ function queryMatches(equipment, query) {
           profile_image: owner?.profile_image || ''
         },
         postal_code: equipment.postal_code || '',
-        ratings: equipment.ratings || [],
+        average_rating: await getAverageRating(equipment._id), // Assuming default value
+        ratings: await getEquipmentRatingsList(equipment._id),
         rental_price: equipment.rental_price || 0,
         serial_number: equipment.serial_number || '',
         status: equipment.status || true,
@@ -712,6 +713,9 @@ async function getUserShop(req, res) {
       });
     }
 
+    const owner_average_rating = await getUserAverageRating(ownerId);
+    const equipment_average_rating = await getAverageRating(ownerId);
+
     // Fetch equipment related to the user (owner_id)
     const equipments = await Equipment.find({ owner_id: ownerId, equipment_status: "Active" })
       .select('_id name make rental_price images location average_rating sub_category_fk custom_location')
@@ -747,7 +751,7 @@ async function getUserShop(req, res) {
         make: equipment.make,
         rental_price: equipment.rental_price,
         images: equipment.images,
-        average_rating: 0,
+        average_rating: equipment_average_rating,
         location: {
           address: equipment.custom_location?.address || "",
           lat: equipment.custom_location?.lat || 0.0,
@@ -764,6 +768,7 @@ async function getUserShop(req, res) {
         name: user.name,
         email: user.email,
         profile_image: user.profile_image,
+        average_rating: owner_average_rating,
         },
         conversationId
       };
@@ -777,6 +782,8 @@ async function getUserShop(req, res) {
       owner: {
         id: user._id,
         name: user.name,
+        email: user.email,
+        average_rating: owner_average_rating,
         profile_image: user.profile_image || '',
       },
     };
@@ -822,7 +829,7 @@ async function getFavoriteEquipments(req, res) {
       _id: { $in: user.favorite_equipments }, 
       equipment_status: "Active" 
     })
-    .select('_id name make rental_price images location average_rating sub_category_fk owner_id')
+    .select('_id name make rental_price images location sub_category_fk owner_id')
     .populate({
       path: 'owner_id',
       model: 'users', // Ensure correct model name
@@ -841,6 +848,9 @@ async function getFavoriteEquipments(req, res) {
     // Fetch subcategories for the equipment
     const subCategoryIds = favoriteEquipments.map(equipment => equipment.sub_category_fk);
     const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('category_id');
+
+    //Get Equipment Average Rating
+    const average_rating = await getAverageRating(favoriteEquipments);
 
     // Map subcategories to equipment data
     const subCategoryMap = subCategories.reduce((acc, subCat) => {
@@ -861,7 +871,7 @@ async function getFavoriteEquipments(req, res) {
         make: equipment.make,
         rental_price: equipment.rental_price,
         images: equipment.images,
-        average_rating: 0,
+        average_rating: average_rating,
         owner: equipment.owner_id ? {
           _id: equipment.owner_id._id,
           name: equipment.owner_id.name,
