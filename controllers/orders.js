@@ -286,9 +286,9 @@ exports.cancelOrder = async (req, res) => {
       return res.status(400).json({ message: "Only 'Booked' orders can be canceled." });
     }
 
-    if (String(order.equipment_id.owner_id) !== sellerId) {
-      return res.status(403).json({ message: "Only the owner can cancel the order." });
-    }
+    // if (String(order.equipment_id.owner_id) !== sellerId) {
+    //   return res.status(403).json({ message: "Only the owner can cancel the order." });
+    // }
 
     order.cancellation = {
       is_cancelled: true,
