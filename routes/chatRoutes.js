@@ -5,7 +5,9 @@ const { userMiddleware } = require("../middleWares/user");
 const {
   getMessages,
   getConversations,
-  sendMessage
+  sendMessage,
+  sendSupportMessage,
+  getSupportMessages
 } = require("../controllers/chatController");
 
 router.use(userMiddleware);
@@ -13,4 +15,6 @@ router.use(userMiddleware);
 router.get("/conversations", getConversations);
 router.get("/messages", getMessages);
 router.post("/send", sendMessage);
+router.post("/support/send", sendSupportMessage);
+router.get("/support/messages", getSupportMessages);
 module.exports = router;

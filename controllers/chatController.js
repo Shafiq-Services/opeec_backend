@@ -2,6 +2,7 @@ const { text } = require("express");
 const Conversation = require("../models/conversation");
 const Message = require("../models/message");
 const User = require("../models/User");
+const Admin = require("../models/admin");
 const Equipment = require("../models/equipment");
 const Categories = require("../models/categories");
 const SubCategory = require("../models/sub_categories");
@@ -230,6 +231,7 @@ exports.sendMessage = async (req, res) => {
     conversation.lastMessage = message._id;
     await conversation.save();
 
+    //Send Socket to the receiver
     sendEventToUser(receiverId, "eventSaved", {
       key: conversation._id,
       eventData: equipmentData,
@@ -242,5 +244,77 @@ exports.sendMessage = async (req, res) => {
   } catch (error) {
     console.error("Error in sendMessage:", error);
     res.status(500).json({ error: "Unable to send message", details: error.message });
+  }
+};
+
+
+exports.sendSupportMessage = async (req, res) => {
+  try {
+    const { userId } = req; // Authenticated user
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: "Message text is required" });
+
+    // Find an admin (Assuming a single admin for now)
+    const admin = await Admin.findOne();
+    if (!admin) return res.status(500).json({ error: "Admin not available" });
+
+    const adminId = admin._id;
+
+    let conversation = await Conversation.findOne({
+      participants: { $all: [userId, adminId] },
+    });
+
+    if (!conversation) {
+      conversation = new Conversation({
+        participants: [userId, adminId],
+      });
+      await conversation.save();
+    }
+
+    const message = await new Message({
+      conversation: conversation._id,
+      sender: userId,
+      receiver: adminId,
+      content: text,
+    }).save();
+
+    conversation.lastMessage = message._id;
+    await conversation.save();
+
+    // Notify admin via socket
+    sendEventToUser(adminId, "newSupportMessage", { conversationId: conversation._id, message: text });
+
+    res.status(201).json({ message: "Support message sent successfully" });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to send support message", details: error.message });
+  }
+};
+
+// Get chat messages with admin
+exports.getSupportMessages = async (req, res) => {
+  try {
+    const { userId } = req;
+    const admin = await Admin.findOne();
+    if (!admin) return res.status(500).json({ error: "Admin not available" });
+
+    const conversation = await Conversation.findOne({
+      participants: { $all: [userId, admin._id] },
+    });
+
+    if (!conversation) {
+      return res.status(200).json({ message: "No support messages found", messages: [] });
+    }
+
+    const messages = await Message.find({ conversation: conversation._id })
+      .sort({ createdAt: -1 })
+      .select("-conversation -read -__v"); // Exclude fields
+
+    if (messages.length === 0) {
+      return res.status(200).json({ message: "No support messages found", messages: [] });
+    }
+
+    res.status(200).json({ message: "Support messages retrieved successfully", messages });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to retrieve messages", details: error.message });
   }
 };
