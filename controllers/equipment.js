@@ -8,7 +8,82 @@ const jwt = require('jsonwebtoken');  // Import jsonwebtoken
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating } = require("../utils/common_methods");
 
 const addEquipment = async (req, res) => {
-    const {
+  const {
+    sub_category_fk,
+    name,
+    make,
+    model,
+    serial_number,
+    description,
+    images,
+    address,
+    lat,
+    long,
+    range,
+    delivery_by_owner, // Required field
+    rental_price,
+    equipment_price,
+    notice_period,
+    minimum_trip_duration,
+    maximum_trip_duration,
+  } = req.body;
+
+  try {
+    // Ensure delivery_by_owner is provided and is a valid boolean
+    if (delivery_by_owner === undefined || delivery_by_owner === null) {
+      return res.status(400).json({ message: 'delivery_by_owner is required.' });
+    }
+    const isDeliveryByOwner = delivery_by_owner === true || delivery_by_owner === "true";
+
+    // Validate required fields
+    const requiredFields = [
+      { name: 'sub_category_fk', value: sub_category_fk },
+      { name: 'name', value: name },
+      { name: 'make', value: make },
+      { name: 'model', value: model },
+      { name: 'serial_number', value: serial_number },
+      { name: 'description', value: description },
+      { name: 'address', value: address },
+      { name: 'lat', value: lat },
+      { name: 'long', value: long },
+      { name: 'rental_price', value: rental_price },
+      { name: 'equipment_price', value: equipment_price },
+      { name: 'notice_period', value: notice_period },
+      { name: 'minimum_trip_duration', value: minimum_trip_duration },
+      { name: 'maximum_trip_duration', value: maximum_trip_duration }
+    ];
+
+    // Include range validation only if delivery_by_owner is true
+    if (isDeliveryByOwner) {
+      requiredFields.push({ name: 'range', value: range });
+    }
+
+    for (const field of requiredFields) {
+      if (field.value === undefined || field.value === null || field.value === "") {
+        return res.status(400).json({ message: `${field.name} is required.` });
+      }
+    }
+
+    // Validate range only if delivery_by_owner is true
+    if (isDeliveryByOwner && (isNaN(range) || range < 0)) {
+      return res.status(400).json({ message: 'Range must be a non-negative number.' });
+    }
+
+    // Validate image constraints safely
+    if (!Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ message: 'At least one image is required.' });
+    }
+    if (images.length > 3) {
+      return res.status(400).json({ message: 'A maximum of 3 images are allowed.' });
+    }
+
+    // Validate sub-category existence
+    const subCategory = await SubCategory.findById(sub_category_fk);
+    if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
+
+    // Create and save equipment
+    const newEquipment = new Equipment({
+      owner_id: req.userId,
       sub_category_fk,
       name,
       make,
@@ -16,80 +91,30 @@ const addEquipment = async (req, res) => {
       serial_number,
       description,
       images,
-      address,
-      lat,
-      long,
-      range,
-      delivery_by_owner,
+      custom_location: {
+        address,
+        lat,
+        long,
+        ...(isDeliveryByOwner ? { range } : {}) // Include range only if required
+      },
+      delivery_by_owner: isDeliveryByOwner,
       rental_price,
       equipment_price,
       notice_period,
       minimum_trip_duration,
       maximum_trip_duration,
-    } = req.body;
-  
-    try {
-      // Validate required fields
-      const requiredFields = [
-        { name: 'sub_category_fk', value: sub_category_fk },
-        { name: 'name', value: name },
-        { name: 'make', value: make },
-        { name: 'model', value: model },
-        { name: 'serial_number', value: serial_number },
-        { name: 'description', value: description },
-        { name: 'address', value: address },
-        { name: 'lat', value: lat },
-        { name: 'long', value: long },
-        { name: 'range', value: range },
-        { name: 'rental_price', value: rental_price },
-        { name: 'equipment_price', value: equipment_price },
-        { name: 'notice_period', value: notice_period },
-        { name: 'minimum_trip_duration', value: minimum_trip_duration },
-        { name: 'maximum_trip_duration', value: maximum_trip_duration }
-      ];
-  
-      for (const field of requiredFields) {
-        if (!field.value) {
-          return res.status(400).json({ message: `${field.name} is required.` });
-        }
-      }
-  
-      // Validate image constraints
-      if (!images || images.length === 0) return res.status(400).json({ message: 'At least one image is required.' });
-      if (images.length > 3) return res.status(400).json({ message: 'A maximum of 3 images are allowed.' });
-  
-      // Validate sub-category existence
-      const subCategory = await SubCategory.findById(sub_category_fk);
-      if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
-  
-      // Create and save equipment
-      const newEquipment = new Equipment({
-        owner_id: req.userId,
-        sub_category_fk,
-        name,
-        make,
-        model,
-        serial_number,
-        description,
-        images,
-        custom_location: { address, lat, long, range },
-        delivery_by_owner,
-        rental_price,
-        equipment_price,
-        notice_period,
-        minimum_trip_duration,
-        maximum_trip_duration,
-        equipment_status: "Pending",
-      });
-  
-      const savedEquipment = await newEquipment.save();
-      res.status(201).json({ message: 'Equipment added successfully.', data: savedEquipment });
-  
-    } catch (error) {
-      console.error('Error adding equipment:', error);
-      res.status(500).json({ message: 'Error adding equipment.', error: error.message });
-    }
-};  
+      equipment_status: "Pending",
+    });
+
+    const savedEquipment = await newEquipment.save();
+    res.status(201).json({ message: 'Equipment added successfully.', data: savedEquipment });
+
+  } catch (error) {
+    console.error('Error adding equipment:', error);
+    res.status(500).json({ message: 'Error adding equipment.', error: error.message });
+  }
+};
+
 
   const updateEquipment = async (req, res) => {
     const {
