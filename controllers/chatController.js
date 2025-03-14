@@ -232,10 +232,10 @@ exports.sendMessage = async (req, res) => {
     await conversation.save();
 
     //Send Socket to the receiver
-    sendEventToUser(receiverId, "eventSaved", {
-      key: conversation._id,
-      eventData: equipmentData,
-    });
+    // sendEventToUser(receiverId, "eventSaved", {
+    //   key: conversation._id,
+    //   eventData: equipmentData,
+    // });
 
     res.status(201).json({
       message: "Message sent successfully",
@@ -282,7 +282,7 @@ exports.sendSupportMessage = async (req, res) => {
     await conversation.save();
 
     // Notify admin via socket
-    sendEventToUser(adminId, "newSupportMessage", { conversationId: conversation._id, message: text });
+    // sendEventToUser(adminId, "newSupportMessage", { conversationId: conversation._id, message: text });
 
     res.status(201).json({ message: "Support message sent successfully" });
   } catch (error) {
