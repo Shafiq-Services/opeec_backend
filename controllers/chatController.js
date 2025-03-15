@@ -14,16 +14,22 @@ exports.getConversations = async (req, res) => {
     const userId = req.userId; // Extracted from auth token
     console.log(`[INFO] Request received for userId: ${userId}`);
 
-    // Fetch all messages involving the user and populate the conversation field
+    // Fetch all messages involving the user and populate the conversation & equipment field
     const messages = await Message.find({
       $or: [{ sender: userId }, { receiver: userId }]
     })
       .populate({
         path: "conversation",
-        select: "participants", // Only get participants field
+        select: "participants equipment", // Fetch participants and equipment
+        populate: { 
+          path: "equipment", 
+          model: "Equipments", // Ensure correct model reference
+          select: "name images" // Fetch required fields
+        } 
       })
       .sort({ createdAt: -1 }) // Sort by recent messages
       .lean();
+
 
     console.log(`[DEBUG] Total messages fetched: ${messages.length}`);
 
@@ -50,14 +56,23 @@ exports.getConversations = async (req, res) => {
           return;
         }
 
+        // Extract equipment details (if available)
+        const equipment = msg.conversation.equipment;
+        const equipmentDetails = equipment
+          ? { id: equipment._id.toString(), name: equipment.name, image: equipment.image }
+          : null;
+
         conversationsMap[convId] = {
           conversationId: convId,
+          equipmentId: equipmentDetails.id, // Store equipment info
           lastMessage: msg.content,
           lastMessageTime: msg.createdAt,
           opponentId: opponentId.toString(),
         };
 
-        console.log(`[INFO] New conversation added: ${convId} with opponent ${opponentId}`);
+        console.log(
+          `[INFO] New conversation added: ${convId} with opponent ${opponentId} and equipment ${equipment ? equipment._id : "None"}`
+        );
       }
     });
 
@@ -106,6 +121,7 @@ exports.getConversations = async (req, res) => {
     res.status(500).json({ status: "error", message: error.message });
   }
 };
+
 
 
 
