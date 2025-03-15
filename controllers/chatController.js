@@ -12,77 +12,101 @@ const {sendEventToUser} = require("../utils/socketService");
 exports.getConversations = async (req, res) => {
   try {
     const userId = req.userId; // Extracted from auth token
+    console.log(`[INFO] Request received for userId: ${userId}`);
 
-    // Fetch all messages involving the user
+    // Fetch all messages involving the user and populate the conversation field
     const messages = await Message.find({
       $or: [{ sender: userId }, { receiver: userId }]
     })
+      .populate({
+        path: "conversation",
+        select: "participants", // Only get participants field
+      })
       .sort({ createdAt: -1 }) // Sort by recent messages
       .lean();
+
+    console.log(`[DEBUG] Total messages fetched: ${messages.length}`);
 
     const conversationsMap = {};
 
     // Group messages by conversation and collect details
-    messages.forEach((msg) => {
-      const convId = msg.conversation.toString();
+    messages.forEach((msg, index) => {
+      if (!msg.conversation) {
+        console.warn(`[WARN] Skipping message at index ${index} - Conversation missing`);
+        return;
+      }
+
+      const convId = msg.conversation._id.toString();
+      console.log(`[DEBUG] Processing message ${index}: Conversation ID: ${convId}`);
+
       if (!conversationsMap[convId]) {
+        // Find the opponent by filtering out the current user
+        const opponentId = msg.conversation.participants.find(
+          (id) => id.toString() !== userId
+        );
+
+        if (!opponentId) {
+          console.warn(`[WARN] No opponent found for conversation ${convId}`);
+          return;
+        }
+
         conversationsMap[convId] = {
           conversationId: convId,
           lastMessage: msg.content,
           lastMessageTime: msg.createdAt,
-          // lastMessageRead: msg.receiver.toString() === userId ? msg.read : true,
-          opponentId:
-            msg.sender.toString() === userId ? msg.receiver : msg.sender,
-          // unreadCount: 0,
+          opponentId: opponentId.toString(),
         };
+
+        console.log(`[INFO] New conversation added: ${convId} with opponent ${opponentId}`);
       }
-      // if (
-      //   msg.receiver.toString() === userId &&
-      //   !msg.read
-      // ) {
-      //   conversationsMap[convId].unreadCount++;
-      // }
     });
 
     const conversations = Object.values(conversationsMap);
+    console.log(`[INFO] Total unique conversations found: ${conversations.length}`);
 
     // Fetch opponent details
     const opponentIds = conversations.map((c) => c.opponentId);
+    console.log(`[DEBUG] Fetching details for opponent IDs:`, opponentIds);
+
     const opponents = await User.find({ _id: { $in: opponentIds } })
       .select("name profile_image")
       .lean();
 
+    console.log(`[DEBUG] Total opponents fetched: ${opponents.length}`);
+
     // Map opponent details to conversations
     const opponentsMap = {};
     opponents.forEach((opponent) => {
-      opponentsMap[opponent._id] = opponent;
+      opponentsMap[opponent._id.toString()] = opponent;
+      console.log(`[INFO] Opponent mapped: ${opponent._id} -> ${opponent.name}`);
     });
 
     const formattedConversations = conversations.map((conv) => ({
       ...conv,
       opponent: {
-        id: conv.opponentId, // Include opponent ID inside the opponent object
+        id: conv.opponentId,
         name: opponentsMap[conv.opponentId]?.name || "",
         picture: opponentsMap[conv.opponentId]?.profile_image || "",
       },
     }));
 
     // Remove opponentId from each conversation object
-    const finalConversations = formattedConversations.map((conv) => {
-      const { opponentId, ...rest } = conv;
-      return rest;
-    });
+    const finalConversations = formattedConversations.map(({ opponentId, ...rest }) => rest);
 
     // Sort conversations by lastMessageTime
     finalConversations.sort(
       (a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime)
     );
 
+    console.log(`[INFO] Conversations successfully processed and sorted.`);
+
     res.status(200).json({ status: "success", data: finalConversations });
   } catch (error) {
+    console.error(`[ERROR] getConversations failed:`, error.message);
     res.status(500).json({ status: "error", message: error.message });
   }
 };
+
 
 
 
