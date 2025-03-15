@@ -210,6 +210,8 @@ const addEquipment = async (req, res) => {
 };
 
 async function getAllEquipments(req, res) {
+  const userId = req.headers.authorization ? jwt.verify(req.headers.authorization.split(" ")[1], process.env.JWT_SECRET).userId : null;
+
   try {
     const { lat, long, distance, name, category_id, delivery_by_owner } = req.query;
 
@@ -267,7 +269,11 @@ async function getAllEquipments(req, res) {
     });
 
     // ✅ Fetch filtered equipment
-    const equipments = await Equipment.aggregate(geoPipeline);
+    const equipments = await Equipment.aggregate([
+      { $match: { equipment_status: "Active" } },  // Filter only active equipment
+      ...geoPipeline  // Spread the existing pipeline
+    ]);
+    
 
     // ✅ Fetch subcategories and categories
     const subCategoryIds = equipments.map(equipment => equipment.sub_category_fk);
@@ -291,7 +297,8 @@ async function getAllEquipments(req, res) {
         // Fetch category asynchronously
         const subCategory = await SubCategory.findById(equipment.sub_category_fk);
         const category = await categories.findById(subCategory.category_id);
-        const owner = await User.findById(equipment.owner_id);
+        const isFavorite = userId ? (await User.findById(userId))?.favorite_equipments.includes(equipment._id) || false : false;
+
 
         return {
           _id: equipment._id,
@@ -301,7 +308,7 @@ async function getAllEquipments(req, res) {
           description: equipment.description,
           equipment_price: equipment.equipment_price,
           images: equipment.images,
-          isFavorite: owner.favorite_equipments.includes(equipment._id), // All these are favorites
+          isFavorite: isFavorite, // All these are favorites
           location: {
             address: equipment.custom_location?.address || "",
             lat: equipment.custom_location?.lat || 0.0,
