@@ -1023,41 +1023,41 @@ async function updateEquipmentStatus(req, res) {
   }
 }
 
-async function updateEquipmentStatus(req, res) {
-  try {
-    const { equipmentId, status } = req.query;
+// async function updateEquipmentStatus(req, res) {
+//   try {
+//     const { equipmentId, status } = req.query;
 
-    // Validate equipment ID
-    if (!mongoose.Types.ObjectId.isValid(equipmentId)) {
-      return res.status(400).json({ message: 'Invalid equipment ID', status: false });
-    }
+//     // Validate equipment ID
+//     if (!mongoose.Types.ObjectId.isValid(equipmentId)) {
+//       return res.status(400).json({ message: 'Invalid equipment ID', status: false });
+//     }
 
-    // Validate status
-    const validStatuses = ['Pending', 'Rejected', 'InActive', 'Active', 'Blocked'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ message: 'Invalid status', status: false });
-    }
+//     // Validate status
+//     const validStatuses = ['Pending', 'Rejected', 'InActive', 'Active', 'Blocked'];
+//     if (!validStatuses.includes(status)) {
+//       return res.status(400).json({ message: 'Invalid status', status: false });
+//     }
 
-    // Find and update the equipment status
-    const updatedEquipment = await Equipment.findByIdAndUpdate(
-      equipmentId,
-      { equipment_status: status },
-      { new: true }
-    );
+//     // Find and update the equipment status
+//     const updatedEquipment = await Equipment.findByIdAndUpdate(
+//       equipmentId,
+//       { equipment_status: status },
+//       { new: true }
+//     );
 
-    if (!updatedEquipment) {
-      return res.status(404).json({ message: 'Equipment not found', status: false });
-    }
+//     if (!updatedEquipment) {
+//       return res.status(404).json({ message: 'Equipment not found', status: false });
+//     }
 
-    return res.status(200).json({
-      message: 'Equipment status updated successfully',
-      status: true,
-      equipment: updatedEquipment,
-    });
-  } catch (err) {
-    console.error('Error updating equipment status:', err);
-    return res.status(500).json({ message: 'Server error', status: false });
-  }
-}
+//     return res.status(200).json({
+//       message: 'Equipment status updated successfully',
+//       status: true,
+//       equipment: updatedEquipment,
+//     });
+//   } catch (err) {
+//     console.error('Error updating equipment status:', err);
+//     return res.status(500).json({ message: 'Server error', status: false });
+//   }
+// }
 
 module.exports = { addEquipment, updateEquipment, getAllEquipments, getEquipmentDetails, deleteEquipment, getRandomEquipmentImages, getUserShop, getFavoriteEquipments,  toggleFavorite, updateEquipmentStatus, getMyEquipments, updateEquipmentStatus};
