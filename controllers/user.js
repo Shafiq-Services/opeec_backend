@@ -5,6 +5,7 @@ const { sendOtp } = require('../utils/send_otp');
 const config = require('../config/config');
 const { io, sendEventToUser } = require('../utils/socketService'); // assuming `io` is imported from the socket.js file
 const Equipment = require('../models/equipment'); // Import the Equipment model
+const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews } = require("../utils/common_methods");
 
 // User Signup
 exports.signup = async (req, res) => {
@@ -231,19 +232,22 @@ exports.getprofile = async (req, res) => {
     const userId = req.userId;    
 
     // Find user by ID and update profile
-    const user = await User.findById(userId,);
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    const average_rating = await getUserAverageRating(userId);
+    const reviews = await getSellerReviews(userId);
     res.status(200).json({ message: 'User profile fetched successfully', "user": {
         _id: user._id,
         name: user.name,
         email: user.email,
         profile_image: user.profile_image,
         isOtpVerified: user.isOtpVerified,
-        average_rating: 0
+        average_rating: average_rating,
+        reviews: reviews,
     } });
   } catch (error) {
     res.status(500).json({ message: 'Error in getting user profile', error });

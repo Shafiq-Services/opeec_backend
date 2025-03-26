@@ -5,7 +5,7 @@ const SubCategory = require('../models/sub_categories'); // Import the SubCatego
 const categories = require('../models/categories'); // Import the categories model
 const Conversation = require('../models/conversation');
 const jwt = require('jsonwebtoken');  // Import jsonwebtoken
-const { getAverageRating, getEquipmentRatingsList, getUserAverageRating } = require("../utils/common_methods");
+const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews} = require("../utils/common_methods");
 
 const addEquipment = async (req, res) => {
   const {
@@ -747,7 +747,8 @@ async function getUserShop(req, res) {
 
     const owner_average_rating = await getUserAverageRating(ownerId);
     const equipment_average_rating = await getAverageRating(ownerId);
-
+    const reviews = await getSellerReviews(ownerId);
+    
     // Fetch equipment related to the user (owner_id)
     const equipments = await Equipment.find({ owner_id: ownerId, equipment_status: "Active" })
       .select('_id name make rental_price images location average_rating sub_category_fk custom_location')
@@ -801,6 +802,7 @@ async function getUserShop(req, res) {
         email: user.email,
         profile_image: user.profile_image,
         average_rating: owner_average_rating,
+        reviews: reviews,
         },
         conversationId
       };

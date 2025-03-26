@@ -109,4 +109,54 @@ const getEquipmentRatingsList = async (equipmentId) => {
     }
   };
 
-module.exports = { getAverageRating, getEquipmentRatingsList, getUserAverageRating };
+  const getSellerReviews = async (sellerId) => {
+    if (!mongoose.Types.ObjectId.isValid(sellerId)) {
+      return [];
+    }
+  
+    try {
+      // Step 1: Get all equipment owned by the seller
+      const ownedEquipments = await Equipments.find({ owner_id: sellerId }, "_id");
+      const equipmentIds = ownedEquipments.map(eq => eq._id);
+  
+      if (equipmentIds.length === 0) {
+        return [];
+      }
+  
+      // Step 2: Find orders where those equipment were rented
+      const orders = await Orders.find(
+        {
+          equipment_id: { $in: equipmentIds },
+          "buyer_review.rating": { $gte: 1 },
+        },
+        "buyer_review user_id"
+      );
+  
+      if (orders.length === 0) {
+        return [];
+      }
+  
+      // Step 3: Fetch user details for reviewers
+      const userIds = [...new Set(orders.map(order => order.user_id.toString()))];
+      const users = await Users.find({ _id: { $in: userIds } }, "name");
+  
+      const userMap = users.reduce((acc, user) => {
+        acc[user._id.toString()] = user.name;
+        return acc;
+      }, {});
+  
+      // Step 4: Format reviews
+      const reviews = orders.map(order => ({
+        name: userMap[order.user_id.toString()] || "Anonymous",
+        comment: order.buyer_review.comment || "",
+        rating: order.buyer_review.rating,
+      }));
+  
+      return reviews;
+    } catch (error) {
+      console.error("Error fetching seller reviews:", error);
+      return [];
+    }
+  };
+
+module.exports = { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews };
