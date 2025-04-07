@@ -19,6 +19,7 @@ router.put('/block_user', userController.blockUser);
 // Block User with Reason
 router.put('/unblock_user', userController.unBlockUser);
 
+// router.get('/user_rating', userController.userRating);
 
 // ---------------------- Customer Routes ----------------------
 
@@ -55,7 +56,5 @@ router.get('/get_fcm', userController.getFCMToken);
 // ---------------------- Admin Routes ----------------------
 
 router.use(adminMiddleware);
-
-
 
 module.exports = router;
