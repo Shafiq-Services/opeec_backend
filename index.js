@@ -11,6 +11,7 @@ const uploadRoutes = require('./routes/upload');
 const chatRoutes = require('./routes/chatRoutes');
 const notificationRoutes = require('./routes/notification');
 const stripeRoutes = require('./routes/stripeRoutes');
+const percentageSettings = require('./routes/percentageSettings');
 const { initializeSocket } = require("./utils/socketService");
 
 const app = express();
@@ -35,6 +36,7 @@ app.use("/chat", chatRoutes);
 app.use('/upload', uploadRoutes);
 app.use("/notification", notificationRoutes);
 app.use("/stripe", stripeRoutes);
+app.use('/perrcentageSettings', percentageSettings);
 
 // Base route
 app.get('/', (req, res) => res.send('Hello from Node API server'));
