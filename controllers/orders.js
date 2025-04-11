@@ -14,7 +14,7 @@ console.log(`⏳ Status changes after ${timeOffsetHours * 60} minutes`);
 // Add Order
 exports.addOrder = async (req, res) => {
   try {
-    const user_id = req.userId; // Extracted from auth middleware
+    const user_id = req.userId;
     const {
       equipment_id,
       start_date,
@@ -27,15 +27,12 @@ exports.addOrder = async (req, res) => {
       security_fee,
     } = req.body;
 
-    // Validation: Check required fields
+    // Validation: Only required fields
     const requiredFields = [
       { name: 'equipment_id', value: equipment_id },
       { name: 'start_date', value: start_date },
       { name: 'end_date', value: end_date },
       { name: 'delivery_address', value: delivery_address },
-      { name: 'address', value: address },
-      { name: 'lat', value: lat },
-      { name: 'long', value: long },
       { name: 'total_rent', value: total_rent },
       { name: 'security_fee', value: security_fee },
     ];
@@ -52,6 +49,12 @@ exports.addOrder = async (req, res) => {
       return res.status(404).json({ message: 'Equipment not found', status: false });
     }
 
+    // Build location object only if values exist
+    const location = {};
+    if (address) location.address = address;
+    if (lat) location.lat = lat;
+    if (long) location.long = long;
+
     // Create new order
     const newOrder = new Orders({
       user_id,
@@ -60,11 +63,7 @@ exports.addOrder = async (req, res) => {
         start_date: new Date(start_date),
         end_date: new Date(end_date),
       },
-      location: {
-        address,
-        lat,
-        long,
-      },
+      location,
       total_amount: total_rent,
       security_fee: security_fee,
       cancellation: { is_cancelled: false },
@@ -74,7 +73,6 @@ exports.addOrder = async (req, res) => {
       penalty_amount: 0,
     });
 
-    // Save order to database
     await newOrder.save();
 
     return res.status(201).json({
@@ -100,6 +98,7 @@ exports.addOrder = async (req, res) => {
     return res.status(500).json({ message: 'Server error', status: false });
   }
 };
+
 
 exports.getCurrentRentals = async (req, res) => {
   const { status, isSeller } = req.query;
@@ -340,6 +339,9 @@ exports.deliverOrder = async (req, res) => {
     order.rental_status = "Delivered";
     order.owner_images = images;
     order.updated_at = new Date();
+    const equipment = await Equipments.findById(order.equipment_id);
+    equipment.equipment_status = "InActive";
+    await equipment.save();
     await order.save();
 
     return res.status(200).json({
@@ -459,6 +461,9 @@ exports.finishOrder = async (req, res) => {
 
     order.rental_status = "Finished";
     order.updated_at = new Date();
+    const equipment = await Equipments.findById(order.equipment_id);
+    equipment.equipment_status = "Active";
+    await equipment.save();
     await order.save();
 
     return res.status(200).json({
