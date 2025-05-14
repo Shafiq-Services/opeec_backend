@@ -13,12 +13,13 @@ module.exports.getPercentageSettings = async (req, res) => {
           message: 'Percentage settings not found'
         });
       }
-      const { adminFeePercentage, insurancePercentage, taxPercentage } = settings;
+      const { adminFeePercentage, insurancePercentage, taxPercentage, depositePercentage } = settings;
       return res.status(200).json({
         success: true,
         message: 'Percentage settings retrieved successfully',
         adminFeePercentage,
         insurancePercentage,
+        depositePercentage,
         taxPercentage
       });
     } catch (error) {
@@ -35,11 +36,11 @@ module.exports.getPercentageSettings = async (req, res) => {
    */
   module.exports.updatePercentageSettings = async (req, res) => {
     try {
-      const { adminFeePercentage, insurancePercentage, taxPercentage } = req.body;
+      const { adminFeePercentage, insurancePercentage, taxPercentage, depositePercentage } = req.body;
   
       const settings = await PercentageSetting.findOneAndUpdate(
         {},
-        { adminFeePercentage, insurancePercentage, taxPercentage },
+        { adminFeePercentage, insurancePercentage, taxPercentage, depositePercentage },
         { new: true, upsert: true, runValidators: true }
       ).lean();
   
@@ -47,6 +48,7 @@ module.exports.getPercentageSettings = async (req, res) => {
         success: true,
         message: 'Percentage settings updated successfully',
         adminFeePercentage: settings.adminFeePercentage,
+        depositePercentage: settings.depositePercentage,
         insurancePercentage: settings.insurancePercentage,
         taxPercentage: settings.taxPercentage
       });
