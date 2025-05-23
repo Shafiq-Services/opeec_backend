@@ -19,41 +19,44 @@ exports.addOrder = async (req, res) => {
       equipment_id,
       start_date,
       end_date,
-      delivery_address,
       address,
       lat,
       long,
-      total_rent,
-      security_fee,
+      rental_fee,
+      platform_fee,
+      tax_amount,
+      total_amount,
+      is_insurance,
+      insurance_amount,
+      deposit_amount
     } = req.body;
 
-    // Validation: Only required fields
+    // Validation: Required fields
     const requiredFields = [
       { name: 'equipment_id', value: equipment_id },
       { name: 'start_date', value: start_date },
       { name: 'end_date', value: end_date },
-      { name: 'delivery_address', value: delivery_address },
-      { name: 'total_rent', value: total_rent },
-      { name: 'security_fee', value: security_fee },
+      { name: 'address', value: address },
+      { name: 'lat', value: lat },
+      { name: 'long', value: long },
+      { name: 'rental_fee', value: rental_fee },
+      { name: 'platform_fee', value: platform_fee },
+      { name: 'tax_amount', value: tax_amount },
+      { name: 'total_amount', value: total_amount },
+      { name: 'is_insurance', value: is_insurance }
     ];
 
     for (const field of requiredFields) {
-      if (!field.value) {
+      if (field.value === undefined || field.value === null) {
         return res.status(400).json({ message: `${field.name} is required.` });
       }
     }
 
-    // Check if equipment exists
+    // Validate equipment existence
     const equipment = await Equipments.findById(equipment_id);
     if (!equipment) {
       return res.status(404).json({ message: 'Equipment not found', status: false });
     }
-
-    // Build location object only if values exist
-    const location = {};
-    if (address) location.address = address;
-    if (lat) location.lat = lat;
-    if (long) location.long = long;
 
     // Create new order
     const newOrder = new Orders({
@@ -63,14 +66,26 @@ exports.addOrder = async (req, res) => {
         start_date: new Date(start_date),
         end_date: new Date(end_date),
       },
-      location,
-      total_amount: total_rent,
-      security_fee: security_fee,
+      location: {
+        address,
+        lat,
+        long
+      },
+      rental_fee,
+      platform_fee,
+      tax_amount,
+      total_amount,
+      security_option: {
+        insurance: is_insurance,
+        insurance_amount: is_insurance ? insurance_amount : 0,
+        deposit_amount: !is_insurance ? deposit_amount : 0
+      },
       cancellation: { is_cancelled: false },
       rental_status: 'Booked',
       return_status: { is_returned: false },
-      penalty_apply: false,
+      penalty_apply: true,
       penalty_amount: 0,
+      status_change_timestamp: new Date()
     });
 
     await newOrder.save();
@@ -78,20 +93,7 @@ exports.addOrder = async (req, res) => {
     return res.status(201).json({
       message: 'Order created successfully',
       status: true,
-      order: {
-        order_id: newOrder._id,
-        user_id: newOrder.user_id,
-        equipment_id: newOrder.equipment_id,
-        rental_schedule: newOrder.rental_schedule,
-        location: newOrder.location,
-        total_amount: newOrder.total_amount,
-        security_fee: newOrder.security_fee,
-        rental_status: newOrder.rental_status,
-        return_status: newOrder.return_status,
-        created_at: newOrder.created_at,
-        penalty_apply: newOrder.penalty_apply,
-        penalty_amount: newOrder.penalty_amount,
-      },
+      order: newOrder
     });
   } catch (err) {
     console.error('Error creating order:', err);
@@ -108,8 +110,11 @@ exports.getCurrentRentals = async (req, res) => {
     const allowedStatuses = ["Booked", "Delivered", "Ongoing", "Returned", "Late", "All"];
 
     if (!status || typeof isSeller === "undefined") {
-      return res.status(400).json({ message: "'status' and 'isSeller' query parameters are required." });
+      return res.status(400).json({
+        message: "'status' and 'isSeller' query parameters are required.",
+      });
     }
+
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ message: "Invalid status value provided." });
     }
@@ -156,22 +161,24 @@ exports.getCurrentRentals = async (req, res) => {
     const formattedOrders = orders.map(order => {
       let statusChangeTime = "";
 
-      // Convert timestamp if conditions match
       if (order.rental_status === "Delivered" && isSeller === "false") {
-        statusChangeTime = moment(order.status_change_timestamp).format("HH:mm");
+        statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
       } else if (order.rental_status === "Returned" && isSeller === "true") {
-        statusChangeTime = moment(order.status_change_timestamp).format("HH:mm");
+        statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
       }
 
       return {
         ...order,
         equipment: {
           ...order.equipment,
-          average_rating: 0, // Add default average rating
+          average_rating: order.equipment.average_rating || 0,
         },
         penalty_apply: order.penalty_apply ?? false,
         penalty_amount: order.penalty_amount ?? 0,
-        status_change_timestamp: statusChangeTime, // Converted or empty string
+        status_change_timestamp: statusChangeTime,
+        rental_days: order.rental_days ?? 0,
+        subtotal: order.subtotal ?? order.rental_fee + (order.insurance_amount || 0),
+        total_amount: order.total_amount ?? order.rental_fee + order.platform_fee + order.tax_amount + (order.insurance_amount || 0),
       };
     });
 
@@ -181,7 +188,10 @@ exports.getCurrentRentals = async (req, res) => {
       orders: formattedOrders,
     });
   } catch (error) {
-    return res.status(500).json({ message: "Error fetching current rentals.", error: error.message });
+    return res.status(500).json({
+      message: "Error fetching current rentals.",
+      error: error.message,
+    });
   }
 };
 
@@ -197,6 +207,7 @@ exports.getHistoryRentals = async (req, res) => {
     if (!status || typeof isSeller === "undefined") {
       return res.status(400).json({ message: "'status' and 'isSeller' query parameters are required." });
     }
+
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ message: "Invalid status value provided." });
     }
@@ -244,10 +255,13 @@ exports.getHistoryRentals = async (req, res) => {
       ...order,
       equipment: {
         ...order.equipment,
-        average_rating: 0, // Add default average rating
+        average_rating: order.equipment.average_rating || 0,
       },
       penalty_apply: order.penalty_apply ?? false,
       penalty_amount: order.penalty_amount ?? 0,
+      rental_days: order.rental_days ?? 0,
+      subtotal: order.subtotal ?? order.rental_fee + (order.insurance_amount || 0),
+      total_amount: order.total_amount ?? order.rental_fee + order.platform_fee + order.tax_amount + (order.insurance_amount || 0),
     }));
 
     return res.status(200).json({
@@ -256,23 +270,27 @@ exports.getHistoryRentals = async (req, res) => {
       orders: formattedOrders,
     });
   } catch (error) {
-    return res.status(500).json({ message: "Error fetching history rentals.", error: error.message });
+    return res.status(500).json({
+      message: "Error fetching history rentals.",
+      error: error.message,
+    });
   }
 };
 
 
-// 1) Cancel Order API
+
+//Cancel Order API
 exports.cancelOrder = async (req, res) => {
   try {
-    const sellerId = req.userId; // Extracted from auth middleware
+    const sellerId = req.userId;
     const { order_id, reason } = req.query;
 
-    if (!order_id) {
-      return res.status(400).json({ message: "Order ID is required." });
+    if (!order_id || !mongoose.Types.ObjectId.isValid(order_id)) {
+      return res.status(400).json({ message: "Valid order ID is required." });
     }
 
-    if(!reason) {
-      return res.status(400).json({ message: "Cancellation Reason is required." });
+    if (!reason || reason.trim() === "") {
+      return res.status(400).json({ message: "Cancellation reason is required." });
     }
 
     const order = await Orders.findById(order_id).populate('equipment_id');
@@ -285,13 +303,14 @@ exports.cancelOrder = async (req, res) => {
       return res.status(400).json({ message: "Only 'Booked' orders can be canceled." });
     }
 
-    // if (String(order.equipment_id.owner_id) !== sellerId) {
-    //   return res.status(403).json({ message: "Only the owner can cancel the order." });
-    // }
+    // ✅ Optional: Enforce that only the equipment owner can cancel
+    if (String(order.equipment_id.owner_id) !== sellerId) {
+      return res.status(403).json({ message: "Only the owner can cancel this order." });
+    }
 
     order.cancellation = {
       is_cancelled: true,
-      reason,
+      reason: reason.trim(),
       cancelled_at: new Date(),
     };
     order.rental_status = "Cancelled";
@@ -300,12 +319,15 @@ exports.cancelOrder = async (req, res) => {
     return res.status(200).json({
       message: "Order canceled successfully.",
       status: true,
+      order_id: order._id,
+      rental_status: order.rental_status,
     });
   } catch (err) {
     console.error("Error canceling order:", err);
     return res.status(500).json({ message: "Server error." });
   }
 };
+
 
 // 2) Deliver Order API
 exports.deliverOrder = async (req, res) => {
@@ -314,43 +336,33 @@ exports.deliverOrder = async (req, res) => {
     const { order_id } = req.query;
     const { images } = req.body;
 
-    if (!order_id) {
-      return res.status(400).json({ message: "Order ID is required." });
+    if (!order_id || !mongoose.Types.ObjectId.isValid(order_id)) {
+      return res.status(400).json({ message: "Valid Order ID is required." });
     }
 
-    if(!images || images.length === 0) {
+    if (!images || images.length === 0) {
       return res.status(400).json({ message: "At least one image is required." });
-    };
-
-    const order = await Orders.findById(order_id).populate('equipment_id');
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found." });
     }
 
-    if (order.rental_status !== "Booked") {
-      return res.status(400).json({ message: "Only 'Booked' orders can be delivered." });
-    }
-
-    if (String(order.equipment_id.owner_id) !== sellerId) {
-      return res.status(403).json({ message: "Only the owner can deliver the order." });
-    }
+    const order = await Orders.findById(order_id).populate("equipment_id");
+    if (!order) return res.status(404).json({ message: "Order not found." });
+    if (order.rental_status !== "Booked") return res.status(400).json({ message: "Only 'Booked' orders can be delivered." });
+    if (String(order.equipment_id.owner_id) !== sellerId) return res.status(403).json({ message: "Only the owner can deliver the order." });
 
     order.rental_status = "Delivered";
     order.owner_images = images;
     order.updated_at = new Date();
+
+    order.status_change_timestamp = new Date(); // For tracking
+
     const equipment = await Equipments.findById(order.equipment_id);
     equipment.equipment_status = "InActive";
     await equipment.save();
     await order.save();
 
-    return res.status(200).json({
-      message: "Order status updated to 'Delivered'.",
-      status: true,
-    });
+    return res.status(200).json({ message: "Order status updated to 'Delivered'.", status: true });
   } catch (err) {
-    console.error("Error delivering order:", err);
-    return res.status(500).json({ message: "Server error." });
+    return res.status(500).json({ message: "Server error.", error: err.message });
   }
 };
 
@@ -359,159 +371,114 @@ exports.collectOrder = async (req, res) => {
     const userId = req.userId;
     const { order_id } = req.query;
 
-    if (!order_id) {
-      return res.status(400).json({ message: "Order ID is required." });
+    if (!order_id || !mongoose.Types.ObjectId.isValid(order_id)) {
+      return res.status(400).json({ message: "Valid Order ID is required." });
     }
 
-    const order = await Orders.findById(order_id).populate('equipment_id');
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found." });
-    }
-
-    if (order.rental_status !== "Delivered") {
-      return res.status(400).json({ message: "Only 'Delivered' orders can be collected." });
-    }
-
-    if (String(order.user_id) !== userId) {
-      return res.status(403).json({ message: "Only the user can collect the order." });
-    }
+    const order = await Orders.findById(order_id);
+    if (!order) return res.status(404).json({ message: "Order not found." });
+    if (order.rental_status !== "Delivered") return res.status(400).json({ message: "Only 'Delivered' orders can be collected." });
+    if (String(order.user_id) !== userId) return res.status(403).json({ message: "Only the user can collect the order." });
 
     order.rental_status = "Ongoing";
     order.updated_at = new Date();
+    order.status_change_timestamp = new Date();
     await order.save();
 
-    return res.status(200).json({
-      message: "Order status updated to 'Ongoing'.",
-      status: true,
-    });
+    return res.status(200).json({ message: "Order status updated to 'Ongoing'.", status: true });
   } catch (err) {
-    console.error("Error delivering order:", err);
-    return res.status(500).json({ message: "Server error." });
+    return res.status(500).json({ message: "Server error.", error: err.message });
   }
 };
 
-// 3) Return Order API
 exports.returnOrder = async (req, res) => {
   try {
     const userId = req.userId;
     const { order_id } = req.query;
     const { images } = req.body;
 
-    if (!order_id) {
-      return res.status(400).json({ message: "Order ID is required." });
+    if (!order_id || !mongoose.Types.ObjectId.isValid(order_id)) {
+      return res.status(400).json({ message: "Valid Order ID is required." });
     }
 
-    if(!images || images.length === 0) {
+    if (!images || images.length === 0) {
       return res.status(400).json({ message: "At least one image is required." });
-    };
-
-    const order = await Orders.findById(order_id).populate('equipment_id');
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found." });
     }
 
-    if (order.rental_status !== "Ongoing") {
-      return res.status(400).json({ message: "Only 'Ongoing' orders can be returned." });
-    }
-
-    if (String(order.user_id) !== userId) {
-      return res.status(403).json({ message: "Only the user can return the order." });
-    }
+    const order = await Orders.findById(order_id);
+    if (!order) return res.status(404).json({ message: "Order not found." });
+    if (order.rental_status !== "Ongoing") return res.status(400).json({ message: "Only 'Ongoing' orders can be returned." });
+    if (String(order.user_id) !== userId) return res.status(403).json({ message: "Only the user can return the order." });
 
     order.rental_status = "Returned";
     order.buyer_images = images;
     order.updated_at = new Date();
+    order.status_change_timestamp = new Date();
     await order.save();
 
-    return res.status(200).json({
-      message: "Order status updated to 'Returned'.",
-      status: true,
-    });
+    return res.status(200).json({ message: "Order status updated to 'Returned'.", status: true });
   } catch (err) {
-    console.error("Error delivering order:", err);
-    return res.status(500).json({ message: "Server error." });
+    return res.status(500).json({ message: "Server error.", error: err.message });
   }
 };
 
-// 4) Finish Order API
 exports.finishOrder = async (req, res) => {
   try {
     const sellerId = req.userId;
     const { order_id } = req.query;
 
-    if (!order_id) {
-      return res.status(400).json({ message: "Order ID is required." });
+    if (!order_id || !mongoose.Types.ObjectId.isValid(order_id)) {
+      return res.status(400).json({ message: "Valid Order ID is required." });
     }
 
-    const order = await Orders.findById(order_id).populate('equipment_id');
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found." });
-    }
-
-    if (String(order.equipment_id.owner_id) !== sellerId) {
-      return res.status(403).json({ message: "Only the owner can finish the order." });
-    }
-
-    if (order.rental_status !== "Returned" && order.rental_status !== "Late") {
+    const order = await Orders.findById(order_id).populate("equipment_id");
+    if (!order) return res.status(404).json({ message: "Order not found." });
+    if (String(order.equipment_id.owner_id) !== sellerId) return res.status(403).json({ message: "Only the owner can finish the order." });
+    if (!["Returned", "Late"].includes(order.rental_status)) {
       return res.status(400).json({ message: "Only 'Returned' or 'Late' orders can be finished." });
-    }     
+    }
 
     order.rental_status = "Finished";
     order.updated_at = new Date();
+    order.status_change_timestamp = new Date();
+
     const equipment = await Equipments.findById(order.equipment_id);
     equipment.equipment_status = "Active";
     await equipment.save();
     await order.save();
 
-    return res.status(200).json({
-      message: "Order status updated to 'Finished'.",
-      status: true,
-    });
+    return res.status(200).json({ message: "Order status updated to 'Finished'.", status: true });
   } catch (err) {
-    console.error("Error finishing order:", err);
-    return res.status(500).json({ message: "Server error." });
+    return res.status(500).json({ message: "Server error.", error: err.message });
   }
 };
 
 exports.togglePenalty = async (req, res) => {
   try {
     const userId = req.userId;
-    const { orderId } = req.query; // Order ID is passed as a query parameter
+    const { orderId } = req.query;
 
-    // Find the order and populate equipment details in one query
-    const order = await Orders.findById(orderId).populate("equipment_id");
-    
-    if (!order) {
-      return res.status(404).json({ message: "Order not found." });
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: "Valid orderId is required." });
     }
 
-    const ownerId = order.equipment_id.owner_id;
+    const order = await Orders.findById(orderId).populate("equipment_id");
+    if (!order) return res.status(404).json({ message: "Order not found." });
 
-    // Ensure only the owner can toggle the penalty
-    if (String(ownerId) !== String(userId)) {
+    if (String(order.equipment_id.owner_id) !== String(userId)) {
       return res.status(403).json({ message: "Only the owner can toggle penalty." });
     }
-    
-    // Toggle penalty
-    const updatedOrder = await Orders.findByIdAndUpdate(
-      orderId,
-      { penalty_apply: !order.penalty_apply, updated_at: new Date() },
-      { new: true } // Return updated document
-    );
+
+    order.penalty_apply = !order.penalty_apply;
+    order.updated_at = new Date();
+    await order.save();
 
     return res.status(200).json({
-      message: `Penalty ${updatedOrder.penalty_apply ? "enabled" : "disabled"} successfully.`,
-      penalty_apply: updatedOrder.penalty_apply,
+      message: `Penalty ${order.penalty_apply ? "enabled" : "disabled"} successfully.`,
+      penalty_apply: order.penalty_apply,
     });
-
   } catch (error) {
-    return res.status(500).json({
-      message: "Error toggling penalty status.",
-      error: error.message,
-    });
+    return res.status(500).json({ message: "Error toggling penalty status.", error: error.message });
   }
 };
 
@@ -519,13 +486,8 @@ exports.addBuyerReview = async (req, res) => {
   const { rating, comment } = req.body;
   const { orderId } = req.query;
 
-  // Validate request parameters
-  if (!orderId) {
-    return res.status(400).json({ message: "orderId is required in query parameters." });
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(orderId)) {
-    return res.status(400).json({ message: "Invalid orderId format." });
+  if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+    return res.status(400).json({ message: "Valid orderId is required." });
   }
 
   if (rating === undefined || rating === null) {
@@ -542,16 +504,14 @@ exports.addBuyerReview = async (req, res) => {
 
   try {
     const order = await Orders.findById(orderId);
-    if (!order) {
-      return res.status(404).json({ message: "Order not found." });
-    }
+    if (!order) return res.status(404).json({ message: "Order not found." });
 
-    // Update the buyer review
     order.buyer_review = {
       rating,
-      comment: comment || "", // Default to empty string if no comment
+      comment: comment || "",
     };
 
+    order.updated_at = new Date();
     await order.save();
 
     return res.status(200).json({
@@ -578,7 +538,6 @@ const getLatestOrder = async (orderId) => {
 const updateOrder = async (order, updates) => {
   const latestOrder = await getLatestOrder(order._id);
 
-  // If status changed externally, stop processing now but recheck in the next cycle
   if (latestOrder.rental_status !== order.rental_status) {
     console.log(`🔄 Order ${order._id} status changed externally to ${latestOrder.rental_status}. Skipping this run.`);
     return;
@@ -593,9 +552,9 @@ const updateOrder = async (order, updates) => {
 const applyLatePenalty = async (order) => {
   const now = new Date();
   const timeElapsed = now - order.status_change_timestamp;
-  const daysLate = Math.floor(timeElapsed / (1000 * 60 * 60 * 24)); // Full 24-hour periods
+  const daysLate = Math.floor(timeElapsed / (1000 * 60 * 60 * 24));
 
-  const expectedPenalty = (daysLate + 1) * DAILY_PENALTY; // +1 ensures penalty applies immediately
+  const expectedPenalty = (daysLate + 1) * DAILY_PENALTY;
 
   if (order.penalty_amount !== expectedPenalty) {
     await updateOrder(order, { penalty_amount: expectedPenalty });
@@ -603,7 +562,6 @@ const applyLatePenalty = async (order) => {
   }
 };
 
-// Main process
 const processOrders = async () => {
   console.log("🔍 Checking orders...");
 
@@ -615,9 +573,8 @@ const processOrders = async () => {
 
     for (const order of orders) {
       const latestOrder = await getLatestOrder(order._id);
-      if (!latestOrder) continue; // Order might have been deleted
+      if (!latestOrder) continue;
 
-      // If the order status changed externally, do NOT process now but recheck in the next cycle
       if (latestOrder.rental_status !== order.rental_status) {
         console.log(`⏳ Order ${order._id} status changed externally to ${latestOrder.rental_status}. Skipping for now.`);
         continue;
@@ -625,31 +582,33 @@ const processOrders = async () => {
 
       const futureTimestamp = getFutureTime(order.updated_at, timeOffsetHours * 60);
 
-      // ✅ 1. Handle "Delivered" → "Ongoing"
       if (order.rental_status === 'Delivered' && now >= futureTimestamp) {
-        await updateOrder(order, { rental_status: 'Ongoing' });
+        await updateOrder(order, {
+          rental_status: 'Ongoing',
+          status_change_timestamp: new Date()
+        });
         console.log(`🚀 Order ${order._id} changed from Delivered → Ongoing`);
       }
 
-      // ✅ 2. Handle "Ongoing" → "Late"
-      if (order.rental_status === 'Ongoing' && now > order.rental_schedule.end_date) {
+      if (order.rental_status === 'Ongoing' && order.rental_schedule?.end_date && now > order.rental_schedule.end_date) {
         await updateOrder(order, {
           rental_status: 'Late',
           penalty_apply: true,
-          status_change_timestamp: order.rental_schedule.end_date, // First time turning Late
-          penalty_amount: DAILY_PENALTY, // Immediate penalty application
+          status_change_timestamp: order.rental_schedule.end_date,
+          penalty_amount: DAILY_PENALTY
         });
         console.log(`⏳ Order ${order._id} changed from Ongoing → Late!`);
       }
 
-      // ✅ 3. Handle "Late" → Apply Daily Penalty
       if (order.rental_status === 'Late') {
         await applyLatePenalty(order);
       }
 
-      // ✅ 4. Handle "Returned" → "Finished"
       if (order.rental_status === 'Returned' && now >= futureTimestamp) {
-        await updateOrder(order, { rental_status: 'Finished' });
+        await updateOrder(order, {
+          rental_status: 'Finished',
+          status_change_timestamp: new Date()
+        });
         console.log(`🚀 Order ${order._id} changed from Returned → Finished`);
       }
     }

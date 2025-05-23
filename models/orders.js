@@ -2,47 +2,62 @@ const mongoose = require('mongoose');
 
 // Order Schema
 const orderSchema = new mongoose.Schema({
-  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // User placing the order
-  equipment_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Equipments', required: true }, // Equipment being rented
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  equipment_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Equipments', required: true },
+
   rental_schedule: {
-    start_date: { type: Date, required: true }, // Rental start date
-    end_date: { type: Date, required: true } // Rental end date
+    start_date: { type: Date, required: true },
+    end_date: { type: Date, required: true }
   },
+
   location: {
-    address: { type: String, required: true }, // Address of the equipment's location
-    lat: { type: Number, required: true }, // Latitude of the equipment's location
-    long: { type: Number, required: true } // Longitude of the equipment's location
+    address: { type: String, required: true },
+    lat: { type: Number, required: true },
+    long: { type: Number, required: true }
   },
-  total_amount: { type: Number, required: true }, // Total rental cost
-  security_fee: {
-    cost: { type: Number, default: 0 },
-    insurance: { type: Boolean, default: false }
+
+  rental_fee: { type: Number, required: true },
+  platform_fee: { type: Number, required: true },
+  tax_amount: { type: Number, required: true },
+  total_amount: { type: Number, required: true },
+
+  // Insurance or Deposit (only one applies per order)
+  security_option: {
+    insurance: { type: Boolean, default: false },     // true = insurance, false = deposit
+    insurance_amount: { type: Number, default: 0 },    // calculated insurance fee
+    deposit_amount: { type: Number, default: 0 }       // calculated deposit amount (refundable)
   },
+
   cancellation: {
-    is_cancelled: { type: Boolean, default: false }, // Cancellation flag
-    reason: { type: String }, // Reason for cancellation (if applicable)
-    cancelled_at: { type: Date } // Cancellation timestamp
+    is_cancelled: { type: Boolean, default: false },
+    reason: { type: String },
+    cancelled_at: { type: Date }
   },
-  rental_status: { 
-    type: String, 
+
+  rental_status: {
+    type: String,
     enum: ['Booked', 'Delivered', 'Ongoing', 'Returned', 'Cancelled', 'Finished', 'Late'],
-    default: 'Booked' 
+    default: 'Booked'
   },
+
   return_status: {
-    is_returned: { type: Boolean, default: false }, // Return flag
-    returned_at: { type: Date } // Return timestamp
+    is_returned: { type: Boolean, default: false },
+    returned_at: { type: Date }
   },
-  owner_images: [{ type: String }], // Images of the equipment returned by the user
-  buyer_images: [{ type: String }], // Images of the equipment returned by the owner
-  created_at: { type: Date, default: Date.now }, // Order creation timestamp
-  updated_at: { type: Date, default: Date.now }, // Last updated timestamp
-  penalty_apply: { type: Boolean, default: true }, // New field - default to false
-  penalty_amount: { type: Number, default: 0 }, // New field - default to 0
-  status_change_timestamp: { type: Date, default: Date.now }, // New field - default to current timestamp
+
+  owner_images: [{ type: String }],
+  buyer_images: [{ type: String }],
+
+  penalty_apply: { type: Boolean, default: true },
+  penalty_amount: { type: Number, default: 0 },
+  status_change_timestamp: { type: Date, default: Date.now },
+
   buyer_review: {
     comment: { type: String },
     rating: { type: Number, min: 0, max: 5, default: 0 }
-  }
+  },
+  created_at: { type: Date, default: Date.now }, // Order creation timestamp
+  updated_at: { type: Date, default: Date.now }, // Last updated timestamp
 });
 
 module.exports = mongoose.model('Orders', orderSchema);
