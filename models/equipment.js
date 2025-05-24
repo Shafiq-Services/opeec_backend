@@ -15,15 +15,15 @@ const equipmentSchema = new mongoose.Schema({
   rental_price: { type: Number, required: true },
   equipment_price: { type: Number, required: true },
   notice_period: {
-    type: { type: String, required: true, enum: ['hour', 'day', 'month'] },
+    type: { type: String, required: true, enum: ['hour', 'day', 'week', 'month'] },
     count: { type: Number, required: true }
   },
   minimum_trip_duration: {
-    type: { type: String, required: true, enum: ['hour', 'day', 'month'] },
+    type: { type: String, required: true, enum: ['hour', 'day', 'week', 'month'] },
     count: { type: Number, required: true }
   },
   maximum_trip_duration: {
-    type: { type: String, required: true, enum: ['hour', 'day', 'month'] },
+    type: { type: String, required: true, enum: ['hour', 'day', 'week', 'month'] },
     count: { type: Number, required: true }
   },
   equipment_status: { 

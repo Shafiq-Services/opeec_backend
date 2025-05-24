@@ -543,10 +543,25 @@ const updateOrder = async (order, updates) => {
     return;
   }
 
-  Object.assign(order, updates, { updated_at: new Date() });
-  await order.save();
-  console.log(`✅ Order ${order._id} updated:`, updates);
+  const requiredFields = {
+    rental_fee: order.rental_fee ?? latestOrder.rental_fee ?? 0,
+    platform_fee: order.platform_fee ?? latestOrder.platform_fee ?? 0,
+    tax_amount: order.tax_amount ?? latestOrder.tax_amount ?? 0,
+    total_amount: order.total_amount ?? latestOrder.total_amount ?? 0,
+    insurance_amount: order.insurance_amount ?? latestOrder.insurance_amount ?? 0,
+    deposit_amount: order.deposit_amount ?? latestOrder.deposit_amount ?? 0,
+  };
+
+  Object.assign(order, updates, requiredFields, { updated_at: new Date() });
+
+  try {
+    await order.save();
+    console.log(`✅ Order ${order._id} updated:`, updates);
+  } catch (error) {
+    console.error(`❌ Failed to save Order ${order._id}:`, error.message);
+  }
 };
+
 
 // Helper: Applies penalty if order is late
 const applyLatePenalty = async (order) => {
