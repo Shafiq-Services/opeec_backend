@@ -1,5 +1,6 @@
 const http = require("http");
 const express = require('express');
+const cors = require('cors');
 const config = require('./config/config');
 const connectDB = require('./config/db');
 const adminRoutes = require('./routes/admin');
@@ -19,6 +20,27 @@ const server = http.createServer(app);
 
 // Initialize WebSockets
 initializeSocket(server);
+
+// CORS Configuration
+const corsOptions = {
+  origin: true, // Allow all origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Accept',
+    'Origin'
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200 // For legacy browser support
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// Handle preflight requests for all routes
+app.options('*', cors(corsOptions));
 
 // Middleware
 app.use(express.json());
