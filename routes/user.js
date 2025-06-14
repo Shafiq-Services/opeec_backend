@@ -4,24 +4,11 @@ const userController = require('../controllers/user');
 const { userMiddleware } = require("../middleWares/user");
 const { adminMiddleware } = require('../middleWares/adminMiddleWare');
 
+// Create separate routers for admin and user routes
+const adminRouter = express.Router();
+const userRouter = express.Router();
 
-
-///Temp
-// Approve User
-router.put('/approve_user', userController.approveUser);
-
-// Reject User with Reason
-router.put('/reject_user', userController.rejectUser);
-
-// Block User with Reason
-router.put('/block_user', userController.blockUser);
-
-// Block User with Reason
-router.put('/unblock_user', userController.unBlockUser);
-
-// router.get('/user_rating', userController.userRating);
-
-// ---------------------- Customer Routes ----------------------
+// ---------------------- Public Routes ----------------------
 
 // User Signup Route
 router.post('/signup', userController.signup);
@@ -41,20 +28,43 @@ router.post('/forgot_or_reset_password_otp', userController.forgotOrResetPasswor
 // Reset user password
 router.post('/reset_password', userController.resetPassword);
 
-// Use userMiddleware for common user routes
-router.use(userMiddleware);
-
-router.get('/profile', userController.getprofile);
-
-// Update user profile
-router.put('/update', userController.updateUser);
-
-// Resend ID card selfie for verification
-router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
-
-router.get('/get_fcm', userController.getFCMToken);
 // ---------------------- Admin Routes ----------------------
 
-router.use(adminMiddleware);
+// Apply admin middleware to admin routes
+adminRouter.use(adminMiddleware);
+
+// Approve User
+adminRouter.put('/approve_user', userController.approveUser);
+
+// Reject User with Reason
+adminRouter.put('/reject_user', userController.rejectUser);
+
+// Block User with Reason
+adminRouter.put('/block_user', userController.blockUser);
+
+// Unblock User
+adminRouter.put('/unblock_user', userController.unBlockUser);
+
+// Get all sellers
+adminRouter.get('/get_all_users', userController.getAllUsers);
+
+// ---------------------- Protected User Routes ----------------------
+
+// Apply user middleware to user routes
+userRouter.use(userMiddleware);
+
+userRouter.get('/profile', userController.getprofile);
+
+// Update user profile
+userRouter.put('/update', userController.updateUser);
+
+// Resend ID card selfie for verification
+userRouter.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
+
+userRouter.get('/get_fcm', userController.getFCMToken);
+
+// Mount the routers - admin routes at root level to maintain original paths
+router.use('/', adminRouter);
+router.use('/', userRouter);
 
 module.exports = router;

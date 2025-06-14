@@ -6,6 +6,7 @@ const config = require('../config/config');
 const { io, sendEventToUser } = require('../utils/socketService'); // assuming `io` is imported from the socket.js file
 const Equipment = require('../models/equipment'); // Import the Equipment model
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews } = require("../utils/common_methods");
+const Order = require('../models/orders'); // Import the Order model
 
 // User Signup
 exports.signup = async (req, res) => {
@@ -464,3 +465,69 @@ exports.unBlockUser = async (req, res) => {
     res.status(500).json({ message: 'Error unblocking user', error });
   }
 };
+
+exports.getAllUsers = async (req, res) => {
+  try {
+    const { status = 'all' } = req.query;
+    
+    // First get all users who own equipment
+    const users = await User.find();
+    
+    // Get all equipment owners
+    const equipmentOwners = await Equipment.distinct('owner_id');
+    
+    // Filter users to only include equipment owners
+    let sellers = users.filter(user => 
+      equipmentOwners.some(ownerId => ownerId.toString() === user._id.toString())
+    );
+
+    // Filter based on status (case-insensitive)
+    if (status.toLowerCase() !== 'all') {
+      sellers = sellers.filter(seller => {
+        switch (status.toLowerCase()) {
+          case 'pending':
+            return !seller.isUserVerified;
+          case 'active':
+            return seller.isUserVerified && !seller.is_blocked;
+          case 'blocked':
+            return seller.is_blocked;
+          default:
+            return true;
+        }
+      });
+    }
+    
+    // Get equipment counts and rental counts for each seller
+    const sellersWithStats = await Promise.all(sellers.map(async (seller) => {
+      // Get equipment count
+      const equipmentCount = await Equipment.countDocuments({ owner_id: seller._id });
+      
+      // Get total rentals count
+      const sellerEquipments = await Equipment.find({ owner_id: seller._id });
+      const totalRentals = await Order.countDocuments({ 
+        equipment_id: { $in: sellerEquipments.map(eq => eq._id) }
+      });
+      
+      // Return only required fields
+      return {
+        _id: seller._id,
+        name: seller.name,
+        email: seller.email,
+        profile_image: seller.profile_image,
+        id_card_selfie: seller.id_card_selfie,
+        equipment_count: equipmentCount,
+        total_rentals: totalRentals,
+        is_blocked: seller.is_blocked,
+        block_reason: seller.block_reason,
+        created_at: seller.created_at
+      };
+    }));
+
+    res.status(200).json({ 
+      message: 'Users fetched successfully', 
+      users: sellersWithStats 
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching users', error });
+  }
+}
