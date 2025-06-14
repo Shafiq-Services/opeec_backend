@@ -1,12 +1,13 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const User = require('../models/user');
 const { sendOtp } = require('../utils/send_otp');
 const config = require('../config/config');
 const { io, sendEventToUser } = require('../utils/socketService'); // assuming `io` is imported from the socket.js file
 const Equipment = require('../models/equipment'); // Import the Equipment model
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews } = require("../utils/common_methods");
 const Order = require('../models/orders'); // Import the Order model
+const mongoose = require('mongoose');
 
 // User Signup
 exports.signup = async (req, res) => {
@@ -531,3 +532,38 @@ exports.getAllUsers = async (req, res) => {
     res.status(500).json({ message: 'Error fetching users', error });
   }
 }
+
+// Search users based on text query
+exports.searchUsers = async (req, res) => {
+  try {
+    const { text } = req.query;
+    if (!text) {
+      return res.status(400).json({ message: 'Search text is required' });
+    }
+    const searchPattern = new RegExp(text, 'i');
+    const orQuery = [
+      { name: { $regex: searchPattern } },
+      { email: { $regex: searchPattern } }
+    ];
+    if (mongoose.Types.ObjectId.isValid(text)) {
+      orQuery.push({ _id: text });
+    }
+    // Find all users matching name, email, or exact id
+    let users = await User.find({ $or: orQuery }).select('-password -otp -otpExpiry');
+    // If not an exact ObjectId, also filter for partial _id match
+    if (!mongoose.Types.ObjectId.isValid(text)) {
+      const textLower = text.toLowerCase();
+      users = users.concat(
+        (await User.find().select('-password -otp -otpExpiry')).filter(u =>
+          u._id.toString().toLowerCase().includes(textLower)
+        )
+      );
+      // Remove duplicates
+      users = users.filter((u, i, arr) => arr.findIndex(x => x._id.toString() === u._id.toString()) === i);
+    }
+    res.status(200).json({ message: 'Users fetched successfully', users });
+  } catch (error) {
+    console.error("🔴 Error in searchUsers:", error);
+    res.status(500).json({ message: 'Error searching users', error });
+  }
+};

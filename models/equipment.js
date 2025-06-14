@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 // Equipment Schema
 const equipmentSchema = new mongoose.Schema({
-  owner_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  owner_id: { type: mongoose.Schema.Types.ObjectId, ref: 'users', required: true },
   name: { type: String, required: true, trim: true },
   make: { type: String, required: true, trim: true },
   model: { type: String, required: true, trim: true },

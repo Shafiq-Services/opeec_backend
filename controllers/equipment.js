@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 const Equipment = require('../models/equipment'); // Import the Equipment model
-const User = require('../models/User'); // Import the User model (for owner validation)
+const User = require('../models/user'); // Import the User model (for owner validation)
 const SubCategory = require('../models/sub_categories'); // Import the SubCategory model
 const categories = require('../models/categories'); // Import the categories model
 const Conversation = require('../models/conversation');
 const jwt = require('jsonwebtoken');  // Import jsonwebtoken
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews} = require("../utils/common_methods");
+const Order = require('../models/orders'); // Import the Order model
 
 const addEquipment = async (req, res) => {
   const {
@@ -1025,41 +1026,187 @@ async function updateEquipmentStatus(req, res) {
   }
 }
 
-// async function updateEquipmentStatus(req, res) {
-//   try {
-//     const { equipmentId, status } = req.query;
 
-//     // Validate equipment ID
-//     if (!mongoose.Types.ObjectId.isValid(equipmentId)) {
-//       return res.status(400).json({ message: 'Invalid equipment ID', status: false });
-//     }
+///////////////////Admin//////////////////////////
 
-//     // Validate status
-//     const validStatuses = ['Pending', 'Rejected', 'InActive', 'Active', 'Blocked'];
-//     if (!validStatuses.includes(status)) {
-//       return res.status(400).json({ message: 'Invalid status', status: false });
-//     }
+// Get equipment by status
+async function getEquipmentByStatus(req, res) {
+  try {
+    console.log("🔹 getEquipmentByStatus API called");
+    const { status = 'all' } = req.query;
+    console.log("🔹 Requested status:", status);
+    
+    // Validate status
+    const validStatuses = ['pending', 'rejected', 'inactive', 'active', 'blocked', 'all'];
+    const normalizedStatus = status.toLowerCase();
+    console.log("🔹 Normalized status:", normalizedStatus);
+    
+    if (!validStatuses.includes(normalizedStatus)) {
+      console.log("🔴 Invalid status provided:", normalizedStatus);
+      return res.status(400).json({
+        message: 'Invalid status',
+        validStatuses: validStatuses
+      });
+    }
+    
+    // Build query based on status
+    let query = {};
+    if (normalizedStatus !== 'all') {
+      query.equipment_status = normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1);
+      console.log("🔹 Query status:", query.equipment_status);
+    }
 
-//     // Find and update the equipment status
-//     const updatedEquipment = await Equipment.findByIdAndUpdate(
-//       equipmentId,
-//       { equipment_status: status },
-//       { new: true }
-//     );
+    // Get equipment with owner details
+    console.log("🔹 Fetching equipment with query:", query);
+    const equipments = await Equipment.find(query)
+      .populate('owner_id', 'name email profile_image')
+      .populate('sub_category_fk', 'name')
+      .populate({
+        path: 'sub_category_fk',
+        populate: {
+          path: 'category_id',
+          select: 'name'
+        }
+      });
+    console.log(`🔹 Found ${equipments.length} equipment`);
 
-//     if (!updatedEquipment) {
-//       return res.status(404).json({ message: 'Equipment not found', status: false });
-//     }
+    // Get rental counts for each equipment
+    console.log("🔹 Getting rental stats for each equipment");
+    const equipmentsWithStats = await Promise.all(equipments.map(async (equipment) => {
+      
+      return {
+        _id: equipment._id,
+        name: equipment.name,
+        make: equipment.make,
+        model: equipment.model,
+        serial_number: equipment.serial_number,
+        description: equipment.description,
+        images: equipment.images,
+        category: equipment.sub_category_fk.category_id.name,
+        sub_category: equipment.sub_category_fk.name,
+        postal_code: equipment.postal_code,
+        delivery_by_owner: equipment.delivery_by_owner,
+        rental_price: equipment.rental_price,
+        equipment_price: equipment.equipment_price,
+        custom_location: equipment.custom_location,
+        owner: {
+          _id: equipment.owner_id._id,
+          name: equipment.owner_id.name,
+          email: equipment.owner_id.email,
+          profile_image: equipment.owner_id.profile_image
+        },
+        status: equipment.equipment_status,
+        created_at: equipment.created_at
+      };
+    }));
 
-//     return res.status(200).json({
-//       message: 'Equipment status updated successfully',
-//       status: true,
-//       equipment: updatedEquipment,
-//     });
-//   } catch (err) {
-//     console.error('Error updating equipment status:', err);
-//     return res.status(500).json({ message: 'Server error', status: false });
-//   }
-// }
+    console.log("🔹 Sending response with equipment data");
+    res.status(200).json({
+      message: 'Equipment fetched successfully',
+      equipments: equipmentsWithStats
+    });
+  } catch (error) {
+    console.error("🔴 Error in getEquipmentByStatus:", error);
+    res.status(500).json({ message: 'Error fetching equipment', error });
+  }
+};
 
-module.exports = { addEquipment, updateEquipment, getAllEquipments, getEquipmentDetails, deleteEquipment, getRandomEquipmentImages, getUserShop, getFavoriteEquipments,  toggleFavorite, updateEquipmentStatus, getMyEquipments, updateEquipmentStatus};
+// Search equipment based on text query
+async function searchEquipment(req, res) {
+  try {
+    const { text } = req.query;
+    if (!text) {
+      return res.status(400).json({ message: 'Search text is required' });
+    }
+    const searchPattern = new RegExp(text, 'i');
+    const orQuery = [
+      { name: { $regex: searchPattern } },
+      { model: { $regex: searchPattern } },
+      { serial_number: { $regex: searchPattern } },
+      { make: { $regex: searchPattern } }
+    ];
+    if (mongoose.Types.ObjectId.isValid(text)) {
+      orQuery.push({ _id: text });
+      orQuery.push({ owner_id: text });
+    }
+    // Find all equipment matching text fields or exact id/owner_id
+    let equipments = await Equipment.find({ $or: orQuery })
+      .populate('owner_id', 'name email profile_image')
+      .populate('sub_category_fk', 'name')
+      .populate({
+        path: 'sub_category_fk',
+        populate: {
+          path: 'category_id',
+          select: 'name'
+        }
+      });
+    // If not an exact ObjectId, also filter for partial _id and owner_id match
+    if (!mongoose.Types.ObjectId.isValid(text)) {
+      const textLower = text.toLowerCase();
+      const allEquipments = await Equipment.find()
+        .populate('owner_id', 'name email profile_image')
+        .populate('sub_category_fk', 'name')
+        .populate({
+          path: 'sub_category_fk',
+          populate: {
+            path: 'category_id',
+            select: 'name'
+          }
+        });
+      const filtered = allEquipments.filter(e =>
+        e._id.toString().toLowerCase().includes(textLower) ||
+        (e.owner_id && e.owner_id._id && e.owner_id._id.toString().toLowerCase().includes(textLower))
+      );
+      // Merge and deduplicate
+      const ids = new Set(equipments.map(e => e._id.toString()));
+      filtered.forEach(e => {
+        if (!ids.has(e._id.toString())) equipments.push(e);
+      });
+    }
+    // Format the response
+    const formattedEquipments = equipments.map(equipment => ({
+      _id: equipment._id,
+      name: equipment.name,
+      make: equipment.make,
+      model: equipment.model,
+      serial_number: equipment.serial_number,
+      description: equipment.description,
+      images: equipment.images,
+      category: equipment.sub_category_fk.category_id.name,
+      sub_category: equipment.sub_category_fk.name,
+      postal_code: equipment.postal_code,
+      delivery_by_owner: equipment.delivery_by_owner,
+      rental_price: equipment.rental_price,
+      equipment_price: equipment.equipment_price,
+      custom_location: equipment.custom_location,
+      owner: equipment.owner_id ? {
+        _id: equipment.owner_id._id,
+        name: equipment.owner_id.name,
+        email: equipment.owner_id.email,
+        profile_image: equipment.owner_id.profile_image
+      } : null,
+      status: equipment.equipment_status,
+      created_at: equipment.created_at
+    }));
+    res.status(200).json({ message: 'Equipment fetched successfully', equipments: formattedEquipments });
+  } catch (error) {
+    console.error("🔴 Error in searchEquipment:", error);
+    res.status(500).json({ message: 'Error searching equipment', error });
+  }
+}
+
+module.exports = {
+  addEquipment,
+  updateEquipment,
+  getAllEquipments,
+  getEquipmentDetails,
+  deleteEquipment,
+  getRandomEquipmentImages,
+  getUserShop,
+  getFavoriteEquipments,
+  toggleFavorite,
+  updateEquipmentStatus,
+  getMyEquipments,
+  getEquipmentByStatus,
+  searchEquipment
+};

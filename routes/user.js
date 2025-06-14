@@ -48,6 +48,8 @@ adminRouter.put('/unblock_user', userController.unBlockUser);
 // Get all sellers
 adminRouter.get('/get_all_users', userController.getAllUsers);
 
+adminRouter.get('/search', userController.searchUsers);
+
 // ---------------------- Protected User Routes ----------------------
 
 // Apply user middleware to user routes

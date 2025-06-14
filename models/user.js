@@ -19,4 +19,5 @@ const userSchema = new mongoose.Schema({
   fcm_token: { type: String, default: "" }, // FCM token for push notifications
 });
 
-module.exports = mongoose.model('users', userSchema);
+// Prevent model overwrite error
+module.exports = mongoose.models.users || mongoose.model('users', userSchema);
