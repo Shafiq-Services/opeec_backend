@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');  
-const User = require('../models/User');  
+const User = require('../models/user');  
 const Admin = require('../models/admin');  
 
 module.exports.commonMiddleware = async (req, res, next) => {
