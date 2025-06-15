@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { userMiddleware } = require("../middleWares/user");
-const { adminMiddleware } = require("../middleWares/admin");
+const { adminMiddleware } = require("../middleWares/adminMiddleWare");
 
 const {
   getMessages,
@@ -25,9 +25,5 @@ router.get("/support/messages", userMiddleware, getSupportMessages);
 
 // Online users (user middleware applied)
 router.get("/online-users", userMiddleware, getOnlineUsers);
-
-// Search routes (admin middleware applied)
-router.get("/search-users", adminMiddleware, searchUsers);
-router.get("/search-equipment", adminMiddleware, searchEquipment);
 
 module.exports = router;
