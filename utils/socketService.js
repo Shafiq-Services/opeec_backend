@@ -1,10 +1,11 @@
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const User = require("../models/user");
 const EventStore = require("../models/EventStore");
 
 const JWT_SECRET = process.env.JWT_SECRET || "Opeec";
 const connectedUsers = new Map();
+const typingUsers = new Map();
 
 let io;
 
@@ -60,6 +61,64 @@ const initializeSocket = (server) => {
     connectedUsers.set(userId, socket.id);
     console.log(`User connected: ${userId}, Socket ID: ${socket.id}`);
 
+    // Automatically notify user's contacts that they are online
+    socket.broadcast.emit("userOnline", { userId });
+
+    // Simplified chat events - only what frontend needs to emit
+    socket.on("joinConversation", ({ conversationId }) => {
+      socket.join(`conversation_${conversationId}`);
+      console.log(`User ${userId} joined conversation ${conversationId}`);
+    });
+
+    socket.on("leaveConversation", ({ conversationId }) => {
+      socket.leave(`conversation_${conversationId}`);
+      console.log(`User ${userId} left conversation ${conversationId}`);
+    });
+
+    // Typing indicator events - only frontend involvement needed
+    socket.on("startTyping", ({ conversationId, receiverId }) => {
+      if (!conversationId || !receiverId) return;
+      
+      const typingKey = `${conversationId}_${userId}`;
+      typingUsers.set(typingKey, Date.now());
+      
+      // Notify the receiver that user is typing
+      sendEventToUser(receiverId, "userTyping", {
+        conversationId,
+        userId,
+        isTyping: true
+      });
+      
+      // Also emit to conversation room
+      socket.to(`conversation_${conversationId}`).emit("userTyping", {
+        conversationId,
+        userId,
+        isTyping: true
+      });
+    });
+
+    socket.on("stopTyping", ({ conversationId, receiverId }) => {
+      if (!conversationId || !receiverId) return;
+      
+      const typingKey = `${conversationId}_${userId}`;
+      typingUsers.delete(typingKey);
+      
+      // Notify the receiver that user stopped typing
+      sendEventToUser(receiverId, "userTyping", {
+        conversationId,
+        userId,
+        isTyping: false
+      });
+      
+      // Also emit to conversation room
+      socket.to(`conversation_${conversationId}`).emit("userTyping", {
+        conversationId,
+        userId,
+        isTyping: false
+      });
+    });
+
+    // Restore all previous socket functionality
     socket.on("sendToUser", ({ userId, event, data }) => {
       if (!userId || !event || data === undefined) {
         console.warn("Invalid payload for sendToUser");
@@ -204,11 +263,42 @@ const initializeSocket = (server) => {
 
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${userId}`);
+      
+      // Automatically notify user's contacts that they are offline
+      socket.broadcast.emit("userOffline", { userId });
+      
+      // Clean up typing indicators for this user
+      for (const [key, value] of typingUsers.entries()) {
+        if (key.includes(`_${userId}`)) {
+          typingUsers.delete(key);
+        }
+      }
+      
       connectedUsers.delete(userId);
     });
   });
 
+  // Clean up typing indicators that are older than 5 seconds
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, timestamp] of typingUsers.entries()) {
+      if (now - timestamp > 5000) { // 5 seconds timeout
+        typingUsers.delete(key);
+        
+        // Extract conversationId and userId from key
+        const [conversationId, userId] = key.split('_');
+        
+        // Notify that user stopped typing
+        io.to(`conversation_${conversationId}`).emit("userTyping", {
+          conversationId,
+          userId,
+          isTyping: false
+        });
+      }
+    }
+  }, 2000); // Check every 2 seconds
+
   return io;
 };
 
-module.exports = { initializeSocket, sendEventToUser, io, saveEvent };
+module.exports = { initializeSocket, sendEventToUser, connectedUsers, typingUsers, io };

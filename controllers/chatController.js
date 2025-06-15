@@ -1,130 +1,92 @@
 const { text } = require("express");
 const Conversation = require("../models/conversation");
 const Message = require("../models/message");
-const User = require("../models/User");
+const User = require("../models/user");
 const Admin = require("../models/admin");
 const Equipment = require("../models/equipment");
 const Categories = require("../models/categories");
 const SubCategory = require("../models/sub_categories");
 const EventStore = require("../models/EventStore");
-const {sendEventToUser} = require("../utils/socketService");
+const {sendEventToUser, connectedUsers} = require("../utils/socketService");
 
 exports.getConversations = async (req, res) => {
   try {
-    const userId = req.userId; // Extracted from auth token
-    console.log(`[INFO] Request received for userId: ${userId}`);
+    const userId = req.userId;
 
-    // Fetch all messages involving the user and populate the conversation & equipment field
-    const messages = await Message.find({
-      $or: [{ sender: userId }, { receiver: userId }]
+    // Mark user as online when they access conversations
+    connectedUsers.set(userId, Date.now());
+
+    const conversations = await Conversation.find({
+      participants: userId,
     })
-      .populate({
-        path: "conversation",
-        select: "participants equipment", // Fetch participants and equipment
-        populate: { 
-          path: "equipment", 
-          model: "Equipments", // Ensure correct model reference
-          select: "name images" // Fetch required fields
-        } 
-      })
-      .sort({ createdAt: -1 }) // Sort by recent messages
-      .lean();
+      .populate("lastMessage")
+      .populate("equipment")
+      .sort({ updatedAt: -1 });
 
-
-    console.log(`[DEBUG] Total messages fetched: ${messages.length}`);
-
-    const conversationsMap = {};
-
-    // Group messages by conversation and collect details
-    messages.forEach((msg, index) => {
-      if (!msg.conversation) {
-        console.warn(`[WARN] Skipping message at index ${index} - Conversation missing`);
-        return;
-      }
-
-      const convId = msg.conversation._id.toString();
-      console.log(`[DEBUG] Processing message ${index}: Conversation ID: ${convId}`);
-
-      if (!conversationsMap[convId]) {
-        // Find the opponent by filtering out the current user
-        const opponentId = msg.conversation.participants.find(
-          (id) => id.toString() !== userId
+    const conversationsWithDetails = await Promise.all(
+      conversations.map(async (conversation) => {
+        const opponent = conversation.participants.find(
+          (participant) => participant.toString() !== userId.toString()
         );
 
-        if (!opponentId) {
-          console.warn(`[WARN] No opponent found for conversation ${convId}`);
-          return;
+        const opponentUser = await User.findById(opponent).select("name picture");
+        
+        // Get unread count for this conversation
+        const unreadCount = await Message.countDocuments({
+          conversation: conversation._id,
+          receiver: userId,
+          read: false
+        });
+
+        // Check if opponent is online
+        const isOnline = connectedUsers.has(opponent.toString());
+
+        let equipmentResponse = null;
+        if (conversation.equipment) {
+          const subCategory = await SubCategory.findById(conversation.equipment.sub_category_fk);
+          const category = subCategory && await Categories.findById(subCategory.category_id);
+          
+          equipmentResponse = {
+            _id: conversation.equipment._id,
+            name: conversation.equipment.name,
+            images: conversation.equipment.images,
+            category: category ? category.name : "Unknown",
+            rental_price: conversation.equipment.rental_price,
+            address: conversation.equipment.custom_location.address,
+          };
         }
 
-        // Extract equipment details (if available)
-        const equipment = msg.conversation.equipment;
-        const equipmentDetails = equipment
-          ? { id: equipment._id.toString(), name: equipment.name, image: equipment.image }
-          : null;
-
-        conversationsMap[convId] = {
-          conversationId: convId,
-          equipmentId: equipmentDetails.id, // Store equipment info
-          lastMessage: msg.content,
-          lastMessageTime: msg.createdAt,
-          opponentId: opponentId.toString(),
+        return {
+          conversationId: conversation._id,
+          equipment: equipmentResponse,
+          lastMessage: conversation.lastMessage
+            ? {
+                text: conversation.lastMessage.content,
+                createdAt: conversation.lastMessage.createdAt,
+                sentByYou: conversation.lastMessage.sender.toString() === userId.toString(),
+              }
+            : null,
+          opponent: {
+            id: opponentUser._id,
+            name: opponentUser.name,
+            picture: opponentUser.picture,
+            isOnline: isOnline
+          },
+          unreadCount: unreadCount,
+          updatedAt: conversation.updatedAt,
         };
-
-        console.log(
-          `[INFO] New conversation added: ${convId} with opponent ${opponentId} and equipment ${equipment ? equipment._id : "None"}`
-        );
-      }
-    });
-
-    const conversations = Object.values(conversationsMap);
-    console.log(`[INFO] Total unique conversations found: ${conversations.length}`);
-
-    // Fetch opponent details
-    const opponentIds = conversations.map((c) => c.opponentId);
-    console.log(`[DEBUG] Fetching details for opponent IDs:`, opponentIds);
-
-    const opponents = await User.find({ _id: { $in: opponentIds } })
-      .select("name profile_image")
-      .lean();
-
-    console.log(`[DEBUG] Total opponents fetched: ${opponents.length}`);
-
-    // Map opponent details to conversations
-    const opponentsMap = {};
-    opponents.forEach((opponent) => {
-      opponentsMap[opponent._id.toString()] = opponent;
-      console.log(`[INFO] Opponent mapped: ${opponent._id} -> ${opponent.name}`);
-    });
-
-    const formattedConversations = conversations.map((conv) => ({
-      ...conv,
-      opponent: {
-        id: conv.opponentId,
-        name: opponentsMap[conv.opponentId]?.name || "",
-        picture: opponentsMap[conv.opponentId]?.profile_image || "",
-      },
-    }));
-
-    // Remove opponentId from each conversation object
-    const finalConversations = formattedConversations.map(({ opponentId, ...rest }) => rest);
-
-    // Sort conversations by lastMessageTime
-    finalConversations.sort(
-      (a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime)
+      })
     );
 
-    console.log(`[INFO] Conversations successfully processed and sorted.`);
-
-    res.status(200).json({ status: "success", data: finalConversations });
+    res.json({
+      message: "Conversations retrieved successfully",
+      conversations: conversationsWithDetails,
+    });
   } catch (error) {
-    console.error(`[ERROR] getConversations failed:`, error.message);
-    res.status(500).json({ status: "error", message: error.message });
+    console.error("Error in getConversations:", error);
+    res.status(500).json({ error: "Server error" });
   }
 };
-
-
-
-
 
 exports.getMessages = async (req, res) => {
   try {
@@ -134,12 +96,19 @@ exports.getMessages = async (req, res) => {
     const itemsPerPage = parseInt(req.query.itemsPerPage) || 50;
     const skip = (pageNumber - 1) * itemsPerPage;
 
+    // Mark user as online when they access messages
+    connectedUsers.set(userId, Date.now());
+
     // Retrieve the conversation and ensure it exists
     const conversation = await Conversation.findById(conversationId);
     if (!conversation) {
-      return res
-        .status(403)
-        .json({ error: "Conversation not found" });
+      return res.status(403).json({ error: "Conversation not found" });
+    }
+
+    // Check if user is participant in conversation
+    const isParticipant = conversation.participants.includes(userId);
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Unauthorized access to conversation" });
     }
 
     // Prepare equipment details only if conversation.equipment exists
@@ -162,6 +131,13 @@ exports.getMessages = async (req, res) => {
       }
     }
 
+    // Get unread messages that will be marked as read
+    const unreadMessages = await Message.find({
+      conversation: conversationId,
+      receiver: userId,
+      read: false
+    }).select('sender _id');
+
     // Fetch messages for the conversation
     const messages = await Message.find({
       conversation: conversationId,
@@ -177,23 +153,55 @@ exports.getMessages = async (req, res) => {
 
     // Process messages: remove unnecessary fields and add a sentByYou flag
     const messagesWithSentByYou = messages.map((message) => {
-      const { _id, content, createdAt } = message.toObject();
+      const { _id, content, createdAt, status } = message.toObject();
       return {
         _id,
         text: content,
         createdAt,
         sentByYou: message.sender.toString() === userId.toString(),
+        status: status || 'sent'
       };
     });
 
-    // Mark messages as read for the receiver
+    // AUTOMATICALLY mark messages as read for the receiver and update status
+    if (unreadMessages.length > 0) {
+      await Message.updateMany(
+        {
+          conversation: conversationId,
+          receiver: userId,
+          read: false,
+        },
+        { 
+          read: true,
+          status: 'read'
+        }
+      );
+
+      // Emit read receipts to senders via socket
+      const senderIds = [...new Set(unreadMessages.map(msg => msg.sender.toString()))];
+      senderIds.forEach(senderId => {
+        if (senderId !== userId) {
+          const readMessageIds = unreadMessages
+            .filter(msg => msg.sender.toString() === senderId)
+            .map(msg => msg._id);
+          
+          sendEventToUser(senderId, "messagesRead", {
+            conversationId: conversationId,
+            messageIds: readMessageIds,
+            readBy: userId
+          });
+        }
+      });
+    }
+
+    // Mark messages as delivered for the sender (if receiver is online)
     await Message.updateMany(
       {
         conversation: conversationId,
-        receiver: userId,
-        read: false,
+        sender: { $ne: userId },
+        status: 'sent'
       },
-      { read: true }
+      { status: 'delivered' }
     );
 
     // Build the response object
@@ -215,10 +223,10 @@ exports.getMessages = async (req, res) => {
 
     res.json(response);
   } catch (error) {
+    console.error("Error in getMessages:", error);
     res.status(500).json({ error: "Server error" });
   }
 };
-
 
 exports.sendMessage = async (req, res) => {
   try {
@@ -227,10 +235,18 @@ exports.sendMessage = async (req, res) => {
       return res.status(400).json({ error: "Equipment ID and text are required" });
 
     const equipment = await Equipment.findById(equipmentId);
+    if (!equipment) {
+      return res.status(400).json({ error: "Equipment not found" });
+    }
+
     const receiver = await User.findById(equipment.owner_id);
+    if (!receiver) {
+      return res.status(400).json({ error: "Equipment owner not found" });
+    }
+
     const receiverId = receiver._id;
     const subCategory = await SubCategory.findById(equipment.sub_category_fk);
-    const category = await Categories.findById(subCategory.category_id);
+    const category = subCategory && await Categories.findById(subCategory.category_id);
 
     let conversation = await Conversation.findOne({ participants: { $all: [senderId, receiverId] } });
     if (!conversation) {
@@ -244,49 +260,75 @@ exports.sendMessage = async (req, res) => {
       await conversation.save();
     }
 
-    const equipmentData = {
-      id: equipment._id,
-      name: equipment.name,
-      images: equipment.images,
-      category: category.name,
-      rentalPrice: equipment.rental_price,
-      address: equipment.custom_location.address,
-      rating: equipment.average_rating,
-    };
-
-    // Store event persistently
-    await EventStore.findOneAndUpdate(
-      { key: conversation._id.toString() },
-      { eventData: equipmentData },
-      { upsert: true, new: true }
-    );
-
+    // Create message with initial status 'sent'
     const message = await new Message({
       conversation: conversation._id,
       sender: senderId,
       receiver: receiverId,
       content: text,
+      status: 'sent'
     }).save();
 
     conversation.lastMessage = message._id;
     await conversation.save();
 
-    //Send Socket to the receiver
-    // sendEventToUser(receiverId, "eventSaved", {
-    //   key: conversation._id,
-    //   eventData: equipmentData,
-    // });
+    // Check if receiver is online and update status accordingly
+    const isReceiverOnline = connectedUsers.has(receiverId.toString());
+    let messageStatus = 'sent';
+    
+    if (isReceiverOnline) {
+      messageStatus = 'delivered';
+      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+    }
+
+    // Emit socket events
+    const messageData = {
+      _id: message._id,
+      conversationId: conversation._id,
+      text: text,
+      senderId: senderId,
+      receiverId: receiverId,
+      createdAt: message.createdAt,
+      status: messageStatus,
+      equipment: {
+        id: equipment._id,
+        name: equipment.name,
+        images: equipment.images,
+        category: category ? category.name : "Unknown",
+        rental_price: equipment.rental_price,
+        address: equipment.custom_location.address
+      }
+    };
+
+    // Emit to receiver if online
+    if (isReceiverOnline) {
+      sendEventToUser(receiverId, "newMessage", messageData);
+      
+      // Emit delivery confirmation to sender
+      sendEventToUser(senderId, "messageDelivered", {
+        messageId: message._id,
+        status: 'delivered'
+      });
+    }
+
+    // Emit to sender for confirmation
+    sendEventToUser(senderId, "messageSent", {
+      messageId: message._id,
+      conversationId: conversation._id,
+      status: messageStatus
+    });
 
     res.status(201).json({
       message: "Message sent successfully",
       conversationId: conversation._id,
+      messageId: message._id,
+      status: messageStatus
     });
   } catch (error) {
     console.error("Error in sendMessage:", error);
     res.status(500).json({ error: "Unable to send message", details: error.message });
   }
 };
-
 
 exports.sendSupportMessage = async (req, res) => {
   try {
@@ -356,5 +398,20 @@ exports.getSupportMessages = async (req, res) => {
     res.status(200).json({ message: "Support messages retrieved successfully", messages });
   } catch (error) {
     res.status(500).json({ error: "Unable to retrieve messages", details: error.message });
+  }
+};
+
+// Get online users
+exports.getOnlineUsers = async (req, res) => {
+  try {
+    const onlineUserIds = Array.from(connectedUsers.keys());
+    
+    res.status(200).json({
+      status: "success",
+      onlineUsers: onlineUserIds
+    });
+  } catch (error) {
+    console.error("Error getting online users:", error);
+    res.status(500).json({ error: "Server error" });
   }
 };
