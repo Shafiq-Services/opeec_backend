@@ -50,6 +50,9 @@ adminRouter.get('/get_all_users', userController.getAllUsers);
 
 adminRouter.get('/search', userController.searchUsers);
 
+// Update user profile by admin
+adminRouter.put('/update_user_profile', userController.updateUserProfileByAdmin);
+
 // ---------------------- Protected User Routes ----------------------
 
 // Apply user middleware to user routes

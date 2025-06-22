@@ -28,5 +28,6 @@ router.put('/users/reject', userController.rejectUser);
 router.put('/users/block', userController.blockUser);
 router.put('/users/unblock', userController.unBlockUser);
 router.get('/users/sellers', userController.getAllUsers);
+router.put('/users/update-profile', userController.updateUserProfileByAdmin);
 
 module.exports = router;

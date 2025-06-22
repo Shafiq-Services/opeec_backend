@@ -467,6 +467,97 @@ exports.unBlockUser = async (req, res) => {
   }
 };
 
+// Admin update user profile information
+exports.updateUserProfileByAdmin = async (req, res) => {
+  try {
+    const { userId, age, gender, DOB, address, lat, lng } = req.query;
+
+    // Validation for required parameters
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+    if (!age) {
+      return res.status(400).json({ message: 'Age is required' });
+    }
+    if (!gender) {
+      return res.status(400).json({ message: 'Gender is required' });
+    }
+    if (!DOB) {
+      return res.status(400).json({ message: 'Date of Birth (DOB) is required' });
+    }
+    if (!address) {
+      return res.status(400).json({ message: 'Address is required' });
+    }
+    if (!lat) {
+      return res.status(400).json({ message: 'Latitude (lat) is required' });
+    }
+    if (!lng) {
+      return res.status(400).json({ message: 'Longitude (lng) is required' });
+    }
+
+    // Validate age is a number
+    const ageNum = parseInt(age);
+    if (isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
+      return res.status(400).json({ message: 'Age must be a valid number between 0 and 150' });
+    }
+
+    // Validate gender
+    const validGenders = ['male', 'female', 'other'];
+    if (!validGenders.includes(gender.toLowerCase())) {
+      return res.status(400).json({ message: 'Gender must be male, female, or other' });
+    }
+
+    // Validate DOB format (YYYY-MM-DD)
+    const dobDate = new Date(DOB);
+    if (isNaN(dobDate.getTime())) {
+      return res.status(400).json({ message: 'DOB must be a valid date in YYYY-MM-DD format' });
+    }
+
+    // Validate latitude and longitude
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+    if (isNaN(latNum) || latNum < -90 || latNum > 90) {
+      return res.status(400).json({ message: 'Latitude must be a valid number between -90 and 90' });
+    }
+    if (isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
+      return res.status(400).json({ message: 'Longitude must be a valid number between -180 and 180' });
+    }
+
+    // Find user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update user profile
+    user.age = ageNum;
+    user.gender = gender.toLowerCase();
+    user.DOB = DOB;
+    user.address = address;
+    user.lat = latNum;
+    user.lng = lngNum;
+
+    await user.save();
+
+    res.status(200).json({ 
+      message: 'User profile updated successfully',
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        age: user.age,
+        gender: user.gender,
+        DOB: user.DOB,
+        address: user.address,
+        lat: user.lat,
+        lng: user.lng
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating user profile', error });
+  }
+};
+
 exports.getAllUsers = async (req, res) => {
   try {
     const { status = 'all' } = req.query;
@@ -508,6 +599,12 @@ exports.getAllUsers = async (req, res) => {
         email: user.email,
         profile_image: user.profile_image,
         id_card_selfie: user.id_card_selfie,
+        age: user.age || "",
+        gender: user.gender || "",
+        DOB: user.DOB || "",
+        address: user.address || "",
+        lat: user.lat || "",
+        lng: user.lng || "",
         equipment_count: equipmentCount,
         total_rentals: totalRentals,
         is_blocked: user.is_blocked,
