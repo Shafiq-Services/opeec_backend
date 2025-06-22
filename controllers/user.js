@@ -471,62 +471,54 @@ exports.getAllUsers = async (req, res) => {
   try {
     const { status = 'all' } = req.query;
     
-    // First get all users who own equipment
-    const users = await User.find();
+    // Get all users
+    let users = await User.find();
     
-    // Get all equipment owners
-    const equipmentOwners = await Equipment.distinct('owner_id');
-    
-    // Filter users to only include equipment owners
-    let sellers = users.filter(user => 
-      equipmentOwners.some(ownerId => ownerId.toString() === user._id.toString())
-    );
-
     // Filter based on status (case-insensitive)
     if (status.toLowerCase() !== 'all') {
-      sellers = sellers.filter(seller => {
+      users = users.filter(user => {
         switch (status.toLowerCase()) {
           case 'pending':
-            return !seller.isUserVerified;
+            return !user.isUserVerified;
           case 'active':
-            return seller.isUserVerified && !seller.is_blocked;
+            return user.isUserVerified && !user.is_blocked;
           case 'blocked':
-            return seller.is_blocked;
+            return user.is_blocked;
           default:
             return true;
         }
       });
     }
     
-    // Get equipment counts and rental counts for each seller
-    const sellersWithStats = await Promise.all(sellers.map(async (seller) => {
+    // Get equipment counts and rental counts for each user
+    const usersWithStats = await Promise.all(users.map(async (user) => {
       // Get equipment count
-      const equipmentCount = await Equipment.countDocuments({ owner_id: seller._id });
+      const equipmentCount = await Equipment.countDocuments({ owner_id: user._id });
       
       // Get total rentals count
-      const sellerEquipments = await Equipment.find({ owner_id: seller._id });
+      const userEquipments = await Equipment.find({ owner_id: user._id });
       const totalRentals = await Order.countDocuments({ 
-        equipment_id: { $in: sellerEquipments.map(eq => eq._id) }
+        equipment_id: { $in: userEquipments.map(eq => eq._id) }
       });
       
       // Return only required fields
       return {
-        _id: seller._id,
-        name: seller.name,
-        email: seller.email,
-        profile_image: seller.profile_image,
-        id_card_selfie: seller.id_card_selfie,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        profile_image: user.profile_image,
+        id_card_selfie: user.id_card_selfie,
         equipment_count: equipmentCount,
         total_rentals: totalRentals,
-        is_blocked: seller.is_blocked,
-        block_reason: seller.block_reason,
-        created_at: seller.created_at
+        is_blocked: user.is_blocked,
+        block_reason: user.block_reason,
+        created_at: user.created_at
       };
     }));
 
     res.status(200).json({ 
       message: 'Users fetched successfully', 
-      users: sellersWithStats 
+      users: usersWithStats 
     });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching users', error });
