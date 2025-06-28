@@ -637,3 +637,119 @@ const processOrders = async () => {
 // Run job every hour
 cron.schedule(`*/${intervalMinutes} * * * *`, processOrders);
 console.log(`✅ Order monitoring started.`);
+
+// Admin: Get rentals by status
+exports.getRentalsByStatus = async (req, res) => {
+  try {
+    const { status = 'All' } = req.query;
+    const allowedStatuses = ["Booked", "Delivered", "Ongoing", "Returned", "Late", "All"];
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ message: "Invalid status value provided." });
+    }
+
+    let statusFilter = status !== "All" ? { rental_status: status } : {};
+
+    const orders = await Orders.aggregate([
+      {
+        $lookup: {
+          from: "equipments",
+          localField: "equipment_id",
+          foreignField: "_id",
+          as: "equipment",
+        },
+      },
+      { $unwind: "$equipment" },
+      {
+        $lookup: {
+          from: "sub_categories",
+          localField: "equipment.sub_category_fk",
+          foreignField: "_id",
+          as: "subcategory",
+        },
+      },
+      { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "categories",
+          localField: "subcategory.category_id",
+          foreignField: "_id",
+          as: "category",
+        },
+      },
+      { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "user_id",
+          foreignField: "_id",
+          as: "user",
+        },
+      },
+      { $unwind: "$user" },
+      { $match: statusFilter },
+      {
+        $project: {
+          _id: 1,
+          rental_status: 1,
+          rental_fee: 1,
+          platform_fee: 1,
+          tax_amount: 1,
+          total_amount: 1,
+          penalty_amount: 1,
+          created_at: 1,
+          "rental_schedule.start_date": 1,
+          "rental_schedule.end_date": 1,
+          "location.address": 1,
+          "equipment.name": 1,
+          "equipment.owner_id": 1,
+          "equipment.images": 1,
+          "category.name": 1,
+          "subcategory.name": 1,
+          "user.name": 1,
+          "user.email": 1,
+          "user.phone_number": 1
+        }
+      }
+    ]);
+
+    const formattedOrders = orders.map(order => ({
+      _id: order._id,
+      rental_status: order.rental_status,
+      rental_fee: order.rental_fee,
+      platform_fee: order.platform_fee,
+      tax_amount: order.tax_amount,
+      total_amount: order.total_amount,
+      penalty_amount: order.penalty_amount || 0,
+      created_at: order.created_at,
+      start_date: order.rental_schedule?.start_date,
+      end_date: order.rental_schedule?.end_date,
+      address: order.location?.address,
+      equipment: {
+        name: order.equipment?.name,
+        owner_id: order.equipment?.owner_id,
+        images: order.equipment?.images
+      },
+      category: order.category?.name,
+      subcategory: order.subcategory?.name,
+      user: {
+        name: order.user?.name,
+        email: order.user?.email,
+        phone_number: order.user?.phone_number
+      }
+    }));
+
+    return res.status(200).json({
+      message: "Rentals fetched successfully.",
+      success: true,
+      orders: formattedOrders,
+      total_count: formattedOrders.length
+    });
+  } catch (error) {
+    console.error('Error fetching rentals by status:', error);
+    return res.status(500).json({
+      message: "Error fetching rentals by status.",
+      error: error.message,
+    });
+  }
+};
