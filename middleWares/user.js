@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');  // Import jsonwebtoken
-const User = require('../models/User');  // Import User model to check user existence
+const User = require('../models/user');  // Import User model to check user existence
 
 module.exports.userMiddleware = async (req, res, next) => {
   // Extract token from the Authorization header (Bearer token)

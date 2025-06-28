@@ -81,64 +81,16 @@ exports.login = async (req, res) => {
       await user.save();
     }    
     
-      // Generate JWT token
-      user.fcm_token = fcm_token; 
-      await user.save();
+    // Generate JWT token
+    user.fcm_token = fcm_token; 
+    await user.save();
     const token = jwt.sign({ userId: user._id }, config.JWT_SECRET);
-
-    // Start monitoring user changes
-    startUserMonitoring(user._id);
 
     res.status(200).json({ message: 'Login successful', token, _id: user._id, isUserVerified: user.isUserVerified, rejectionReason: user.rejection_reason });
   } catch (error) {
     res.status(500).json({ message: 'Error in login', error });
   }
 };
-
-const startUserMonitoring = (userId) => {
-  const userChangeStream = User.watch(
-    [
-      {
-        $match: {
-          'documentKey._id': userId,
-          'updateDescription.updatedFields': { $exists: true }, // Ensure fields are updated
-          $or: [
-            { 'updateDescription.updatedFields.isUserVerified': { $exists: true } },
-            { 'updateDescription.updatedFields.rejection_reason': { $exists: true } },
-            { 'updateDescription.updatedFields.is_blocked': { $exists: true } }
-          ]
-        }
-      }
-    ],
-    { fullDocument: 'updateLookup' } // Fetch full document after update
-  );
-
-  userChangeStream.on('change', (change) => {
-    console.log('Relevant Change detected:', change);
-    const updatedUser = change.fullDocument;
-
-    if (updatedUser) {
-      if (updatedUser.isUserVerified === true && updatedUser.rejection_reason === "") {
-        // Emit socket event when user is verified
-        sendEventToUser(userId, 'isVerified', {
-          isVerified: true,
-          rejection_reason: ""
-        });
-      } else if (updatedUser.isUserVerified === false && updatedUser.rejection_reason !== "") {
-        sendEventToUser(userId, 'isVerified', {
-          isVerified: false,
-          rejection_reason: updatedUser.rejection_reason
-        });
-      }
-
-      sendEventToUser(userId, 'isBlocked', { isBlocked: updatedUser.is_blocked });
-
-    } else {
-      console.error("Change document is undefined", change);
-    }
-  });
-};
-
 
 // Send OTP to email
 exports.sendOtp = async (req, res) => {

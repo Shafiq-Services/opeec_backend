@@ -68,8 +68,8 @@ userRouter.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
 
 userRouter.get('/get_fcm', userController.getFCMToken);
 
-// Mount the routers - admin routes at root level to maintain original paths
-router.use('/', adminRouter);
-router.use('/', userRouter);
+// Mount the routers at different sub-paths to avoid conflicts
+router.use('/admin', adminRouter);  // Admin routes at /user/admin/*
+router.use('/', userRouter);        // User routes at /user/*
 
 module.exports = router;

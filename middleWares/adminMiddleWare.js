@@ -30,7 +30,7 @@ module.exports.adminMiddleware = async (req, res, next) => {
     
     if (!admin) {
       console.error("❌ Admin Not Found with ID:", req.adminId); // Debugging: Admin not found
-      return res.status(404).json({ message: "Invalid or expired token" });
+      return res.status(404).json({ message: "Invalid or expired admin token" });
     }
 
     console.log("✅ Admin Found:", admin.email); // Debugging: Show found admin's email
@@ -39,6 +39,6 @@ module.exports.adminMiddleware = async (req, res, next) => {
     next();  
   } catch (error) {
     console.error("❌ Error in Admin Middleware:", error.message); // Debugging: Show error message
-    return res.status(401).json({ message: "Invalid or expired token", error: error.message });
+    return res.status(401).json({ message: "Invalid or expired admin token", error: error.message });
   }
 };
