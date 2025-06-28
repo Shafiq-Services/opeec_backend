@@ -62,6 +62,7 @@ adminRouter.get('/get_by_status', equipmentController.getEquipmentByStatus);
 
 // Search equipment
 adminRouter.get('/search', equipmentController.searchEquipment);
+adminRouter.put('/update_status', equipmentController.updateEquipmentStatus);
 
 // Mount the routers
 router.use('/', adminRouter);
