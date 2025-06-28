@@ -998,7 +998,8 @@ async function updateEquipmentStatus(req, res) {
       Pending: ["Active", "Rejected", "Blocked"],
       Active: ["InActive", "Blocked"],
       InActive: ["Active", "Blocked"],
-      Blocked: ["Active"]
+      Blocked: ["Active"],
+      Rejected: ["Active"]
     };
 
     const requiresReason = ["Rejected", "Blocked"];
