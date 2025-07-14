@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/admin');
-const userController = require('../controllers/user');
 const { adminMiddleware } = require('../middleWares/adminMiddleWare');
 
 // Admin Login
@@ -21,13 +20,5 @@ router.get('/profile', adminController.getProfile);
 
 // Update Admin Profile
 router.put('/update', adminController.updateProfile);
-
-// User Management Routes
-router.put('/users/approve', userController.approveUser);
-router.put('/users/reject', userController.rejectUser);
-router.put('/users/block', userController.blockUser);
-router.put('/users/unblock', userController.unBlockUser);
-router.get('/users/sellers', userController.getAllUsers);
-router.put('/users/update-profile', userController.updateUserProfileByAdmin);
 
 module.exports = router;

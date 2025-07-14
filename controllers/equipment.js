@@ -7,6 +7,7 @@ const Conversation = require('../models/conversation');
 const jwt = require('jsonwebtoken');  // Import jsonwebtoken
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews} = require("../utils/common_methods");
 const Order = require('../models/orders'); // Import the Order model
+const { sendEventToUser } = require('../utils/socketService'); // Import socket service
 
 const addEquipment = async (req, res) => {
   const {
@@ -1013,11 +1014,27 @@ async function updateEquipmentStatus(req, res) {
     }
 
     // ✅ Update only the required fields
+    const oldStatus = equipment.equipment_status; // Store old status for comparison
     equipment.equipment_status = status;
     equipment.reason = requiresReason.includes(status) ? reason : "";
 
     // ✅ Validate only modified fields to avoid schema errors
     await equipment.save({ validateModifiedOnly: true });
+
+    // 🔔 Send socket event to equipment owner about status change
+    const socketEventData = {
+      equipment_id: equipment._id,
+      equipment_name: equipment.name,
+      old_status: oldStatus,
+      new_status: status,
+      reason: equipment.reason,
+      updated_at: new Date(),
+      message: `Your equipment "${equipment.name}" status has been changed from ${oldStatus} to ${status}`,
+      notification_type: 'equipment_status_update'
+    };
+
+    // Send event to equipment owner
+    sendEventToUser(equipment.owner_id.toString(), 'equipmentStatusChanged', socketEventData);
 
     return res.status(200).json({ message: `Equipment status updated to ${status}`, status: true, equipment });
 

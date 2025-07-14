@@ -1,0 +1,85 @@
+---
+alwaysApply: false
+---
+This rule defines the project-wide conventions and structure for backend API development using Node.js, Express, and Mongoose.
+
+🔧 FILE STRUCTURE:
+
+- `controllers/` — Feature-wise business logic
+- `models/` — Mongoose schemas and database models
+- `routes/` — Express route definitions per entity
+- `middlewares/` — Authentication, validation, etc.
+- `utils/` — Shared helpers like `apiResponse`, validators, upload and video logic
+- `config/` — Database and environment configuration
+- `config/socketService.js` — Must be used for socket-based logic
+
+📁 Each entity/feature should have:
+- A controller in `controllers/`
+- A schema in `models/`
+- Routes in `routes/`
+- Utilities or validators in `utils/` (if needed)
+
+🧱 NAMING CONVENTIONS:
+
+- **Files**: camelCase — e.g., `userController.js`  
+  ➤ **Use `entityController.js` naming strictly** for all controller files
+- **Functions/Variables**: camelCase
+- **Constants**: UPPER_SNAKE_CASE
+- **Routes (paths)**: kebab-case — e.g., `/course/add`, `/product/list`
+
+📡 API RESPONSE FORMAT:
+
+All API responses must:
+1. Start with `_id`
+2. Follow with parent IDs (if hierarchical)
+3. Include data fields (name, title, imageUrl, etc.)
+4. End with `createdAt`
+5. Never include `__v`
+
+Use **descriptive property names** (e.g., `user`, `items`, `courseList`) — never just `data`.
+
+🔗 NESTED STRUCTURE CONVENTION:
+
+- Detail endpoints return complete nested entities.
+- Child entities include all parent IDs.
+- Example: lesson includes `moduleId`, `courseId`, etc.
+
+🛠 ROUTING RULES:
+
+- `POST /entity/add`
+- `PUT /entity/edit`
+- `DELETE /entity/delete?entityId=...`
+- `GET /entity/list?parentId=...`
+
+Use **query parameters**, not URL path params (`:id`).  
+All IDs should be passed explicitly: `?courseId=...`, `?parentId=...`
+
+🔐 AUTHENTICATION & ACCESS CONTROL:
+
+- Extract user from JWT middleware: `req.userId`
+- Require `Authorization: Bearer {{auth_token}}` for protected routes
+- Validate:
+  - Input parameters
+  - Entity existence
+  - User permissions
+
+🧠 ACCESS CONTROL STRUCTURE:
+
+- Admin-only APIs = protected + elevated checks
+- User APIs = scoped to ownership/membership
+
+⚡ PERFORMANCE GUIDELINES:
+
+- Use parallel DB operations where possible
+- Minimize redundant queries
+- Implement pagination for large result sets
+
+🎯 CODE QUALITY:
+
+- One controller per entity
+- Group related logic together
+- Keep functions short, descriptive, and focused
+- Use helper functions in `utils/` for shared logic
+- Validate inputs at route entry
+
+- Use `errorResponse()` utility for consistent errors

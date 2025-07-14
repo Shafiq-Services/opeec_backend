@@ -1,0 +1,51 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+@postman_update
+
+Generate or update a Postman collection JSON file that reflects the backend API structure of this project.
+
+🔁 FILE CREATION & VALIDATION:
+
+- Detect the backend project's **root folder name** (e.g., `money-minds-backend`)
+- Generate or update a Postman collection file named exactly: `<project-root-name>-postman_collection.json`
+  Example: `money-minds-backend-postman_collection.json`
+- Only check for and modify a file matching this exact pattern.
+- If no such file exists, create it in the **project root**.
+
+📁 STRUCTURE RULES:
+
+- Each controller in the backend = one folder in the collection.
+- If there are user roles (like `Admin`, `User`, etc.), group controller folders under those roles:
+  Example:
+    📂 Admin
+      📂 Course
+        POST Add Course
+        PUT Edit Course
+    📂 User
+      📂 Course
+        GET List Courses
+- If no roles are defined, use just controller names as top-level folders:
+    📂 Course
+      POST Add Course
+      GET List Courses
+
+📌 REQUEST FORMAT CONVENTIONS:
+
+- Name requests using consistent, kebab-case action labels: `add-lesson`, `edit-course`, `delete-user`, `list-modules`
+- Use **query parameters** (`?id=...`) rather than path parameters (`/:id`)
+- Set this header for protected endpoints: `Authorization: Bearer {{auth_token}}`
+- Use `{{base_url}}` as the request host variable
+
+📦 FILE LOCATION:
+
+- Output or update only the file: `<project-root-name>-postman_collection.json`
+- Place it in the root of the project directory.
+- **Do not modify or overwrite** any other `.json` files.
+
+✅ GOAL:
+
+
+Ensure each backend project has a cleanly named, correctly structured Postman collection that mirrors its API structure, without affecting unrelated JSON files.

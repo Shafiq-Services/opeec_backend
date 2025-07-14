@@ -4,6 +4,11 @@ const cors = require('cors');
 const config = require('./config/config');
 const connectDB = require('./config/db');
 const adminRoutes = require('./routes/admin');
+const adminUserRoutes = require('./routes/adminUserRoutes');
+const adminEquipmentRoutes = require('./routes/adminEquipmentRoutes');
+const adminOrderRoutes = require('./routes/adminOrderRoutes');
+const adminCategoryRoutes = require('./routes/adminCategoryRoutes');
+const adminDashboardRoutes = require('./routes/adminDashboardRoutes');
 const userRoutes = require('./routes/user');
 const categoryRoutes = require('./routes/categories');
 const equipmentRoutes = require('./routes/equipment');
@@ -50,6 +55,11 @@ connectDB();
 
 // Routes
 app.use('/admin', adminRoutes);
+app.use('/admin/users', adminUserRoutes);
+app.use('/admin/equipment', adminEquipmentRoutes);
+app.use('/admin/orders', adminOrderRoutes);
+app.use('/admin/categories', adminCategoryRoutes);
+app.use('/admin/dashboard', adminDashboardRoutes);
 app.use('/user', userRoutes);
 app.use('/categories', categoryRoutes);
 app.use('/equipment', equipmentRoutes);

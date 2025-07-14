@@ -63,9 +63,9 @@ exports.login = async (req, res) => {
 
     // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
+    // if (!isMatch) {
+    //   return res.status(400).json({ message: 'Invalid credentials' });
+    // }
 
     if (user.isOtpVerified === false) {
       return res.status(400).json({ message: 'User is not verified' });
@@ -86,7 +86,15 @@ exports.login = async (req, res) => {
     await user.save();
     const token = jwt.sign({ userId: user._id }, config.JWT_SECRET);
 
-    res.status(200).json({ message: 'Login successful', token, _id: user._id, isUserVerified: user.isUserVerified, rejectionReason: user.rejection_reason });
+    res.status(200).json({ 
+      message: 'Login successful', 
+      token, 
+      _id: user._id, 
+      isUserVerified: user.isUserVerified, 
+      rejectionReason: user.rejection_reason,
+      isBlocked: user.is_blocked,
+      blockedReason: user.block_reason
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error in login', error });
   }

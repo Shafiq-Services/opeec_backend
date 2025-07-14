@@ -1,18 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const userController = require('../controllers/user');
 const orderController = require('../controllers/orders');
 const { userMiddleware } = require("../middleWares/user");
-const { adminMiddleware } = require("../middleWares/adminMiddleWare");
 
-// ---------------------- Admin Routes ----------------------
-
-// Get rentals by status (admin only)
-router.get('/admin/get_by_status', adminMiddleware, orderController.getRentalsByStatus);
-
-// ---------------------- Protected User Routes ----------------------
-
-// Apply user middleware to user routes
+// Apply user middleware to all routes
 router.use(userMiddleware);
 
 router.get('/current-rentals', orderController.getCurrentRentals);

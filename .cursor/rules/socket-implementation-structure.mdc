@@ -1,0 +1,106 @@
+---
+alwaysApply: false
+---
+📡 SOCKET RULE — UNIVERSAL BACKEND REAL-TIME STANDARD
+
+Defines project-wide conventions for scalable, context-aware socket implementation.
+
+────────────────────────────────────────────
+📁 FILE LOCATION:
+- Place all socket logic in: utils/socketManager.js
+- Organize handlers modularly per feature (e.g., chat, presence, activity)
+────────────────────────────────────────────
+🔐 AUTHENTICATION:
+- Authenticate on socket connect using JWT
+- Extract userId (or equivalent)
+- Reject if invalid
+────────────────────────────────────────────
+🏠 ROOM NAMING CONVENTION:
+- Personal room:     user:{userId}
+- Feature-specific:  feature:{contextId}
+
+Example:
+  user:23
+  thread:abc123
+  board:task-987
+────────────────────────────────────────────
+🧠 USER CONTEXT STATE (In-Memory or Redis):
+Track each user’s active view context:
+{
+  [userId]: {
+    inOverviewView: boolean,
+    activeContextId: string | null
+  }
+}
+────────────────────────────────────────────
+⚙️ AUTOMATED CONTEXT DETECTION (KEY RULE):
+✅ The backend must automatically track context and emit relevant socket events
+   by detecting API calls (e.g., list/detail views).
+
+Examples:
+  - On overview API call:
+      → set inOverviewView = true, activeContextId = null
+      → emit any relevant updates (e.g., unread summaries)
+
+  - On detail-level API (e.g., fetch item/page 1):
+      → set activeContextId = ID
+      → auto-exit previously active context
+      → emit context-specific data (e.g., reset unread)
+
+  - On "exit overview" (only client-emitted event):
+      → clear both inOverviewView & activeContextId
+────────────────────────────────────────────
+📶 SOCKET EVENT RULES:
+
+SERVER EMITS:
+✔ feature-updated
+✔ item-created
+✔ new-message
+✔ unread-count-updated
+✔ user-typing / typing-stopped
+
+CLIENT EMITS (ONLY WHEN NOT INFERABLE):
+✔ user-typing         { contextId }
+✔ typing-stopped      { contextId }
+✔ exit-overview       (no body)
+
+DO NOT REQUIRE CLIENT TO EMIT:
+✖ enter-overview
+✖ enter-context
+✖ send-message
+→ These should be inferred from API usage
+────────────────────────────────────────────
+💬 IF MESSAGING FEATURE IS PRESENT:
+
+SERVER BEHAVIOR:
+- Send messages via REST
+- On send:
+  → emit new-message to context room
+  → emit unread-count-updated to users in overview view
+  → emit new-message (with unread counts) to users in other contexts
+
+UNREAD LOGIC:
+- Track lastReadTimestamps per user/context
+- Reset on context entry
+- Only emit unread to users with visible UI states
+
+CLIENT LISTENERS:
+✔ new-message              { message, unreadSummary? }
+✔ unread-count-updated     { contextId, count }
+✔ user-typing / stopped    { userId, contextId }
+
+CLIENT EMITS (MINIMAL):
+✔ user-typing              { contextId }
+✔ typing-stopped           { contextId }
+✔ exit-overview            (no body)
+────────────────────────────────────────────
+✅ BEST PRACTICES:
+
+- Use context-aware emission — only emit if user is in a relevant state
+- Prefer server-driven inference to reduce fragile client logic
+- Room naming must stay consistent and predictable
+- Separate logic per feature for scalability
+- Use helper functions for: trackState(), emitToContext(), joinRooms()
+
+────────────────────────────────────────────
+
