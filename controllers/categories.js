@@ -28,7 +28,7 @@ async function addCategory(req, res) {
       const subCategoryPromises = sub_categories.map(async (subCategoryData) => {
         const newSubCategory = new SubCategory({
           name: subCategoryData.name,
-          category_id: savedCategory._id, // Associate subcategory with the saved category
+          categoryId: savedCategory._id, // Associate subcategory with the saved category
         });
   
         // Save subcategory
@@ -93,12 +93,12 @@ async function addCategory(req, res) {
       // If sub_categories are provided, update them
       if (sub_categories && sub_categories.length > 0) {
         // Delete old subcategories and add new ones
-        await SubCategory.deleteMany({ category_id: category._id });
+        await SubCategory.deleteMany({ categoryId: category._id });
   
         const subCategoryPromises = sub_categories.map(async (subCategoryData) => {
           const newSubCategory = new SubCategory({
             name: subCategoryData.name,
-            category_id: category._id, // Associate subcategory with the category
+            categoryId: category._id, // Associate subcategory with the category
           });
   
           // Save new subcategory
@@ -168,7 +168,7 @@ async function addCategory(req, res) {
       }
   
       // Delete all subcategories associated with this category
-      await SubCategory.deleteMany({ category_id: category._id });
+      await SubCategory.deleteMany({ categoryId: category._id });
   
       // Delete the category
       await Category.findByIdAndDelete(category_id);
@@ -202,7 +202,7 @@ async function getAllCategories(req, res) {
     // Loop through each category and populate subcategories
     const formattedCategories = await Promise.all(categories.map(async (category) => {
       // Fetch the subcategories for each category
-      const subCategories = await SubCategory.find({ category_id: category._id }).lean();
+      const subCategories = await SubCategory.find({ categoryId: category._id }).lean();
       // Format the category data
       const formattedCategory = {
         category_id: category._id,

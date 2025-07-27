@@ -34,20 +34,20 @@ exports.summary = async (req, res) => {
 
     // Monthly counts
     const currentUsersCount = await User.countDocuments({
-      created_at: { $gte: currentMonth, $lt: now }
+      createdAt: { $gte: currentMonth, $lt: now }
     });
     const previousUsersCount = await User.countDocuments({
-      created_at: { $gte: previousMonth, $lt: previousMonthEnd }
+      createdAt: { $gte: previousMonth, $lt: previousMonthEnd }
     });
 
     console.log("👥 Users - Current Month:", currentUsersCount);
     console.log("👥 Users - Previous Month:", previousUsersCount);
 
     const currentRentalsCount = await Order.countDocuments({
-      created_at: { $gte: currentMonth, $lt: now }
+      createdAt: { $gte: currentMonth, $lt: now }
     });
     const previousRentalsCount = await Order.countDocuments({
-      created_at: { $gte: previousMonth, $lt: previousMonthEnd }
+      createdAt: { $gte: previousMonth, $lt: previousMonthEnd }
     });
 
     console.log("📦 Rentals - Current Month:", currentRentalsCount);

@@ -17,7 +17,7 @@ router.post('/add', equipmentController.addEquipment);
 router.put('/update/:id', equipmentController.updateEquipment);
 
 // Delete equipment
-router.delete('/delete/:id', equipmentController.deleteEquipment);
+router.delete('/delete', equipmentController.deleteEquipment);
 
 // Get user's shop
 router.get('/my_shop', equipmentController.getUserShop);

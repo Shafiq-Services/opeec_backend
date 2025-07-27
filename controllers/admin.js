@@ -195,17 +195,17 @@ exports.sendOtpForPasswordReset = async (req, res) => {
       }
   
       // Check if OTP is valid
-      if (!admin.otp || admin.otpExpiry < Date.now()) {
+      if (!admin.otpDetails?.otp || admin.otpDetails?.otpExpiry < Date.now()) {
         return res.status(400).json({ message: 'Invalid or expired OTP' });
       }
   
-      if (admin.otp !== parseInt(otp)) {
+      if (admin.otpDetails.otp !== parseInt(otp)) {
         return res.status(400).json({ message: 'Incorrect OTP' });
       }
   
       // OTP verified, clear OTP fields
-      admin.otp = null;
-      admin.otpExpiry = null;
+      admin.otpDetails.otp = null;
+      admin.otpDetails.otpExpiry = null;
       await admin.save();
   
       res.status(200).json({ message: 'OTP verified successfully' });

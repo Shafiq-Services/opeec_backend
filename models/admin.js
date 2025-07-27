@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
 
+// OTP Schema for reusability
+const otpSchema = new mongoose.Schema({
+  otp: { type: Number },
+  otpExpiry: { type: Date }
+}, { _id: false });
+
 // Admin Schema
 const adminSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -11,9 +17,9 @@ const adminSchema = new mongoose.Schema({
   about: { type: String, default: "", trim: true },
   password: { type: String, required: true },
   profile_picture: { type: String, default: "" },
-  created_at: { type: Date, default: Date.now },
-  otp: { type: Number }, // OTP for password reset
-  otpExpiry: { type: Date }, // OTP Expiry time
+  otpDetails: otpSchema
+}, { 
+  timestamps: true // Replaces created_at with createdAt/updatedAt
 });
 
 module.exports = mongoose.model('Admin', adminSchema);

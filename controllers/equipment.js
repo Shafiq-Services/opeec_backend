@@ -1,17 +1,17 @@
 const mongoose = require('mongoose');
-const Equipment = require('../models/equipment'); // Import the Equipment model
-const User = require('../models/user'); // Import the User model (for owner validation)
-const SubCategory = require('../models/sub_categories'); // Import the SubCategory model
-const categories = require('../models/categories'); // Import the categories model
+const Equipment = require('../models/equipment');
+const User = require('../models/user');
+const SubCategory = require('../models/sub_categories');
+const Category = require('../models/categories');
 const Conversation = require('../models/conversation');
-const jwt = require('jsonwebtoken');  // Import jsonwebtoken
+const jwt = require('jsonwebtoken');
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews} = require("../utils/common_methods");
-const Order = require('../models/orders'); // Import the Order model
-const { sendEventToUser } = require('../utils/socketService'); // Import socket service
+const Order = require('../models/orders');
+const { sendEventToUser } = require('../utils/socketService');
 
 const addEquipment = async (req, res) => {
   const {
-    sub_category_fk,
+    subCategoryId,
     name,
     make,
     model,
@@ -20,9 +20,9 @@ const addEquipment = async (req, res) => {
     images,
     address,
     lat,
-    long,
+    lng,
     range,
-    delivery_by_owner, // Required field
+    delivery_by_owner,
     rental_price,
     equipment_price,
     notice_period,
@@ -39,7 +39,7 @@ const addEquipment = async (req, res) => {
 
     // Validate required fields
     const requiredFields = [
-      { name: 'sub_category_fk', value: sub_category_fk },
+      { name: 'subCategoryId', value: subCategoryId },
       { name: 'name', value: name },
       { name: 'make', value: make },
       { name: 'model', value: model },
@@ -47,7 +47,7 @@ const addEquipment = async (req, res) => {
       { name: 'description', value: description },
       { name: 'address', value: address },
       { name: 'lat', value: lat },
-      { name: 'long', value: long },
+      { name: 'lng', value: lng },
       { name: 'rental_price', value: rental_price },
       { name: 'equipment_price', value: equipment_price },
       { name: 'notice_period', value: notice_period },
@@ -55,49 +55,37 @@ const addEquipment = async (req, res) => {
       { name: 'maximum_trip_duration', value: maximum_trip_duration }
     ];
 
-    // Include range validation only if delivery_by_owner is true
-    if (isDeliveryByOwner) {
-      requiredFields.push({ name: 'range', value: range });
-    }
+    // Check for missing fields
+    const missingFields = requiredFields.filter(field => 
+      field.value === undefined || field.value === null || field.value === ''
+    );
 
-    for (const field of requiredFields) {
-      if (field.value === undefined || field.value === null || field.value === "") {
-        return res.status(400).json({ message: `${field.name} is required.` });
-      }
-    }
-
-    // Validate range only if delivery_by_owner is true
-    if (isDeliveryByOwner && (isNaN(range) || range < 0)) {
-      return res.status(400).json({ message: 'Range must be a non-negative number.' });
-    }
-
-    // Validate image constraints safely
-    if (!Array.isArray(images) || images.length === 0) {
-      return res.status(400).json({ message: 'At least one image is required.' });
-    }
-    if (images.length > 3) {
-      return res.status(400).json({ message: 'A maximum of 3 images are allowed.' });
+    if (missingFields.length > 0) {
+      const missingFieldNames = missingFields.map(field => field.name).join(', ');
+      return res.status(400).json({ 
+        message: `Missing required fields: ${missingFieldNames}` 
+      });
     }
 
     // Validate sub-category existence
-    const subCategory = await SubCategory.findById(sub_category_fk);
+    const subCategory = await SubCategory.findById(subCategoryId);
     if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
 
     // Create and save equipment
     const newEquipment = new Equipment({
-      owner_id: req.userId,
-      sub_category_fk,
+      ownerId: req.userId,
+      subCategoryId,
       name,
       make,
       model,
       serial_number,
       description,
       images,
-      custom_location: {
+      location: {
         address,
         lat,
-        long,
-        ...(isDeliveryByOwner ? { range } : {}) // Include range only if required
+        lng,
+        ...(isDeliveryByOwner ? { range } : {})
       },
       delivery_by_owner: isDeliveryByOwner,
       rental_price,
@@ -120,7 +108,7 @@ const addEquipment = async (req, res) => {
 
   const updateEquipment = async (req, res) => {
     const {
-        sub_category_fk,
+        subCategoryId,
         name,
         make,
         model,
@@ -129,7 +117,7 @@ const addEquipment = async (req, res) => {
         images,
         address,
         lat,
-        long,
+        lng,
         range,
         delivery_by_owner,
         rental_price,
@@ -140,12 +128,11 @@ const addEquipment = async (req, res) => {
     } = req.body;
     
     try {
-        const equipmentId = req.query.equipment_id; // Get the equipment ID from the request params
+        const equipmentId = req.params.id;
         const userId = req.userId; // Assuming user ID is extracted from token middleware for authentication
-
         // Validate required fields
         const requiredFields = [
-            { name: 'sub_category_fk', value: sub_category_fk },
+            { name: 'subCategoryId', value: subCategoryId },
             { name: 'name', value: name },
             { name: 'make', value: make },
             { name: 'model', value: model },
@@ -153,7 +140,7 @@ const addEquipment = async (req, res) => {
             { name: 'description', value: description },
             { name: 'address', value: address },
             { name: 'lat', value: lat },
-            { name: 'long', value: long },
+            { name: 'lng', value: lng },
             { name: 'range', value: range },
             { name: 'rental_price', value: rental_price },
             { name: 'equipment_price', value: equipment_price },
@@ -173,9 +160,9 @@ const addEquipment = async (req, res) => {
         if (!images || images.length === 0) return res.status(400).json({ message: 'At least one image is required.' });
         if (images && images.length > 3) return res.status(400).json({ message: 'A maximum of 3 images are allowed.' });
 
-        // Validate sub-category existence
-        const subCategory = await SubCategory.findById(sub_category_fk);
-        if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
+            // Validate sub-category existence  
+    const subCategory = await SubCategory.findById(subCategoryId);
+    if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
 
         // Find the existing equipment by ID
         const equipment = await Equipment.findById(equipmentId);
@@ -187,13 +174,13 @@ const addEquipment = async (req, res) => {
         }
 
         // Update the other fields
-        equipment.sub_category_fk = sub_category_fk;
+        equipment.subCategoryId = subCategoryId;
         equipment.name = name;
         equipment.make = make;
         equipment.model = model;
         equipment.serial_number = serial_number;
         equipment.description = description;
-        equipment.custom_location = { address, lat, long, range };
+        equipment.location = { address, lat, lng, range };
         equipment.delivery_by_owner = delivery_by_owner;
         equipment.rental_price = rental_price;
         equipment.equipment_price = equipment_price;
@@ -215,10 +202,10 @@ async function getAllEquipments(req, res) {
   const userId = req.headers.authorization ? jwt.verify(req.headers.authorization.split(" ")[1], process.env.JWT_SECRET).userId : null;
 
   try {
-    const { lat, long, distance, name, category_id, delivery_by_owner } = req.query;
+    const { lat, lng, distance, name, categoryId, delivery_by_owner } = req.query;
 
     // ✅ Validate required parameters
-    if (!lat || !long) {
+    if (!lat || !lng) {
       return res.status(400).json({ message: "Latitude and longitude are required." });
     }
 
@@ -226,7 +213,7 @@ async function getAllEquipments(req, res) {
 
     // ✅ Exclude equipment owned by the logged-in user if token is provided
     if (req.user && req.user._id) {
-      query.owner_id = { $ne: req.user._id };
+      query.ownerId = { $ne: req.user._id };
     }
 
     // ✅ Optional filters
@@ -238,20 +225,20 @@ async function getAllEquipments(req, res) {
       query.delivery_by_owner = delivery_by_owner === "true";
     }
 
-    if (category_id) {
-      const subCategories = await SubCategory.find({ category_id });
+    if (categoryId) {
+      const subCategories = await SubCategory.find({ categoryId });
       const subCategoryIds = subCategories.map(subCat => subCat._id);
-      query.sub_category_fk = { $in: subCategoryIds };
+      query.subCategoryId = { $in: subCategoryIds };
     }
 
     // ✅ Geospatial filtering
     let geoPipeline = [];
-    if (parseFloat(lat) !== 0.0 || parseFloat(long) !== 0.0) {
+    if (parseFloat(lat) !== 0.0 || parseFloat(lng) !== 0.0) {
       const maxDistanceKm = distance ? parseFloat(distance) : 50; // Default to 50km
 
       geoPipeline.push({
         $geoNear: {
-          near: { type: "Point", coordinates: [parseFloat(long), parseFloat(lat)] },
+          near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
           distanceField: "distance",
           maxDistance: maxDistanceKm * 1000, // Convert km to meters
           spherical: true,
@@ -265,7 +252,7 @@ async function getAllEquipments(req, res) {
       $addFields: {
         tempLocation: {
           type: "Point",
-          coordinates: ["$custom_location.long", "$custom_location.lat"],
+          coordinates: ["$location.lng", "$location.lat"],
         },
       },
     });
@@ -278,44 +265,41 @@ async function getAllEquipments(req, res) {
     
 
     // ✅ Fetch subcategories and categories
-    const subCategoryIds = equipments.map(equipment => equipment.sub_category_fk);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate("category_id");
+    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId);
+    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate("categoryId");
 
-    // ✅ Map subcategory details
-    const subCategoryMap = subCategories.reduce((acc, subCat) => {
-      acc[subCat._id] = {
+    // ✅ Create a map for faster sub-category lookups
+    const subCategoryMap = {};
+    subCategories.forEach(subCat => {
+      subCategoryMap[subCat._id] = {
+        categoryId: subCat.categoryId._id,
+        category_name: subCat.categoryId.name,
         sub_category_name: subCat.name,
-        category_id: subCat.category_id._id,
-        category_name: subCat.category_id.name,
       };
-      return acc;
-    }, {});
+    });
 
-    // ✅ Format response
-    const formattedEquipments = await Promise.all(
-      equipments.map(async (equipment) => {
-        const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
-    
-        // Fetch category asynchronously
-        const subCategory = await SubCategory.findById(equipment.sub_category_fk);
-        const category = await categories.findById(subCategory.category_id);
-        const isFavorite = userId ? (await User.findById(userId))?.favorite_equipments.includes(equipment._id) || false : false;
+    // ✅ Enhanced equipment response with all details
+    const formattedEquipments = await Promise.all(equipments.map(async (equipment) => {
+      const subCategoryDetails = subCategoryMap[equipment.subCategoryId];
 
+      if (!subCategoryDetails) {
+        const subCategory = await SubCategory.findById(equipment.subCategoryId);
+        const category = await Category.findById(subCategory.categoryId);
 
         return {
           _id: equipment._id,
           average_rating: await getAverageRating(equipment._id),
-          created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
+          created_at: equipment.createdAt ? equipment.createdAt.toGMTString() : new Date().toGMTString(),
           delivery_by_owner: equipment.delivery_by_owner,
           description: equipment.description,
           equipment_price: equipment.equipment_price,
           images: equipment.images,
-          isFavorite: isFavorite, // All these are favorites
+          isFavorite: userId ? (await User.findById(userId))?.favorite_equipments.includes(equipment._id) || false : false,
           location: {
-            address: equipment.custom_location?.address || "",
-            lat: equipment.custom_location?.lat || 0.0,
-            long: equipment.custom_location?.long || 0.0,
-            range: equipment.custom_location?.range || 0,
+            address: equipment.location?.address || "",
+            lat: equipment.location?.lat || 0.0,
+            lng: equipment.location?.lng || 0.0,
+            range: equipment.location?.range || 0,
           },
           make: equipment.make,
           maximum_trip_duration: equipment.maximum_trip_duration,
@@ -323,19 +307,52 @@ async function getAllEquipments(req, res) {
           model: equipment.model,
           name: equipment.name,
           notice_period: equipment.notice_period,
-          owner_id: equipment.owner_id,
+          owner_id: equipment.ownerId,
           postal_code: equipment.postal_code,
           rental_price: equipment.rental_price,
           serial_number: equipment.serial_number,
-          sub_category_id: equipment.sub_category_fk._id,
-          sub_category_name: equipment.sub_category_fk.name,
-          category_id: category ? category._id : null, // ✅ Fixed category reference
+          sub_category_id: equipment.subCategoryId._id,
+          sub_category_name: equipment.subCategoryId.name,
+          categoryId: category ? category._id : null, // ✅ Fixed category reference
           category_name: category ? category.name : null,
           equipment_status: equipment.equipment_status,
           reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
         };
-      })
-    );
+      }
+
+      return {
+        _id: equipment._id,
+        average_rating: await getAverageRating(equipment._id),
+        created_at: equipment.createdAt ? equipment.createdAt.toGMTString() : new Date().toGMTString(),
+        delivery_by_owner: equipment.delivery_by_owner,
+        description: equipment.description,
+        equipment_price: equipment.equipment_price,
+        images: equipment.images,
+        isFavorite: userId ? (await User.findById(userId))?.favorite_equipments.includes(equipment._id) || false : false,
+        location: {
+          address: equipment.location?.address || "",
+          lat: equipment.location?.lat || 0.0,
+          lng: equipment.location?.lng || 0.0,
+          range: equipment.location?.range || 0,
+        },
+        make: equipment.make,
+        maximum_trip_duration: equipment.maximum_trip_duration,
+        minimum_trip_duration: equipment.minimum_trip_duration,
+        model: equipment.model,
+        name: equipment.name,
+        notice_period: equipment.notice_period,
+        owner_id: equipment.ownerId,
+        postal_code: equipment.postal_code,
+        rental_price: equipment.rental_price,
+        serial_number: equipment.serial_number,
+        sub_category_id: equipment.subCategoryId._id,
+        sub_category_name: equipment.subCategoryId.name,
+        categoryId: subCategoryDetails.categoryId, // ✅ Fixed category reference
+        category_name: subCategoryDetails.category_name,
+        equipment_status: equipment.equipment_status,
+        reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
+      };
+    }));
     
 
     return res.status(200).json({
@@ -372,14 +389,14 @@ async function getMyEquipments(req, res) {
 
     // ✅ Fetch filtered equipment
     const equipments = await Equipment.find({
-      owner_id: userId,
+      ownerId: userId,
       ...(equipment_status !== "All" && { equipment_status }),
-    }).populate("sub_category_fk");
+    }).populate("subCategoryId");
     
 
     // ✅ Fetch subcategories and categories
-    const subCategoryIds = equipments.map(equipment => equipment.sub_category_fk);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate("category_id");
+    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId);
+    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate("categoryId");
 
     // ✅ Map subcategory details
     // const subCategoryMap = subCategories.reduce((acc, subCat) => {
@@ -396,24 +413,24 @@ async function getMyEquipments(req, res) {
         // const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
     
         // Fetch category asynchronously
-        const subCategory = await SubCategory.findById(equipment.sub_category_fk);
-        const category = await categories.findById(subCategory.category_id);
-        const owner = await User.findById(equipment.owner_id);
+        const subCategory = await SubCategory.findById(equipment.subCategoryId);
+        const category = await Category.findById(subCategory.categoryId);
+        const owner = await User.findById(equipment.ownerId);
 
         return {
           _id: equipment._id,
           average_rating: await getAverageRating(equipment._id),
-          created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
+          created_at: equipment.createdAt ? equipment.createdAt.toGMTString() : new Date().toGMTString(),
           delivery_by_owner: equipment.delivery_by_owner,
           description: equipment.description,
           equipment_price: equipment.equipment_price,
           images: equipment.images,
           isFavorite: owner.favorite_equipments.includes(equipment._id), // All these are favorites
           location: {
-            address: equipment.custom_location?.address || "",
-            lat: equipment.custom_location?.lat || 0.0,
-            long: equipment.custom_location?.long || 0.0,
-            range: equipment.custom_location?.range || 0,
+            address: equipment.location?.address || "",
+            lat: equipment.location?.lat || 0.0,
+            lng: equipment.location?.lng || 0.0,
+            range: equipment.location?.range || 0,
           },
           make: equipment.make,
           maximum_trip_duration: equipment.maximum_trip_duration,
@@ -421,12 +438,12 @@ async function getMyEquipments(req, res) {
           model: equipment.model,
           name: equipment.name,
           notice_period: equipment.notice_period,
-          owner_id: equipment.owner_id,
+          owner_id: equipment.ownerId,
           postal_code: equipment.postal_code,
           rental_price: equipment.rental_price,
           serial_number: equipment.serial_number,
-          sub_category_id: equipment.sub_category_fk._id,
-          sub_category_name: equipment.sub_category_fk.name,
+          sub_category_id: equipment.subCategoryId._id,
+          sub_category_name: equipment.subCategoryId.name,
           category_id: category ? category._id : null, // ✅ Use category details
           category_name: category ? category.name : null,
           equipment_status: equipment.equipment_status,
@@ -475,7 +492,7 @@ function queryMatches(equipment, query) {
       }
         
       // Fetch owner details
-      const owner = await User.findById(equipment.owner_id, 'name profile_image');
+      const owner = await User.findById(equipment.ownerId, 'name profile_image');
       const ownerId = owner._id;
       const token = req.headers.authorization?.split(" ")[1];
       var conversationId = "";
@@ -502,17 +519,17 @@ function queryMatches(equipment, query) {
       // Formatting the equipment details
       const equipmentDetails = {
         _id: equipment._id,
-        created_at: equipment.created_at ? equipment.created_at.toGMTString() : new Date().toGMTString(),
+        created_at: equipment.createdAt ? equipment.createdAt.toGMTString() : new Date().toGMTString(),
         delivery_by_owner: equipment.delivery_by_owner || false,
         description: equipment.description || '',
         equipment_price: equipment.equipment_price || 0,
         images: equipment.images || [],
         equipment_status: equipment.equipment_status,
         location: {
-          address: equipment.custom_location?.address || '',
-          lat: equipment.custom_location?.lat || 0.0,
-          long: equipment.custom_location?.long || 0.0,
-          range: equipment.custom_location?.range || 0,
+          address: equipment.location?.address || '',
+          lat: equipment.location?.lat || 0.0,
+          lng: equipment.location?.lng || 0.0,
+          range: equipment.location?.range || 0,
         },
         make: equipment.make || '',
         maximum_trip_duration: equipment.maximum_trip_duration || { count: 0, type: '' },
@@ -533,7 +550,7 @@ function queryMatches(equipment, query) {
         serial_number: equipment.serial_number || '',
         status: equipment.status || true,
         reason: equipment.reason || '',
-        sub_category_fk: equipment.sub_category_fk || '',
+        sub_category_fk: equipment.subCategoryId || '',
         conversationId,
       };
   
@@ -550,7 +567,7 @@ function queryMatches(equipment, query) {
   
   async function deleteEquipment(req, res) {
     try {
-      const equipmentId = req.query.equipment_id; // Extract equipment ID from request parameters
+      const equipmentId = req.query.equipmentId; // Extract equipment ID from request parameters
       const userId = req.userId; // Assuming user ID is extracted from token middleware for authentication
   
       // Find the equipment by ID
@@ -584,15 +601,15 @@ function queryMatches(equipment, query) {
       // Fetch all live equipment with populated categories and owner details
       const equipments = await Equipment.find({ equipment_status: "Active" })
         .populate({
-          path: 'sub_category_fk',
+          path: 'subCategoryId',
           model: SubCategory, // Reference to SubCategory model
           populate: {
-            path: 'category_id',
-            model: categories, // Reference to Category model
+            path: 'categoryId',
+            model: Category, // Reference to Category model
           },
         })
         .populate({
-          path: 'owner_id',
+          path: 'ownerId',
           model: User, // Reference to User model
           select: '_id name email profile_image' // Selecting only necessary fields
         });
@@ -610,7 +627,7 @@ function queryMatches(equipment, query) {
   
       // Group equipment by categories
       equipments.forEach((equipment) => {
-        const categoryId = equipment.sub_category_fk.category_id._id.toString();
+        const categoryId = equipment.subCategoryId.categoryId._id.toString();
         if (!categoryMap[categoryId]) {
           categoryMap[categoryId] = [];
         }
@@ -651,14 +668,14 @@ function queryMatches(equipment, query) {
               ];
   
             result.push({
-              equipment_id: equipment._id,
+              equipmentId: equipment._id,
               image: randomImage,
-              owner: equipment.owner_id
+              owner: equipment.ownerId
                 ? {
-                    _id: equipment.owner_id._id,
-                    name: equipment.owner_id.name,
-                    email: equipment.owner_id.email,
-                    profile_image: equipment.owner_id.profile_image,
+                    _id: equipment.ownerId._id,
+                    name: equipment.ownerId.name,
+                    email: equipment.ownerId.email,
+                    profile_image: equipment.ownerId.profile_image,
                   }
                 : null,
             });
@@ -684,14 +701,14 @@ function queryMatches(equipment, query) {
             Math.floor(Math.random() * randomEquipment.images.length)
           ];
         result.push({
-          equipment_id: randomEquipment._id,
+          equipmentId: randomEquipment._id,
           image: randomImage,
-          owner: randomEquipment.owner_id
+          owner: randomEquipment.ownerId
             ? {
-                _id: randomEquipment.owner_id._id,
-                name: randomEquipment.owner_id.name,
-                email: randomEquipment.owner_id.email,
-                profile_image: randomEquipment.owner_id.profile_image,
+                _id: randomEquipment.ownerId._id,
+                name: randomEquipment.ownerId.name,
+                email: randomEquipment.ownerId.email,
+                profile_image: randomEquipment.ownerId.profile_image,
               }
             : null,
         });
@@ -714,7 +731,7 @@ function queryMatches(equipment, query) {
 
 async function getUserShop(req, res) {
   try {
-    const ownerId = req.query.owner_id;
+    const ownerId = req.query.ownerId;
     const token = req.headers.authorization?.split(" ")[1];
     var conversationId = "";
 
@@ -752,8 +769,8 @@ async function getUserShop(req, res) {
     const reviews = await getSellerReviews(ownerId);
     
     // Fetch equipment related to the user (owner_id)
-    const equipments = await Equipment.find({ owner_id: ownerId, equipment_status: "Active" })
-      .select('_id name make rental_price images location average_rating sub_category_fk custom_location')
+         const equipments = await Equipment.find({ ownerId: ownerId, equipment_status: "Active" })
+       .select('_id name make rental_price images location average_rating subCategoryId')
       .lean(); // Using lean() to return plain JS objects
 
     if (equipments.length === 0) {
@@ -764,22 +781,22 @@ async function getUserShop(req, res) {
     }
 
     // Fetch subcategories for the equipment
-    const subCategoryIds = equipments.map(equipment => equipment.sub_category_fk);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('category_id');
+    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId);
+    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('categoryId');
 
     // Map subcategories to equipment data
     const subCategoryMap = subCategories.reduce((acc, subCat) => {
       acc[subCat._id] = {
         sub_category_name: subCat.name,
-        category_id: subCat.category_id._id,
-        category_name: subCat.category_id.name,
+        category_id: subCat.categoryId._id,
+        category_name: subCat.categoryId.name,
       };
       return acc;
     }, {});
 
     // Map equipment data to match the required format
     const formattedEquipments = equipments.map(equipment => {
-      const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
+      const subCategoryDetails = subCategoryMap[equipment.subCategoryId];
       return {
         _id: equipment._id,
         name: equipment.name,
@@ -787,15 +804,15 @@ async function getUserShop(req, res) {
         rental_price: equipment.rental_price,
         images: equipment.images,
         average_rating: equipment_average_rating,
-        location: {
-          address: equipment.custom_location?.address || "",
-          lat: equipment.custom_location?.lat || 0.0,
-          long: equipment.custom_location?.long || 0.0,
-          range: equipment.custom_location?.range || 0,
-        },
+                  location: {
+            address: equipment.location?.address || "",
+            lat: equipment.location?.lat || 0.0,
+            lng: equipment.location?.lng || 0.0,
+            range: equipment.location?.range || 0,
+          },
         category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
-        sub_category_id: equipment.sub_category_fk,
+        sub_category_id: equipment.subCategoryId,
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
         isFavorite: user.favorite_equipments.includes(equipment._id), // All these are favorites
         "owner": {
@@ -865,10 +882,10 @@ async function getFavoriteEquipments(req, res) {
       _id: { $in: user.favorite_equipments }, 
       equipment_status: "Active" 
     })
-    .select('_id name make rental_price images location sub_category_fk owner_id')
+    .select('_id name make rental_price images location subCategoryId ownerId')
     .populate({
-      path: 'owner_id',
-      model: 'users', // Ensure correct model name
+      path: 'ownerId',
+             model: 'User', // Ensure correct model name
       select: '_id name email profile_image' // Select required fields
     })
     .lean();
@@ -882,8 +899,8 @@ async function getFavoriteEquipments(req, res) {
     }
 
     // Fetch subcategories for the equipment
-    const subCategoryIds = favoriteEquipments.map(equipment => equipment.sub_category_fk);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('category_id');
+    const subCategoryIds = favoriteEquipments.map(equipment => equipment.subCategoryId);
+    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('categoryId');
 
     //Get Equipment Average Rating
     const average_rating = await getAverageRating(favoriteEquipments);
@@ -892,15 +909,15 @@ async function getFavoriteEquipments(req, res) {
     const subCategoryMap = subCategories.reduce((acc, subCat) => {
       acc[subCat._id] = {
         sub_category_name: subCat.name,
-        category_id: subCat.category_id._id,
-        category_name: subCat.category_id.name,
+        category_id: subCat.categoryId._id,
+        category_name: subCat.categoryId.name,
       };
       return acc;
     }, {});
 
     // Add "isFavorite" flag and additional details to each equipment
     const formattedFavoriteEquipments = favoriteEquipments.map(equipment => {
-      const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
+      const subCategoryDetails = subCategoryMap[equipment.subCategoryId];
       return {
         _id: equipment._id,
         name: equipment.name,
@@ -908,21 +925,21 @@ async function getFavoriteEquipments(req, res) {
         rental_price: equipment.rental_price,
         images: equipment.images,
         average_rating: average_rating,
-        owner: equipment.owner_id ? {
-          _id: equipment.owner_id._id,
-          name: equipment.owner_id.name,
-          email: equipment.owner_id.email,
-          profile_image: equipment.owner_id.profile_image
+        owner: equipment.ownerId ? {
+          _id: equipment.ownerId._id,
+          name: equipment.ownerId.name,
+          email: equipment.ownerId.email,
+          profile_image: equipment.ownerId.profile_image
         } : null,
         location: {
-          address: equipment.custom_location?.address || "",
-          lat: equipment.custom_location?.lat || 0.0,
-          long: equipment.custom_location?.long || 0.0,
-          range: equipment.custom_location?.range || 0,
+          address: equipment.location?.address || "",
+          lat: equipment.location?.lat || 0.0,
+          lng: equipment.location?.lng || 0.0,
+          range: equipment.location?.range || 0,
         },
         category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
-        sub_category_id: equipment.sub_category_fk,
+        sub_category_id: equipment.subCategoryId,
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
         isFavorite: user.favorite_equipments.includes(equipment._id), // All these are favorites
       };
@@ -992,8 +1009,8 @@ async function toggleFavorite(req, res) {
 async function updateEquipmentStatus(req, res) {
   await Equipment.updateMany({}, { $unset: { isLive: 1 } });
   try {
-    const { equipment_id, status, reason } = req.query;
-    if (!equipment_id || !status) return res.status(400).json({ message: "Equipment ID and status are required." });
+    const { equipmentId, status, reason } = req.query;
+    if (!equipmentId || !status) return res.status(400).json({ message: "Equipment ID and status are required." });
 
     const validTransitions = {
       Pending: ["Active", "Rejected", "Blocked"],
@@ -1006,7 +1023,7 @@ async function updateEquipmentStatus(req, res) {
     const requiresReason = ["Rejected", "Blocked"];
     if (requiresReason.includes(status) && !reason) return res.status(400).json({ message: `${status} reason is required.` });
 
-    const equipment = await Equipment.findById(equipment_id);
+    const equipment = await Equipment.findById(equipmentId);
     if (!equipment) return res.status(404).json({ message: "Equipment not found." });
 
     if (!validTransitions[equipment.equipment_status]?.includes(status)) {
@@ -1023,7 +1040,7 @@ async function updateEquipmentStatus(req, res) {
 
     // 🔔 Send socket event to equipment owner about status change
     const socketEventData = {
-      equipment_id: equipment._id,
+      equipmentId: equipment._id,
       equipment_name: equipment.name,
       old_status: oldStatus,
       new_status: status,
@@ -1034,7 +1051,7 @@ async function updateEquipmentStatus(req, res) {
     };
 
     // Send event to equipment owner
-    sendEventToUser(equipment.owner_id.toString(), 'equipmentStatusChanged', socketEventData);
+    sendEventToUser(equipment.ownerId.toString(), 'equipmentStatusChanged', socketEventData);
 
     return res.status(200).json({ message: `Equipment status updated to ${status}`, status: true, equipment });
 
@@ -1077,12 +1094,12 @@ async function getEquipmentByStatus(req, res) {
     // Get equipment with owner details
     console.log("🔹 Fetching equipment with query:", query);
     const equipments = await Equipment.find(query)
-      .populate('owner_id', 'name email profile_image')
-      .populate('sub_category_fk', 'name')
+      .populate('ownerId', 'name email profile_image')
+      .populate('subCategoryId', 'name')
       .populate({
-        path: 'sub_category_fk',
+        path: 'subCategoryId',
         populate: {
-          path: 'category_id',
+          path: 'categoryId',
           select: 'name'
         }
       });
@@ -1100,21 +1117,21 @@ async function getEquipmentByStatus(req, res) {
         serial_number: equipment.serial_number,
         description: equipment.description,
         images: equipment.images,
-        category: equipment.sub_category_fk.category_id.name,
-        sub_category: equipment.sub_category_fk.name,
+        category: equipment.subCategoryId?.categoryId?.name || 'Unknown',
+        sub_category: equipment.subCategoryId?.name || 'Unknown',
         postal_code: equipment.postal_code,
         delivery_by_owner: equipment.delivery_by_owner,
         rental_price: equipment.rental_price,
         equipment_price: equipment.equipment_price,
-        custom_location: equipment.custom_location,
-        owner: {
-          _id: equipment.owner_id._id,
-          name: equipment.owner_id.name,
-          email: equipment.owner_id.email,
-          profile_image: equipment.owner_id.profile_image
-        },
+        location: equipment.location,
+        owner: equipment.ownerId ? {
+          _id: equipment.ownerId._id,
+          name: equipment.ownerId.name,
+          email: equipment.ownerId.email,
+          profile_image: equipment.ownerId.profile_image
+        } : null,
         status: equipment.equipment_status,
-        created_at: equipment.created_at
+        created_at: equipment.createdAt
       };
     }));
 
@@ -1145,16 +1162,16 @@ async function searchEquipment(req, res) {
     ];
     if (mongoose.Types.ObjectId.isValid(text)) {
       orQuery.push({ _id: text });
-      orQuery.push({ owner_id: text });
+      orQuery.push({ ownerId: text });
     }
     // Find all equipment matching text fields or exact id/owner_id
     let equipments = await Equipment.find({ $or: orQuery })
-      .populate('owner_id', 'name email profile_image')
-      .populate('sub_category_fk', 'name')
+      .populate('ownerId', 'name email profile_image')
+      .populate('subCategoryId', 'name')
       .populate({
-        path: 'sub_category_fk',
+        path: 'subCategoryId',
         populate: {
-          path: 'category_id',
+          path: 'categoryId',
           select: 'name'
         }
       });
@@ -1162,18 +1179,18 @@ async function searchEquipment(req, res) {
     if (!mongoose.Types.ObjectId.isValid(text)) {
       const textLower = text.toLowerCase();
       const allEquipments = await Equipment.find()
-        .populate('owner_id', 'name email profile_image')
-        .populate('sub_category_fk', 'name')
+        .populate('ownerId', 'name email profile_image')
+        .populate('subCategoryId', 'name')
         .populate({
-          path: 'sub_category_fk',
+          path: 'subCategoryId',
           populate: {
-            path: 'category_id',
+            path: 'categoryId',
             select: 'name'
           }
         });
       const filtered = allEquipments.filter(e =>
         e._id.toString().toLowerCase().includes(textLower) ||
-        (e.owner_id && e.owner_id._id && e.owner_id._id.toString().toLowerCase().includes(textLower))
+        (e.ownerId && e.ownerId._id && e.ownerId._id.toString().toLowerCase().includes(textLower))
       );
       // Merge and deduplicate
       const ids = new Set(equipments.map(e => e._id.toString()));
@@ -1190,21 +1207,21 @@ async function searchEquipment(req, res) {
       serial_number: equipment.serial_number,
       description: equipment.description,
       images: equipment.images,
-      category: equipment.sub_category_fk.category_id.name,
-      sub_category: equipment.sub_category_fk.name,
+      category: equipment.subCategoryId?.categoryId?.name || 'Unknown',
+      sub_category: equipment.subCategoryId?.name || 'Unknown',
       postal_code: equipment.postal_code,
       delivery_by_owner: equipment.delivery_by_owner,
       rental_price: equipment.rental_price,
       equipment_price: equipment.equipment_price,
-      custom_location: equipment.custom_location,
-      owner: equipment.owner_id ? {
-        _id: equipment.owner_id._id,
-        name: equipment.owner_id.name,
-        email: equipment.owner_id.email,
-        profile_image: equipment.owner_id.profile_image
+      location: equipment.location,
+      owner: equipment.ownerId ? {
+        _id: equipment.ownerId._id,
+        name: equipment.ownerId.name,
+        email: equipment.ownerId.email,
+        profile_image: equipment.ownerId.profile_image
       } : null,
       status: equipment.equipment_status,
-      created_at: equipment.created_at
+      created_at: equipment.createdAt
     }));
     res.status(200).json({ message: 'Equipment fetched successfully', equipments: formattedEquipments });
   } catch (error) {

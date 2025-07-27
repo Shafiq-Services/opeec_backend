@@ -6,9 +6,9 @@ const notificationSchema = new mongoose.Schema({
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     receiverId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     fcmToken: { type: String, required: true },
-    details: { type: mongoose.Schema.Types.Mixed, default: null },
-    createdAt: { type: Date, default: Date.now },
+    details: { type: mongoose.Schema.Types.Mixed, default: null }
+}, { 
+    timestamps: true // Replaces createdAt with automatic timestamps
 });
 
-const Notification = mongoose.model('Notification', notificationSchema);
-module.exports = Notification;
+module.exports = mongoose.model('Notification', notificationSchema);

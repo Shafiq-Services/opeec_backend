@@ -42,17 +42,17 @@ exports.getConversations = async (req, res) => {
         const isOnline = connectedUsers.has(opponent.toString());
 
         let equipmentResponse = null;
-        if (conversation.equipment) {
-          const subCategory = await SubCategory.findById(conversation.equipment.sub_category_fk);
-          const category = subCategory && await Categories.findById(subCategory.category_id);
+        if (conversation.equipmentId) {
+          const subCategory = await SubCategory.findById(conversation.equipmentId.subCategoryId);
+          const category = subCategory && await Categories.findById(subCategory.categoryId);
           
           equipmentResponse = {
-            _id: conversation.equipment._id,
-            name: conversation.equipment.name,
-            images: conversation.equipment.images,
+            _id: conversation.equipmentId._id,
+            name: conversation.equipmentId.name,
+            images: conversation.equipmentId.images,
             category: category ? category.name : "Unknown",
-            rental_price: conversation.equipment.rental_price,
-            address: conversation.equipment.custom_location.address,
+            rental_price: conversation.equipmentId.rental_price,
+            address: conversation.equipmentId.location.address,
           };
         }
 
@@ -111,13 +111,13 @@ exports.getMessages = async (req, res) => {
       return res.status(403).json({ error: "Unauthorized access to conversation" });
     }
 
-    // Prepare equipment details only if conversation.equipment exists
+    // Prepare equipment details only if conversation.equipmentId exists
     let equipmentResponse;
-    if (conversation.equipment) {
-      const equipment = await Equipment.findById(conversation.equipment);
+    if (conversation.equipmentId) {
+      const equipment = await Equipment.findById(conversation.equipmentId);
       if (equipment) {
-        const subCategory = await SubCategory.findById(equipment.sub_category_fk);
-        const category = subCategory && await Categories.findById(subCategory.category_id);
+        const subCategory = await SubCategory.findById(equipment.subCategoryId);
+        const category = subCategory && await Categories.findById(subCategory.categoryId);
         
         equipmentResponse = {
           _id: equipment._id,
@@ -125,7 +125,7 @@ exports.getMessages = async (req, res) => {
           images: equipment.images,
           category: category ? category.name : "Unknown",
           rental_price: equipment.rental_price,
-          address: equipment.custom_location.address,
+          address: equipment.location.address,
           rating: 0,
         };
       }
@@ -239,24 +239,24 @@ exports.sendMessage = async (req, res) => {
       return res.status(400).json({ error: "Equipment not found" });
     }
 
-    const receiver = await User.findById(equipment.owner_id);
+    const receiver = await User.findById(equipment.ownerId);
     if (!receiver) {
       return res.status(400).json({ error: "Equipment owner not found" });
     }
 
     const receiverId = receiver._id;
-    const subCategory = await SubCategory.findById(equipment.sub_category_fk);
-    const category = subCategory && await Categories.findById(subCategory.category_id);
+    const subCategory = await SubCategory.findById(equipment.subCategoryId);
+    const category = subCategory && await Categories.findById(subCategory.categoryId);
 
     let conversation = await Conversation.findOne({ participants: { $all: [senderId, receiverId] } });
     if (!conversation) {
       conversation = new Conversation({
         participants: [senderId, receiverId],
-        ...(equipmentId && { equipment: equipmentId }),
+        ...(equipmentId && { equipmentId: equipmentId }),
       });
       await conversation.save();
-    } else if (equipmentId && (!conversation.equipment || conversation.equipment.toString() !== equipmentId)) {
-      conversation.equipment = equipmentId;
+    } else if (equipmentId && (!conversation.equipmentId || conversation.equipmentId.toString() !== equipmentId)) {
+      conversation.equipmentId = equipmentId;
       await conversation.save();
     }
 
@@ -296,7 +296,7 @@ exports.sendMessage = async (req, res) => {
         images: equipment.images,
         category: category ? category.name : "Unknown",
         rental_price: equipment.rental_price,
-        address: equipment.custom_location.address
+        address: equipment.location.address
       }
     };
 

@@ -1,31 +1,31 @@
 const mongoose = require('mongoose');
 
+// Standardized Location Schema
+const locationSchema = new mongoose.Schema({
+  address: { type: String, required: true },
+  lat: { type: Number, required: true },
+  lng: { type: Number, required: true }
+}, { _id: false });
+
 // Order Schema
 const orderSchema = new mongoose.Schema({
-  user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  equipment_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Equipments', required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  equipmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Equipment', required: true },
 
   rental_schedule: {
     start_date: { type: Date, required: true },
     end_date: { type: Date, required: true }
   },
 
-  location: {
-    address: { type: String, required: true },
-    lat: { type: Number, required: true },
-    long: { type: Number, required: true }
-  },
+  location: locationSchema,
 
+  // Only store base rental fee - others calculated dynamically from percentageSettings
   rental_fee: { type: Number, required: true },
-  platform_fee: { type: Number, required: true },
-  tax_amount: { type: Number, required: true },
-  total_amount: { type: Number, required: true },
 
   // Insurance or Deposit (only one applies per order)
   security_option: {
     insurance: { type: Boolean, default: false },     // true = insurance, false = deposit
-    insurance_amount: { type: Number, default: 0 },    // calculated insurance fee
-    deposit_amount: { type: Number, default: 0 }       // calculated deposit amount (refundable)
+    // Amounts calculated dynamically from percentageSettings and rental_fee
   },
 
   cancellation: {
@@ -55,9 +55,9 @@ const orderSchema = new mongoose.Schema({
   buyer_review: {
     comment: { type: String },
     rating: { type: Number, min: 0, max: 5, default: 0 }
-  },
-  created_at: { type: Date, default: Date.now }, // Order creation timestamp
-  updated_at: { type: Date, default: Date.now }, // Last updated timestamp
+  }
+}, { 
+  timestamps: true // Replaces created_at/updated_at with createdAt/updatedAt
 });
 
-module.exports = mongoose.model('Orders', orderSchema);
+module.exports = mongoose.model('Order', orderSchema);

@@ -67,7 +67,7 @@ exports.login = async (req, res) => {
     //   return res.status(400).json({ message: 'Invalid credentials' });
     // }
 
-    if (user.isOtpVerified === false) {
+    if (user.otpDetails?.isOtpVerified === false) {
       return res.status(400).json({ message: 'User is not verified' });
     }
 
@@ -144,19 +144,19 @@ exports.verifyUserOtp = async (req, res) => {
     }
 
     // Check if OTP exists and is not expired
-    if (!user.otp || user.otpExpiry < Date.now()) {
+    if (!user.otpDetails?.otp || user.otpDetails?.otpExpiry < Date.now()) {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
     // Verify the OTP
-    if (user.otp !== parseInt(otp)) {
+    if (user.otpDetails.otp !== parseInt(otp)) {
       return res.status(400).json({ message: 'Invalid OTP' });
     }
 
     // OTP verified, update the user to set isOtpVerified and remove OTP
     await User.updateOne({ email }, { 
-      $set: { isOtpVerified: true },
-      $unset: { otp: 1, otpExpiry: 1 } // Remove OTP and expiry fields
+      $set: { 'otpDetails.isOtpVerified': true },
+      $unset: { 'otpDetails.otp': 1, 'otpDetails.otpExpiry': 1 } // Remove OTP and expiry fields
     });
 
     return res.status(200).json({ message: 'OTP verified successfully' });
@@ -207,7 +207,7 @@ exports.getprofile = async (req, res) => {
         name: user.name,
         email: user.email,
         profile_image: user.profile_image,
-        isOtpVerified: user.isOtpVerified,
+        isOtpVerified: user.otpDetails?.isOtpVerified,
         average_rating: average_rating,
         reviews: reviews,
     } });
@@ -229,19 +229,19 @@ exports.forgotOrResetPasswordOtp = async (req, res) => {
 
     
     // Check if OTP exists and is not expired
-    if (!user.otp || user.otpExpiry < Date.now()) {
+    if (!user.otpDetails?.otp || user.otpDetails?.otpExpiry < Date.now()) {
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
     // Verify the OTP
-    if (user.otp !== parseInt(otp)) {
+    if (user.otpDetails.otp !== parseInt(otp)) {
       return res.status(400).json({ message: 'Invalid OTP' });
     }
 
     // OTP verified, update the user to set isOtpVerified and remove OTP
     await User.updateOne({ email }, { 
-      $set: { isOtpVerified: true },
-      $unset: { otp: 1, otpExpiry: 1 } // Remove OTP and expiry fields
+      $set: { 'otpDetails.isOtpVerified': true },
+      $unset: { 'otpDetails.otp': 1, 'otpDetails.otpExpiry': 1 } // Remove OTP and expiry fields
     });
 
     return res.status(200).json({ message: 'OTP verified successfully' });
@@ -493,9 +493,11 @@ exports.updateUserProfileByAdmin = async (req, res) => {
     user.age = ageNum;
     user.gender = gender.toLowerCase();
     user.DOB = DOB;
-    user.address = address;
-    user.lat = latNum;
-    user.lng = lngNum;
+    user.location = {
+      address: address,
+      lat: latNum,
+      lng: lngNum
+    };
 
     await user.save();
 
@@ -508,9 +510,9 @@ exports.updateUserProfileByAdmin = async (req, res) => {
         age: user.age,
         gender: user.gender,
         DOB: user.DOB,
-        address: user.address,
-        lat: user.lat,
-        lng: user.lng
+        address: user.location?.address,
+        lat: user.location?.lat,
+        lng: user.location?.lng
       }
     });
   } catch (error) {
@@ -544,12 +546,12 @@ exports.getAllUsers = async (req, res) => {
     // Get equipment counts and rental counts for each user
     const usersWithStats = await Promise.all(users.map(async (user) => {
       // Get equipment count
-      const equipmentCount = await Equipment.countDocuments({ owner_id: user._id });
+      const equipmentCount = await Equipment.countDocuments({ ownerId: user._id });
       
       // Get total rentals count
-      const userEquipments = await Equipment.find({ owner_id: user._id });
+      const userEquipments = await Equipment.find({ ownerId: user._id });
       const totalRentals = await Order.countDocuments({ 
-        equipment_id: { $in: userEquipments.map(eq => eq._id) }
+        equipmentId: { $in: userEquipments.map(eq => eq._id) }
       });
       
       // Return only required fields
@@ -562,14 +564,14 @@ exports.getAllUsers = async (req, res) => {
         age: user.age || "",
         gender: user.gender || "",
         DOB: user.DOB || "",
-        address: user.address || "",
-        lat: user.lat || "",
-        lng: user.lng || "",
+        address: user.location?.address || "",
+        lat: user.location?.lat || "",
+        lng: user.location?.lng || "",
         equipment_count: equipmentCount,
         total_rentals: totalRentals,
         is_blocked: user.is_blocked,
         block_reason: user.block_reason,
-        created_at: user.created_at
+        createdAt: user.createdAt
       };
     }));
 
@@ -612,7 +614,6 @@ exports.searchUsers = async (req, res) => {
     }
     res.status(200).json({ message: 'Users fetched successfully', users });
   } catch (error) {
-    console.error("🔴 Error in searchUsers:", error);
     res.status(500).json({ message: 'Error searching users', error });
   }
 };

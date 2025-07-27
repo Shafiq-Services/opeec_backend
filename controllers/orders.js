@@ -1,8 +1,9 @@
-const Equipments = require('../models/equipment');
-const Orders = require('../models/orders');
+const Equipment = require('../models/equipment');
+const Order = require('../models/orders');
 const cron = require('node-cron');
 const mongoose = require('mongoose');
 const moment = require('moment');
+const { calculateOrderFees } = require('../utils/feeCalculations');
 
 const timeOffsetHours = parseFloat(process.env.TIME_OFFSET_HOURS) || 3;
 const intervalMinutes = parseInt(process.env.INTERVAL_MINUTES) || 1;
@@ -14,35 +15,27 @@ console.log(`⏳ Status changes after ${timeOffsetHours * 60} minutes`);
 // Add Order
 exports.addOrder = async (req, res) => {
   try {
-    const user_id = req.userId;
+    const userId = req.userId;
     const {
-      equipment_id,
+      equipmentId,
       start_date,
       end_date,
       address,
       lat,
-      long,
+      lng,
       rental_fee,
-      platform_fee,
-      tax_amount,
-      total_amount,
-      is_insurance,
-      insurance_amount,
-      deposit_amount
+      is_insurance
     } = req.body;
 
     // Validation: Required fields
     const requiredFields = [
-      { name: 'equipment_id', value: equipment_id },
+      { name: 'equipmentId', value: equipmentId },
       { name: 'start_date', value: start_date },
       { name: 'end_date', value: end_date },
       { name: 'address', value: address },
       { name: 'lat', value: lat },
-      { name: 'long', value: long },
+      { name: 'lng', value: lng },
       { name: 'rental_fee', value: rental_fee },
-      { name: 'platform_fee', value: platform_fee },
-      { name: 'tax_amount', value: tax_amount },
-      { name: 'total_amount', value: total_amount },
       { name: 'is_insurance', value: is_insurance }
     ];
 
@@ -53,48 +46,39 @@ exports.addOrder = async (req, res) => {
     }
 
     // Validate equipment existence
-    const equipment = await Equipments.findById(equipment_id);
-    if (!equipment) {
-      return res.status(404).json({ message: 'Equipment not found', status: false });
-    }
+    const equipment = await Equipment.findById(equipmentId);
+    if (!equipment) return res.status(404).json({ message: 'Equipment not found.' });
+
+    // Calculate rental days for fee calculation
+    const startDate = new Date(start_date);
+    const endDate = new Date(end_date);
+    const rentalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+
+    // Calculate fees dynamically
+    const feeCalculation = await calculateOrderFees(rental_fee, is_insurance, rentalDays);
 
     // Create new order
-    const newOrder = new Orders({
-      user_id,
-      equipment_id,
-      rental_schedule: {
-        start_date: new Date(start_date),
-        end_date: new Date(end_date),
-      },
-      location: {
-        address,
-        lat,
-        long
-      },
+    const newOrder = new Order({
+      userId,
+      equipmentId,
+      rental_schedule: { start_date, end_date },
+      location: { address, lat, lng },
       rental_fee,
-      platform_fee,
-      tax_amount,
-      total_amount,
       security_option: {
-        insurance: is_insurance,
-        insurance_amount: is_insurance ? insurance_amount : 0,
-        deposit_amount: !is_insurance ? deposit_amount : 0
-      },
-      cancellation: { is_cancelled: false },
-      rental_status: 'Booked',
-      return_status: { is_returned: false },
-      penalty_apply: true,
-      penalty_amount: 0,
-      status_change_timestamp: new Date()
+        insurance: is_insurance
+      }
     });
 
-    await newOrder.save();
+    const savedOrder = await newOrder.save();
+    
+    // Return order with calculated fees for frontend
+    const orderResponse = {
+      ...savedOrder.toObject(),
+      ...feeCalculation
+    };
 
-    return res.status(201).json({
-      message: 'Order created successfully',
-      status: true,
-      order: newOrder
-    });
+    res.status(201).json({ message: 'Order created successfully.', data: orderResponse });
+
   } catch (err) {
     console.error('Error creating order:', err);
     return res.status(500).json({ message: 'Server error', status: false });
@@ -102,6 +86,7 @@ exports.addOrder = async (req, res) => {
 };
 
 
+// Get Current Rentals
 exports.getCurrentRentals = async (req, res) => {
   const { status, isSeller } = req.query;
   const userId = req.userId;
@@ -110,9 +95,7 @@ exports.getCurrentRentals = async (req, res) => {
     const allowedStatuses = ["Booked", "Delivered", "Ongoing", "Returned", "Late", "All"];
 
     if (!status || typeof isSeller === "undefined") {
-      return res.status(400).json({
-        message: "'status' and 'isSeller' query parameters are required.",
-      });
+      return res.status(400).json({ message: "'status' and 'isSeller' query parameters are required." });
     }
 
     if (!allowedStatuses.includes(status)) {
@@ -123,15 +106,15 @@ exports.getCurrentRentals = async (req, res) => {
     const matchQuery = {
       ...statusFilter,
       ...(isSeller === "true"
-        ? { "equipment.owner_id": new mongoose.Types.ObjectId(userId) }
-        : { user_id: new mongoose.Types.ObjectId(userId) }),
+        ? { "equipment.ownerId": new mongoose.Types.ObjectId(userId) }
+        : { userId: new mongoose.Types.ObjectId(userId) }),
     };
 
-    const orders = await Orders.aggregate([
+    const orders = await Order.aggregate([
       {
         $lookup: {
           from: "equipments",
-          localField: "equipment_id",
+          localField: "equipmentId",
           foreignField: "_id",
           as: "equipment",
         },
@@ -140,7 +123,7 @@ exports.getCurrentRentals = async (req, res) => {
       {
         $lookup: {
           from: "sub_categories",
-          localField: "equipment.sub_category_fk",
+          localField: "equipment.subCategoryId",
           foreignField: "_id",
           as: "subcategory",
         },
@@ -149,7 +132,7 @@ exports.getCurrentRentals = async (req, res) => {
       {
         $lookup: {
           from: "categories",
-          localField: "subcategory.category_id",
+          localField: "subcategory.categoryId",
           foreignField: "_id",
           as: "category",
         },
@@ -167,8 +150,15 @@ exports.getCurrentRentals = async (req, res) => {
         statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
       }
 
+      // Remove sub_categories from category if it exists
+      const cleanedOrder = { ...order };
+      if (cleanedOrder.category && cleanedOrder.category.sub_categories) {
+        const { sub_categories, ...categoryWithoutSubCategories } = cleanedOrder.category;
+        cleanedOrder.category = categoryWithoutSubCategories;
+      }
+
       return {
-        ...order,
+        ...cleanedOrder,
         equipment: {
           ...order.equipment,
           average_rating: order.equipment.average_rating || 0,
@@ -216,15 +206,15 @@ exports.getHistoryRentals = async (req, res) => {
     const matchQuery = {
       ...statusFilter,
       ...(isSeller === "true"
-        ? { "equipment.owner_id": new mongoose.Types.ObjectId(userId) }
-        : { user_id: new mongoose.Types.ObjectId(userId) }),
+        ? { "equipment.ownerId": new mongoose.Types.ObjectId(userId) }
+        : { userId: new mongoose.Types.ObjectId(userId) }),
     };
 
-    const orders = await Orders.aggregate([
+    const orders = await Order.aggregate([
       {
         $lookup: {
           from: "equipments",
-          localField: "equipment_id",
+          localField: "equipmentId",
           foreignField: "_id",
           as: "equipment",
         },
@@ -233,7 +223,7 @@ exports.getHistoryRentals = async (req, res) => {
       {
         $lookup: {
           from: "sub_categories",
-          localField: "equipment.sub_category_fk",
+          localField: "equipment.subCategoryId",
           foreignField: "_id",
           as: "subcategory",
         },
@@ -242,7 +232,7 @@ exports.getHistoryRentals = async (req, res) => {
       {
         $lookup: {
           from: "categories",
-          localField: "subcategory.category_id",
+          localField: "subcategory.categoryId",
           foreignField: "_id",
           as: "category",
         },
@@ -251,18 +241,36 @@ exports.getHistoryRentals = async (req, res) => {
       { $match: matchQuery },
     ]);
 
-    const formattedOrders = orders.map(order => ({
-      ...order,
-      equipment: {
-        ...order.equipment,
-        average_rating: order.equipment.average_rating || 0,
-      },
-      penalty_apply: order.penalty_apply ?? false,
-      penalty_amount: order.penalty_amount ?? 0,
-      rental_days: order.rental_days ?? 0,
-      subtotal: order.subtotal ?? order.rental_fee + (order.insurance_amount || 0),
-      total_amount: order.total_amount ?? order.rental_fee + order.platform_fee + order.tax_amount + (order.insurance_amount || 0),
-    }));
+    const formattedOrders = orders.map(order => {
+      let statusChangeTime = "";
+
+      if (order.rental_status === "Delivered" && isSeller === "false") {
+        statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
+      } else if (order.rental_status === "Returned" && isSeller === "true") {
+        statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
+      }
+
+      // Remove sub_categories from category if it exists
+      const cleanedOrder = { ...order };
+      if (cleanedOrder.category && cleanedOrder.category.sub_categories) {
+        const { sub_categories, ...categoryWithoutSubCategories } = cleanedOrder.category;
+        cleanedOrder.category = categoryWithoutSubCategories;
+      }
+
+      return {
+        ...cleanedOrder,
+        equipment: {
+          ...order.equipment,
+          average_rating: order.equipment.average_rating || 0,
+        },
+        penalty_apply: order.penalty_apply ?? false,
+        penalty_amount: order.penalty_amount ?? 0,
+        status_change_timestamp: statusChangeTime,
+        rental_days: order.rental_days ?? 0,
+        subtotal: order.subtotal ?? order.rental_fee + (order.insurance_amount || 0),
+        total_amount: order.total_amount ?? order.rental_fee + order.platform_fee + order.tax_amount + (order.insurance_amount || 0),
+      };
+    });
 
     return res.status(200).json({
       message: "History rentals fetched successfully.",
@@ -293,7 +301,7 @@ exports.cancelOrder = async (req, res) => {
       return res.status(400).json({ message: "Cancellation reason is required." });
     }
 
-    const order = await Orders.findById(order_id).populate('equipment_id');
+    const order = await Order.findById(order_id).populate('equipmentId');
 
     if (!order) {
       return res.status(404).json({ message: "Order not found." });
@@ -304,7 +312,7 @@ exports.cancelOrder = async (req, res) => {
     }
 
     // ✅ Optional: Enforce that only the equipment owner can cancel
-    if (String(order.equipment_id.owner_id) !== sellerId) {
+    if (String(order.equipmentId.ownerId) !== sellerId) {
       return res.status(403).json({ message: "Only the owner can cancel this order." });
     }
 
@@ -344,10 +352,10 @@ exports.deliverOrder = async (req, res) => {
       return res.status(400).json({ message: "At least one image is required." });
     }
 
-    const order = await Orders.findById(order_id).populate("equipment_id");
+    const order = await Order.findById(order_id).populate("equipmentId");
     if (!order) return res.status(404).json({ message: "Order not found." });
     if (order.rental_status !== "Booked") return res.status(400).json({ message: "Only 'Booked' orders can be delivered." });
-    if (String(order.equipment_id.owner_id) !== sellerId) return res.status(403).json({ message: "Only the owner can deliver the order." });
+    if (String(order.equipmentId.ownerId) !== sellerId) return res.status(403).json({ message: "Only the owner can deliver the order." });
 
     order.rental_status = "Delivered";
     order.owner_images = images;
@@ -355,7 +363,7 @@ exports.deliverOrder = async (req, res) => {
 
     order.status_change_timestamp = new Date(); // For tracking
 
-    const equipment = await Equipments.findById(order.equipment_id);
+    const equipment = await Equipment.findById(order.equipmentId);
     equipment.equipment_status = "InActive";
     await equipment.save();
     await order.save();
@@ -375,10 +383,25 @@ exports.collectOrder = async (req, res) => {
       return res.status(400).json({ message: "Valid Order ID is required." });
     }
 
-    const order = await Orders.findById(order_id);
+    const order = await Order.findById(order_id);
     if (!order) return res.status(404).json({ message: "Order not found." });
     if (order.rental_status !== "Delivered") return res.status(400).json({ message: "Only 'Delivered' orders can be collected." });
-    if (String(order.user_id) !== userId) return res.status(403).json({ message: "Only the user can collect the order." });
+    if (String(order.userId) !== userId) return res.status(403).json({ message: "Only the user can collect the order." });
+
+    // ✅ Check if required time has passed since delivery
+    const deliveryTime = order.status_change_timestamp;
+    const now = new Date();
+    const hoursElapsed = (now - deliveryTime) / (1000 * 60 * 60);
+    const requiredHours = timeOffsetHours;
+
+    if (hoursElapsed < requiredHours) {
+      const remainingMinutes = Math.ceil((requiredHours - hoursElapsed) * 60);
+      return res.status(400).json({ 
+        message: `Equipment can be collected in ${remainingMinutes} minutes. Please wait.`,
+        status: false,
+        remaining_minutes: remainingMinutes
+      });
+    }
 
     order.rental_status = "Ongoing";
     order.updated_at = new Date();
@@ -405,10 +428,10 @@ exports.returnOrder = async (req, res) => {
       return res.status(400).json({ message: "At least one image is required." });
     }
 
-    const order = await Orders.findById(order_id);
+    const order = await Order.findById(order_id);
     if (!order) return res.status(404).json({ message: "Order not found." });
     if (order.rental_status !== "Ongoing") return res.status(400).json({ message: "Only 'Ongoing' orders can be returned." });
-    if (String(order.user_id) !== userId) return res.status(403).json({ message: "Only the user can return the order." });
+    if (String(order.userId) !== userId) return res.status(403).json({ message: "Only the user can return the order." });
 
     order.rental_status = "Returned";
     order.buyer_images = images;
@@ -431,18 +454,36 @@ exports.finishOrder = async (req, res) => {
       return res.status(400).json({ message: "Valid Order ID is required." });
     }
 
-    const order = await Orders.findById(order_id).populate("equipment_id");
+    const order = await Order.findById(order_id).populate("equipmentId");
     if (!order) return res.status(404).json({ message: "Order not found." });
-    if (String(order.equipment_id.owner_id) !== sellerId) return res.status(403).json({ message: "Only the owner can finish the order." });
+    if (String(order.equipmentId.ownerId) !== sellerId) return res.status(403).json({ message: "Only the owner can finish the order." });
     if (!["Returned", "Late"].includes(order.rental_status)) {
       return res.status(400).json({ message: "Only 'Returned' or 'Late' orders can be finished." });
     }
+
+    // ✅ Check if required time has passed since return (only for 'Returned' status)
+    if (order.rental_status === "Returned") {
+      const returnTime = order.status_change_timestamp;
+      const now = new Date();
+      const hoursElapsed = (now - returnTime) / (1000 * 60 * 60);
+      const requiredHours = timeOffsetHours;
+
+      if (hoursElapsed < requiredHours) {
+        const remainingMinutes = Math.ceil((requiredHours - hoursElapsed) * 60);
+        return res.status(400).json({ 
+          message: `Order can be finished in ${remainingMinutes} minutes. Please wait.`,
+          status: false,
+          remaining_minutes: remainingMinutes
+        });
+      }
+    }
+    // Late orders can be finished immediately (no time restriction)
 
     order.rental_status = "Finished";
     order.updated_at = new Date();
     order.status_change_timestamp = new Date();
 
-    const equipment = await Equipments.findById(order.equipment_id);
+    const equipment = await Equipment.findById(order.equipmentId);
     equipment.equipment_status = "Active";
     await equipment.save();
     await order.save();
@@ -462,14 +503,15 @@ exports.togglePenalty = async (req, res) => {
       return res.status(400).json({ message: "Valid orderId is required." });
     }
 
-    const order = await Orders.findById(orderId).populate("equipment_id");
+    const order = await Order.findById(orderId).populate("equipmentId");
     if (!order) return res.status(404).json({ message: "Order not found." });
 
-    if (String(order.equipment_id.owner_id) !== String(userId)) {
+    if (String(order.equipmentId.ownerId) !== String(userId)) {
       return res.status(403).json({ message: "Only the owner can toggle penalty." });
     }
 
     order.penalty_apply = !order.penalty_apply;
+    // ✅ Only update updated_at, not status_change_timestamp (penalty toggle doesn't affect monitoring)
     order.updated_at = new Date();
     await order.save();
 
@@ -503,7 +545,7 @@ exports.addBuyerReview = async (req, res) => {
   }
 
   try {
-    const order = await Orders.findById(orderId);
+    const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ message: "Order not found." });
 
     order.buyer_review = {
@@ -511,6 +553,7 @@ exports.addBuyerReview = async (req, res) => {
       comment: comment || "",
     };
 
+    // ✅ Only update updated_at, not status_change_timestamp (reviews don't affect monitoring)
     order.updated_at = new Date();
     await order.save();
 
@@ -531,7 +574,7 @@ const getFutureTime = (timestamp, offsetMinutes) => {
 
 // Helper: Fetch the latest order from the database
 const getLatestOrder = async (orderId) => {
-  return await Orders.findById(orderId);
+  return await Order.findById(orderId);
 };
 
 // Helper: Updates order safely, checking for external status changes
@@ -552,7 +595,16 @@ const updateOrder = async (order, updates) => {
     deposit_amount: order.deposit_amount ?? latestOrder.deposit_amount ?? 0,
   };
 
-  Object.assign(order, updates, requiredFields, { updated_at: new Date() });
+  // Only update updated_at if it's not a status-only change
+  const isStatusOnlyChange = Object.keys(updates).every(key => 
+    ['rental_status', 'status_change_timestamp', 'penalty_amount', 'penalty_apply'].includes(key)
+  );
+
+  Object.assign(order, updates, requiredFields);
+  
+  if (!isStatusOnlyChange) {
+    order.updated_at = new Date();
+  }
 
   try {
     await order.save();
@@ -582,7 +634,7 @@ const processOrders = async () => {
 
   try {
     const now = new Date();
-    const orders = await Orders.find({
+    const orders = await Order.find({
       rental_status: { $in: ['Delivered', 'Returned', 'Ongoing', 'Late'] }
     });
 
@@ -595,14 +647,22 @@ const processOrders = async () => {
         continue;
       }
 
-      const futureTimestamp = getFutureTime(order.updated_at, timeOffsetHours * 60);
+      const futureTimestamp = getFutureTime(order.status_change_timestamp, timeOffsetHours * 60);
+
+      // Debug logging for timing
+      if (order.rental_status === 'Delivered') {
+        const hoursElapsed = ((now - order.status_change_timestamp) / (1000 * 60 * 60)).toFixed(1);
+        const hoursRequired = timeOffsetHours;
+        console.log(`⏱️  Order ${order._id} Delivered: ${hoursElapsed}h elapsed, needs ${hoursRequired}h`);
+      }
 
       if (order.rental_status === 'Delivered' && now >= futureTimestamp) {
         await updateOrder(order, {
           rental_status: 'Ongoing',
           status_change_timestamp: new Date()
         });
-        console.log(`🚀 Order ${order._id} changed from Delivered → Ongoing`);
+        const hoursWaited = ((now - order.status_change_timestamp) / (1000 * 60 * 60)).toFixed(1);
+        console.log(`🚀 Order ${order._id} changed from Delivered → Ongoing (waited ${hoursWaited}h)`);
       }
 
       if (order.rental_status === 'Ongoing' && order.rental_schedule?.end_date && now > order.rental_schedule.end_date) {
@@ -619,12 +679,20 @@ const processOrders = async () => {
         await applyLatePenalty(order);
       }
 
+      // Debug logging for Returned orders
+      if (order.rental_status === 'Returned') {
+        const hoursElapsed = ((now - order.status_change_timestamp) / (1000 * 60 * 60)).toFixed(1);
+        const hoursRequired = timeOffsetHours;
+        console.log(`⏱️  Order ${order._id} Returned: ${hoursElapsed}h elapsed, needs ${hoursRequired}h`);
+      }
+
       if (order.rental_status === 'Returned' && now >= futureTimestamp) {
         await updateOrder(order, {
           rental_status: 'Finished',
           status_change_timestamp: new Date()
         });
-        console.log(`🚀 Order ${order._id} changed from Returned → Finished`);
+        const hoursWaited = ((now - order.status_change_timestamp) / (1000 * 60 * 60)).toFixed(1);
+        console.log(`🚀 Order ${order._id} changed from Returned → Finished (waited ${hoursWaited}h)`);
       }
     }
 
@@ -650,11 +718,11 @@ exports.getRentalsByStatus = async (req, res) => {
 
     let statusFilter = status !== "All" ? { rental_status: status } : {};
 
-    const orders = await Orders.aggregate([
+    const orders = await Order.aggregate([
       {
         $lookup: {
           from: "equipments",
-          localField: "equipment_id",
+          localField: "equipmentId",
           foreignField: "_id",
           as: "equipment",
         },
@@ -663,7 +731,7 @@ exports.getRentalsByStatus = async (req, res) => {
       {
         $lookup: {
           from: "sub_categories",
-          localField: "equipment.sub_category_fk",
+          localField: "equipment.subCategoryId",
           foreignField: "_id",
           as: "subcategory",
         },
@@ -672,7 +740,7 @@ exports.getRentalsByStatus = async (req, res) => {
       {
         $lookup: {
           from: "categories",
-          localField: "subcategory.category_id",
+          localField: "subcategory.categoryId",
           foreignField: "_id",
           as: "category",
         },
@@ -681,74 +749,80 @@ exports.getRentalsByStatus = async (req, res) => {
       {
         $lookup: {
           from: "users",
-          localField: "user_id",
+          localField: "userId",
           foreignField: "_id",
           as: "user",
         },
       },
-      { $unwind: "$user" },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
       { $match: statusFilter },
       {
         $project: {
           _id: 1,
           rental_status: 1,
+          rental_schedule: 1,
+          location: 1,
           rental_fee: 1,
           platform_fee: 1,
           tax_amount: 1,
           total_amount: 1,
+          penalty_apply: 1,
           penalty_amount: 1,
-          created_at: 1,
-          "rental_schedule.start_date": 1,
-          "rental_schedule.end_date": 1,
-          "location.address": 1,
-          "equipment.name": 1,
-          "equipment.owner_id": 1,
-          "equipment.images": 1,
-          "category.name": 1,
-          "subcategory.name": 1,
-          "user.name": 1,
-          "user.email": 1,
-          "user.phone_number": 1
-        }
-      }
+          buyer_review: 1,
+          createdAt: 1,
+          equipment: {
+            _id: "$equipment._id",
+            name: "$equipment.name",
+            images: "$equipment.images",
+            rental_price: "$equipment.rental_price",
+            ownerId: "$equipment.ownerId",
+          },
+          category: {
+            _id: "$category._id",
+            name: "$category.name",
+          },
+          subcategory: {
+            _id: "$subcategory._id",
+            name: "$subcategory.name",
+          },
+          user: {
+            _id: "$user._id",
+            name: "$user.name",
+            email: "$user.email",
+            profile_image: "$user.profile_image",
+          },
+        },
+      },
     ]);
 
     const formattedOrders = orders.map(order => ({
       _id: order._id,
       rental_status: order.rental_status,
+      rental_schedule: order.rental_schedule,
+      location: order.location,
       rental_fee: order.rental_fee,
-      platform_fee: order.platform_fee,
-      tax_amount: order.tax_amount,
-      total_amount: order.total_amount,
-      penalty_amount: order.penalty_amount || 0,
-      created_at: order.created_at,
-      start_date: order.rental_schedule?.start_date,
-      end_date: order.rental_schedule?.end_date,
-      address: order.location?.address,
-      equipment: {
-        name: order.equipment?.name,
-        owner_id: order.equipment?.owner_id,
-        images: order.equipment?.images
-      },
-      category: order.category?.name,
-      subcategory: order.subcategory?.name,
-      user: {
-        name: order.user?.name,
-        email: order.user?.email,
-        phone_number: order.user?.phone_number
-      }
+      platform_fee: order.platform_fee ?? 0,
+      tax_amount: order.tax_amount ?? 0,
+      total_amount: order.total_amount ?? 0,
+      penalty_apply: order.penalty_apply ?? false,
+      penalty_amount: order.penalty_amount ?? 0,
+      buyer_review: order.buyer_review,
+      createdAt: order.createdAt,
+      equipment: order.equipment,
+      category: order.category,
+      subcategory: order.subcategory,
+      user: order.user,
+      ownerId: order.equipment?.ownerId,
     }));
 
     return res.status(200).json({
       message: "Rentals fetched successfully.",
       success: true,
       orders: formattedOrders,
-      total_count: formattedOrders.length
     });
   } catch (error) {
-    console.error('Error fetching rentals by status:', error);
     return res.status(500).json({
-      message: "Error fetching rentals by status.",
+      message: "Error fetching rentals.",
       error: error.message,
     });
   }

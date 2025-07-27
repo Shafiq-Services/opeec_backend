@@ -1,29 +1,39 @@
 const mongoose = require('mongoose');
 
+// Standardized Location Schema
+const locationSchema = new mongoose.Schema({
+  address: { type: String, trim: true },
+  lat: { type: Number, min: -90, max: 90 },
+  lng: { type: Number, min: -180, max: 180 }
+}, { _id: false });
+
+// OTP Schema for reusability
+const otpSchema = new mongoose.Schema({
+  otp: { type: Number },
+  otpExpiry: { type: Date },
+  isOtpVerified: { type: Boolean, default: false }
+}, { _id: false });
+
 // User Schema
 const userSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true }, // User name
-  email: { type: String, required: true, unique: true, trim: true }, // User email
-  password: { type: String, required: true }, // Encrypted password
-  profile_image: { type: String, default: "" }, // Profile image URL
-  id_card_selfie: { type: String, default: "" }, // ID card image URL
-  age: { type: Number, min: 0, max: 150 }, // User age
-  gender: { type: String, enum: ['male', 'female', 'other'] }, // User gender
-  DOB: { type: String }, // Date of Birth (YYYY-MM-DD format)
-  address: { type: String, trim: true }, // User address
-  lat: { type: Number, min: -90, max: 90 }, // Latitude
-  lng: { type: Number, min: -180, max: 180 }, // Longitude
-  created_at: { type: Date, default: Date.now }, // Record creation date
-  favorite_equipments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Equipments' }], // List of favorite equipment IDs
-  otp: { type: Number }, // OTP field
-  otpExpiry: { type: Date }, // Expiry date for OTP
-  isOtpVerified: { type: Boolean, default: false },
+  name: { type: String, required: true, trim: true },
+  email: { type: String, required: true, unique: true, trim: true },
+  password: { type: String, required: true },
+  profile_image: { type: String, default: "" },
+  id_card_selfie: { type: String, default: "" },
+  age: { type: Number, min: 0, max: 150 },
+  gender: { type: String, enum: ['male', 'female', 'other'] },
+  DOB: { type: String },
+  location: locationSchema,
+  otpDetails: otpSchema,
   isUserVerified: { type: Boolean, default: false },
-  rejection_reason: { type: String, default: "" }, // Rejection reason for user verification
-  is_blocked: { type: Boolean, default: false }, // User blocking status
-  block_reason: { type: String, default: "" }, // Reason for blocking the user
-  fcm_token: { type: String, default: "" }, // FCM token for push notifications
+  rejection_reason: { type: String, default: "" },
+  is_blocked: { type: Boolean, default: false },
+  block_reason: { type: String, default: "" },
+  fcm_token: { type: String, default: "" },
+  favorite_equipments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Equipment' }]
+}, { 
+  timestamps: true // Replaces created_at with createdAt/updatedAt
 });
 
-// Prevent model overwrite error
-module.exports = mongoose.models.users || mongoose.model('users', userSchema);
+module.exports = mongoose.models.User || mongoose.model('User', userSchema);

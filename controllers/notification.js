@@ -1,6 +1,6 @@
 const admin = require("../utils/firebase");
 const Notification = require("../models/notification");
-const User = require("../models/User"); // User model to fetch sender details
+const User = require("../models/user"); // User model to fetch sender details
 
 // Send Notification API
 async function sendNotification(req, res) {
