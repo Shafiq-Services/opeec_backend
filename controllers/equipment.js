@@ -1143,6 +1143,13 @@ async function getEquipmentByStatus(req, res) {
     console.log("🔹 Getting rental stats for each equipment");
     const equipmentsWithStats = await Promise.all(equipments.map(async (equipment) => {
       
+      // Check if equipment is booked by looking for active orders
+      const activeOrderStatuses = ['Delivered', 'Ongoing', 'Returned', 'Late'];
+      const isBooked = await Order.exists({
+        equipmentId: equipment._id,
+        rental_status: { $in: activeOrderStatuses }
+      });
+      
       return {
         _id: equipment._id,
         name: equipment.name,
@@ -1165,6 +1172,7 @@ async function getEquipmentByStatus(req, res) {
           profile_image: equipment.ownerId.profile_image
         } : null,
         status: equipment.equipment_status,
+        isBooked: !!isBooked, // Convert to boolean
         created_at: equipment.createdAt
       };
     }));
