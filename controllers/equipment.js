@@ -1,13 +1,78 @@
 const mongoose = require('mongoose');
 const Equipment = require('../models/equipment');
 const User = require('../models/user');
-const SubCategory = require('../models/sub_categories');
 const Category = require('../models/categories');
 const Conversation = require('../models/conversation');
 const jwt = require('jsonwebtoken');
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews} = require("../utils/common_methods");
 const Order = require('../models/orders');
 const { sendEventToUser } = require('../utils/socketService');
+
+// Helper function to find subcategory by ID across all categories
+async function findSubCategoryById(subCategoryId) {
+  try {
+    const category = await Category.findOne({
+      'sub_categories._id': subCategoryId
+    });
+    
+    if (!category) return null;
+    
+    const subCategory = category.sub_categories.find(
+      sub => sub._id.toString() === subCategoryId.toString()
+    );
+    
+    return subCategory ? {
+      ...subCategory.toObject(),
+      categoryId: category._id,
+      categoryName: category.name
+    } : null;
+  } catch (error) {
+    console.error('Error finding subcategory:', error);
+    return null;
+  }
+}
+
+// Helper function to get subcategory details by ID
+async function getSubCategoryDetails(subCategoryId) {
+  const subCategoryData = await findSubCategoryById(subCategoryId);
+  if (!subCategoryData) return null;
+  
+  return {
+    _id: subCategoryData._id,
+    name: subCategoryData.name,
+    security_fee: subCategoryData.security_fee,
+    categoryId: subCategoryData.categoryId,
+    categoryName: subCategoryData.categoryName
+  };
+}
+
+// Helper function to get multiple subcategory details efficiently
+async function getMultipleSubCategoryDetails(subCategoryIds) {
+  try {
+    const categories = await Category.find({
+      'sub_categories._id': { $in: subCategoryIds }
+    });
+    
+    const subCategoryMap = {};
+    categories.forEach(category => {
+      category.sub_categories.forEach(subCat => {
+        if (subCategoryIds.includes(subCat._id.toString())) {
+          subCategoryMap[subCat._id.toString()] = {
+            categoryId: category._id,
+            category_name: category.name,
+            sub_category_name: subCat.name,
+            security_fee: subCat.security_fee
+          };
+        }
+      });
+    });
+    
+    return subCategoryMap;
+  } catch (error) {
+    console.error('Error getting multiple subcategory details:', error);
+    return {};
+  }
+}
 
 const addEquipment = async (req, res) => {
   const {
@@ -67,8 +132,8 @@ const addEquipment = async (req, res) => {
       });
     }
 
-    // Validate sub-category existence
-    const subCategory = await SubCategory.findById(subCategoryId);
+    // Validate sub-category existence using embedded subcategories
+    const subCategory = await findSubCategoryById(subCategoryId);
     if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
 
     // Create and save equipment
@@ -161,7 +226,7 @@ const addEquipment = async (req, res) => {
         if (images && images.length > 3) return res.status(400).json({ message: 'A maximum of 3 images are allowed.' });
 
             // Validate sub-category existence  
-    const subCategory = await SubCategory.findById(subCategoryId);
+    const subCategory = await findSubCategoryById(subCategoryId);
     if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
 
         // Find the existing equipment by ID
@@ -226,8 +291,9 @@ async function getAllEquipments(req, res) {
     }
 
     if (categoryId) {
-      const subCategories = await SubCategory.find({ categoryId });
-      const subCategoryIds = subCategories.map(subCat => subCat._id);
+      const category = await Category.findById(categoryId);
+      if (!category) return res.status(404).json({ message: 'Category not found.' });
+      const subCategoryIds = category.sub_categories.map(subCat => subCat._id);
       query.subCategoryId = { $in: subCategoryIds };
     }
 
@@ -264,27 +330,17 @@ async function getAllEquipments(req, res) {
     ]);
     
 
-    // ✅ Fetch subcategories and categories
-    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate("categoryId");
-
-    // ✅ Create a map for faster sub-category lookups
-    const subCategoryMap = {};
-    subCategories.forEach(subCat => {
-      subCategoryMap[subCat._id] = {
-        categoryId: subCat.categoryId._id,
-        category_name: subCat.categoryId.name,
-        sub_category_name: subCat.name,
-      };
-    });
+    // ✅ Fetch subcategories and categories using helper function
+    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId.toString());
+    const subCategoryMap = await getMultipleSubCategoryDetails(subCategoryIds);
 
     // ✅ Enhanced equipment response with all details
     const formattedEquipments = await Promise.all(equipments.map(async (equipment) => {
-      const subCategoryDetails = subCategoryMap[equipment.subCategoryId];
+      const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
 
       if (!subCategoryDetails) {
-        const subCategory = await SubCategory.findById(equipment.subCategoryId);
-        const category = await Category.findById(subCategory.categoryId);
+        // If subcategory details not found, try to fetch individually
+        const subCategoryData = await findSubCategoryById(equipment.subCategoryId);
 
         return {
           _id: equipment._id,
@@ -311,10 +367,10 @@ async function getAllEquipments(req, res) {
           postal_code: equipment.postal_code,
           rental_price: equipment.rental_price,
           serial_number: equipment.serial_number,
-          sub_category_id: equipment.subCategoryId._id,
-          sub_category_name: equipment.subCategoryId.name,
-          categoryId: category ? category._id : null, // ✅ Fixed category reference
-          category_name: category ? category.name : null,
+          sub_category_id: equipment.subCategoryId,
+          sub_category_name: subCategoryData ? subCategoryData.name : 'Unknown',
+          categoryId: subCategoryData ? subCategoryData.categoryId : null,
+          category_name: subCategoryData ? subCategoryData.categoryName : 'Unknown',
           equipment_status: equipment.equipment_status,
           reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
         };
@@ -345,8 +401,8 @@ async function getAllEquipments(req, res) {
         postal_code: equipment.postal_code,
         rental_price: equipment.rental_price,
         serial_number: equipment.serial_number,
-        sub_category_id: equipment.subCategoryId._id,
-        sub_category_name: equipment.subCategoryId.name,
+        sub_category_id: equipment.subCategoryId,
+        sub_category_name: subCategoryDetails.sub_category_name,
         categoryId: subCategoryDetails.categoryId, // ✅ Fixed category reference
         category_name: subCategoryDetails.category_name,
         equipment_status: equipment.equipment_status,
@@ -391,30 +447,28 @@ async function getMyEquipments(req, res) {
     const equipments = await Equipment.find({
       ownerId: userId,
       ...(equipment_status !== "All" && { equipment_status }),
-    }).populate("subCategoryId");
+    });
     
 
-    // ✅ Fetch subcategories and categories
-    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate("categoryId");
-
-    // ✅ Map subcategory details
-    // const subCategoryMap = subCategories.reduce((acc, subCat) => {
-    //   acc[subCat._id] = {
-    //     sub_category_name: subCat.name,
-    //     category_id: subCat.category_id._id,
-    //   };
-    //   return acc;
-    // }, {});
+    // ✅ Fetch subcategories and categories using helper function
+    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId.toString());
+    const subCategoryMap = await getMultipleSubCategoryDetails(subCategoryIds);
 
     // ✅ Format response
     const formattedEquipments = await Promise.all(
       equipments.map(async (equipment) => {
-        // const subCategoryDetails = subCategoryMap[equipment.sub_category_fk];
-    
-        // Fetch category asynchronously
-        const subCategory = await SubCategory.findById(equipment.subCategoryId);
-        const category = await Category.findById(subCategory.categoryId);
+        // Get subcategory details from map or fetch individually
+        const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
+        let subCategory, category;
+        
+        if (subCategoryDetails) {
+          subCategory = { name: subCategoryDetails.sub_category_name };
+          category = { _id: subCategoryDetails.categoryId, name: subCategoryDetails.category_name };
+        } else {
+          const subCategoryData = await findSubCategoryById(equipment.subCategoryId);
+          subCategory = subCategoryData ? { name: subCategoryData.name } : null;
+          category = subCategoryData ? { _id: subCategoryData.categoryId, name: subCategoryData.categoryName } : null;
+        }
         const owner = await User.findById(equipment.ownerId);
 
         return {
@@ -442,8 +496,8 @@ async function getMyEquipments(req, res) {
           postal_code: equipment.postal_code,
           rental_price: equipment.rental_price,
           serial_number: equipment.serial_number,
-          sub_category_id: equipment.subCategoryId._id,
-          sub_category_name: equipment.subCategoryId.name,
+          sub_category_id: equipment.subCategoryId,
+          sub_category_name: subCategory ? subCategory.name : null,
           category_id: category ? category._id : null, // ✅ Use category details
           category_name: category ? category.name : null,
           equipment_status: equipment.equipment_status,
@@ -602,10 +656,10 @@ function queryMatches(equipment, query) {
       const equipments = await Equipment.find({ equipment_status: "Active" })
         .populate({
           path: 'subCategoryId',
-          model: SubCategory, // Reference to SubCategory model
+          model: Category, // Reference to Category model
           populate: {
-            path: 'categoryId',
-            model: Category, // Reference to Category model
+            path: 'sub_categories', // Populate sub_categories
+            model: 'SubCategory', // Reference to SubCategory model
           },
         })
         .populate({
@@ -627,7 +681,7 @@ function queryMatches(equipment, query) {
   
       // Group equipment by categories
       equipments.forEach((equipment) => {
-        const categoryId = equipment.subCategoryId.categoryId._id.toString();
+        const categoryId = equipment.subCategoryId._id.toString();
         if (!categoryMap[categoryId]) {
           categoryMap[categoryId] = [];
         }
@@ -780,23 +834,13 @@ async function getUserShop(req, res) {
       });
     }
 
-    // Fetch subcategories for the equipment
-    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('categoryId');
-
-    // Map subcategories to equipment data
-    const subCategoryMap = subCategories.reduce((acc, subCat) => {
-      acc[subCat._id] = {
-        sub_category_name: subCat.name,
-        category_id: subCat.categoryId._id,
-        category_name: subCat.categoryId.name,
-      };
-      return acc;
-    }, {});
+    // Fetch subcategories for the equipment using helper function
+    const subCategoryIds = equipments.map(equipment => equipment.subCategoryId.toString());
+    const subCategoryMap = await getMultipleSubCategoryDetails(subCategoryIds);
 
     // Map equipment data to match the required format
     const formattedEquipments = equipments.map(equipment => {
-      const subCategoryDetails = subCategoryMap[equipment.subCategoryId];
+      const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
       return {
         _id: equipment._id,
         name: equipment.name,
@@ -810,7 +854,7 @@ async function getUserShop(req, res) {
             lng: equipment.location?.lng || 0.0,
             range: equipment.location?.range || 0,
           },
-        category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
+        category_id: subCategoryDetails ? subCategoryDetails.categoryId : null,
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
         sub_category_id: equipment.subCategoryId,
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
@@ -898,26 +942,16 @@ async function getFavoriteEquipments(req, res) {
       });
     }
 
-    // Fetch subcategories for the equipment
-    const subCategoryIds = favoriteEquipments.map(equipment => equipment.subCategoryId);
-    const subCategories = await SubCategory.find({ _id: { $in: subCategoryIds } }).populate('categoryId');
+    // Fetch subcategories for the equipment using helper function
+    const subCategoryIds = favoriteEquipments.map(equipment => equipment.subCategoryId.toString());
+    const subCategoryMap = await getMultipleSubCategoryDetails(subCategoryIds);
 
     //Get Equipment Average Rating
     const average_rating = await getAverageRating(favoriteEquipments);
 
-    // Map subcategories to equipment data
-    const subCategoryMap = subCategories.reduce((acc, subCat) => {
-      acc[subCat._id] = {
-        sub_category_name: subCat.name,
-        category_id: subCat.categoryId._id,
-        category_name: subCat.categoryId.name,
-      };
-      return acc;
-    }, {});
-
     // Add "isFavorite" flag and additional details to each equipment
     const formattedFavoriteEquipments = favoriteEquipments.map(equipment => {
-      const subCategoryDetails = subCategoryMap[equipment.subCategoryId];
+      const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
       return {
         _id: equipment._id,
         name: equipment.name,
@@ -937,7 +971,7 @@ async function getFavoriteEquipments(req, res) {
           lng: equipment.location?.lng || 0.0,
           range: equipment.location?.range || 0,
         },
-        category_id: subCategoryDetails ? subCategoryDetails.category_id : null,
+        category_id: subCategoryDetails ? subCategoryDetails.categoryId : null,
         category_name: subCategoryDetails ? subCategoryDetails.category_name : null,
         sub_category_id: equipment.subCategoryId,
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,

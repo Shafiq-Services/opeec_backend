@@ -27,7 +27,7 @@ const equipmentSchema = new mongoose.Schema({
   serial_number: { type: String },
   description: { type: String, default: "" },
   images: [{ type: String }],
-  subCategoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'SubCategory' },
+  subCategoryId: { type: mongoose.Schema.Types.ObjectId, required: true },
   postal_code: { type: String, default: "" },
   delivery_by_owner: { type: Boolean, default: false },
   rental_price: { type: Number },

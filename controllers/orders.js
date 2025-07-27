@@ -1,9 +1,68 @@
 const Equipment = require('../models/equipment');
 const Order = require('../models/orders');
+const Category = require('../models/categories');
 const cron = require('node-cron');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const { calculateOrderFees } = require('../utils/feeCalculations');
+
+// Helper function to create subcategory lookup pipeline for embedded subcategories
+function createSubcategoryLookupPipeline() {
+  return [
+    {
+      $lookup: {
+        from: "categories",
+        let: { subCatId: "$equipment.subCategoryId" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $in: ["$$subCatId", "$sub_categories._id"]
+              }
+            }
+          },
+          {
+            $project: {
+              _id: 1,
+              name: 1,
+              category_image: 1,
+              subcategory: {
+                $filter: {
+                  input: "$sub_categories",
+                  cond: { $eq: ["$$this._id", "$$subCatId"] }
+                }
+              }
+            }
+          },
+          {
+            $unwind: "$subcategory"
+          }
+        ],
+        as: "categoryWithSubcategory"
+      }
+    },
+    { $unwind: { path: "$categoryWithSubcategory", preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        category: {
+          _id: "$categoryWithSubcategory._id",
+          name: "$categoryWithSubcategory.name",
+          category_image: "$categoryWithSubcategory.category_image"
+        },
+        subcategory: {
+          _id: "$categoryWithSubcategory.subcategory._id",
+          name: "$categoryWithSubcategory.subcategory.name",
+          security_fee: "$categoryWithSubcategory.subcategory.security_fee"
+        }
+      }
+    },
+    {
+      $project: {
+        categoryWithSubcategory: 0
+      }
+    }
+  ];
+}
 
 const timeOffsetHours = parseFloat(process.env.TIME_OFFSET_HOURS) || 3;
 const intervalMinutes = parseInt(process.env.INTERVAL_MINUTES) || 1;
@@ -120,24 +179,7 @@ exports.getCurrentRentals = async (req, res) => {
         },
       },
       { $unwind: "$equipment" },
-      {
-        $lookup: {
-          from: "sub_categories",
-          localField: "equipment.subCategoryId",
-          foreignField: "_id",
-          as: "subcategory",
-        },
-      },
-      { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: "categories",
-          localField: "subcategory.categoryId",
-          foreignField: "_id",
-          as: "category",
-        },
-      },
-      { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
+      ...createSubcategoryLookupPipeline(),
       { $match: matchQuery },
     ]);
 
@@ -220,24 +262,7 @@ exports.getHistoryRentals = async (req, res) => {
         },
       },
       { $unwind: "$equipment" },
-      {
-        $lookup: {
-          from: "sub_categories",
-          localField: "equipment.subCategoryId",
-          foreignField: "_id",
-          as: "subcategory",
-        },
-      },
-      { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: "categories",
-          localField: "subcategory.categoryId",
-          foreignField: "_id",
-          as: "category",
-        },
-      },
-      { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
+      ...createSubcategoryLookupPipeline(),
       { $match: matchQuery },
     ]);
 
@@ -728,24 +753,7 @@ exports.getRentalsByStatus = async (req, res) => {
         },
       },
       { $unwind: "$equipment" },
-      {
-        $lookup: {
-          from: "sub_categories",
-          localField: "equipment.subCategoryId",
-          foreignField: "_id",
-          as: "subcategory",
-        },
-      },
-      { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
-      {
-        $lookup: {
-          from: "categories",
-          localField: "subcategory.categoryId",
-          foreignField: "_id",
-          as: "category",
-        },
-      },
-      { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
+      ...createSubcategoryLookupPipeline(),
       {
         $lookup: {
           from: "users",

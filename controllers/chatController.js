@@ -4,10 +4,33 @@ const Message = require("../models/message");
 const User = require("../models/user");
 const Admin = require("../models/admin");
 const Equipment = require("../models/equipment");
-const Categories = require("../models/categories");
-const SubCategory = require("../models/sub_categories");
+const Category = require("../models/categories");
 const EventStore = require("../models/EventStore");
 const {sendEventToUser, connectedUsers} = require("../utils/socketService");
+
+// Helper function to find subcategory by ID across all categories
+async function findSubCategoryById(subCategoryId) {
+  try {
+    const category = await Category.findOne({
+      'sub_categories._id': subCategoryId
+    });
+    
+    if (!category) return null;
+    
+    const subCategory = category.sub_categories.find(
+      sub => sub._id.toString() === subCategoryId.toString()
+    );
+    
+    return subCategory ? {
+      ...subCategory.toObject(),
+      categoryId: category._id,
+      categoryName: category.name
+    } : null;
+  } catch (error) {
+    console.error('Error finding subcategory:', error);
+    return null;
+  }
+}
 
 exports.getConversations = async (req, res) => {
   try {
@@ -43,14 +66,13 @@ exports.getConversations = async (req, res) => {
 
         let equipmentResponse = null;
         if (conversation.equipmentId) {
-          const subCategory = await SubCategory.findById(conversation.equipmentId.subCategoryId);
-          const category = subCategory && await Categories.findById(subCategory.categoryId);
+          const subCategoryData = await findSubCategoryById(conversation.equipmentId.subCategoryId);
           
           equipmentResponse = {
             _id: conversation.equipmentId._id,
             name: conversation.equipmentId.name,
             images: conversation.equipmentId.images,
-            category: category ? category.name : "Unknown",
+            category: subCategoryData ? subCategoryData.categoryName : "Unknown",
             rental_price: conversation.equipmentId.rental_price,
             address: conversation.equipmentId.location.address,
           };
@@ -116,14 +138,13 @@ exports.getMessages = async (req, res) => {
     if (conversation.equipmentId) {
       const equipment = await Equipment.findById(conversation.equipmentId);
       if (equipment) {
-        const subCategory = await SubCategory.findById(equipment.subCategoryId);
-        const category = subCategory && await Categories.findById(subCategory.categoryId);
+        const subCategoryData = await findSubCategoryById(equipment.subCategoryId);
         
         equipmentResponse = {
           _id: equipment._id,
           name: equipment.name,
           images: equipment.images,
-          category: category ? category.name : "Unknown",
+          category: subCategoryData ? subCategoryData.categoryName : "Unknown",
           rental_price: equipment.rental_price,
           address: equipment.location.address,
           rating: 0,
@@ -245,8 +266,7 @@ exports.sendMessage = async (req, res) => {
     }
 
     const receiverId = receiver._id;
-    const subCategory = await SubCategory.findById(equipment.subCategoryId);
-    const category = subCategory && await Categories.findById(subCategory.categoryId);
+    const subCategoryData = await findSubCategoryById(equipment.subCategoryId);
 
     let conversation = await Conversation.findOne({ participants: { $all: [senderId, receiverId] } });
     if (!conversation) {
@@ -294,7 +314,7 @@ exports.sendMessage = async (req, res) => {
         id: equipment._id,
         name: equipment.name,
         images: equipment.images,
-        category: category ? category.name : "Unknown",
+        category: subCategoryData ? subCategoryData.categoryName : "Unknown",
         rental_price: equipment.rental_price,
         address: equipment.location.address
       }

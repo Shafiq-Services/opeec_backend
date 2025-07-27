@@ -10,16 +10,6 @@ const appSettingsSchema = new mongoose.Schema({
     type: String,
     default: '',
     trim: true
-  },
-  stripe_public_key: {
-    type: String,
-    default: '',
-    trim: true
-  },
-  stripe_secret_key: {
-    type: String,
-    default: '',
-    trim: true
   }
 }, { 
   timestamps: true // Using automatic timestamps instead of manual handling

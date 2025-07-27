@@ -1,6 +1,7 @@
 const AppSettings = require('../models/appSettings');
+const StripeKey = require('../models/stripeKey');
 
-// GET: Get app settings
+// GET: Get app settings (including stripe keys from separate collection)
 exports.getAppSettings = async (req, res) => {
   try {
     // Find the settings document (there should only be one)
@@ -10,11 +11,21 @@ exports.getAppSettings = async (req, res) => {
     if (!settings) {
       settings = new AppSettings({
         privacy_policy_link: '',
-        terms_conditions_link: '',
-        stripe_public_key: '',
-        stripe_secret_key: ''
+        terms_conditions_link: ''
       });
       await settings.save();
+    }
+
+    // Get stripe keys from StripeKey collection
+    let stripeKey = await StripeKey.findOne();
+    
+    // If no stripe keys exist, create default ones
+    if (!stripeKey) {
+      stripeKey = new StripeKey({
+        secretKey: '',
+        publishableKey: ''
+      });
+      await stripeKey.save();
     }
 
     res.status(200).json({
@@ -23,8 +34,8 @@ exports.getAppSettings = async (req, res) => {
       settings: {
         privacy_policy_link: settings.privacy_policy_link,
         terms_conditions_link: settings.terms_conditions_link,
-        stripe_public_key: settings.stripe_public_key,
-        stripe_secret_key: settings.stripe_secret_key,
+        stripe_public_key: stripeKey.publishableKey,
+        stripe_secret_key: stripeKey.secretKey,
         created_at: settings.createdAt,
         updated_at: settings.updatedAt
       }
@@ -39,7 +50,7 @@ exports.getAppSettings = async (req, res) => {
   }
 };
 
-// PUT: Create or update app settings
+// PUT: Create or update app settings (including stripe keys in separate collection)
 exports.updateAppSettings = async (req, res) => {
   try {
     const {
@@ -88,25 +99,38 @@ exports.updateAppSettings = async (req, res) => {
       });
     }
 
-    // Find existing settings or create new one
+    // Update or create app settings (privacy policy and terms)
     let settings = await AppSettings.findOne();
     
     if (settings) {
       // Update existing settings
       settings.privacy_policy_link = privacy_policy_link;
       settings.terms_conditions_link = terms_conditions_link;
-      settings.stripe_public_key = stripe_public_key;
-      settings.stripe_secret_key = stripe_secret_key;
       await settings.save();
     } else {
       // Create new settings
       settings = new AppSettings({
         privacy_policy_link,
-        terms_conditions_link,
-        stripe_public_key,
-        stripe_secret_key
+        terms_conditions_link
       });
       await settings.save();
+    }
+
+    // Update or create stripe keys in separate collection
+    let stripeKey = await StripeKey.findOne();
+    
+    if (stripeKey) {
+      // Update existing stripe keys
+      stripeKey.publishableKey = stripe_public_key;
+      stripeKey.secretKey = stripe_secret_key;
+      await stripeKey.save();
+    } else {
+      // Create new stripe keys
+      stripeKey = new StripeKey({
+        publishableKey: stripe_public_key,
+        secretKey: stripe_secret_key
+      });
+      await stripeKey.save();
     }
 
     res.status(200).json({
@@ -115,8 +139,8 @@ exports.updateAppSettings = async (req, res) => {
       settings: {
         privacy_policy_link: settings.privacy_policy_link,
         terms_conditions_link: settings.terms_conditions_link,
-        stripe_public_key: settings.stripe_public_key,
-        stripe_secret_key: settings.stripe_secret_key,
+        stripe_public_key: stripeKey.publishableKey,
+        stripe_secret_key: stripeKey.secretKey,
         created_at: settings.createdAt,
         updated_at: settings.updatedAt
       }

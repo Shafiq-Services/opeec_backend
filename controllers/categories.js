@@ -1,44 +1,37 @@
-const Category = require('../models/categories'); // Category model
-const SubCategory = require('../models/sub_categories'); // SubCategory model
+const Category = require('../models/categories'); // Category model with embedded subcategories
 
 async function addCategory(req, res) {
     try {
-      const { category_name, security_fee, categoryImage, sub_categories } = req.body;
+      const { category_name, categoryImage, sub_categories } = req.body;
   
       // Validation for required fields
-      if (!category_name || !security_fee || !categoryImage || !sub_categories || sub_categories.length === 0) {
+      if (!category_name || !categoryImage || !sub_categories || sub_categories.length === 0) {
         return res.status(400).json({
-          message: 'All required fields must be provided.',
+          message: 'All required fields must be provided: category_name, categoryImage, sub_categories.',
           status: false,
         });
       }
+
+      // Validate that each subcategory has required fields including security_fee
+      for (const subCat of sub_categories) {
+        if (!subCat.name || subCat.security_fee === undefined || subCat.security_fee === null) {
+          return res.status(400).json({
+            message: 'Each subcategory must have name and security_fee.',
+            status: false,
+          });
+        }
+      }
   
-      // Create new Category
+      // Create new Category with embedded subcategories
       const newCategory = new Category({
         name: category_name,
         category_image: categoryImage,
-        security_fee: security_fee,
+        sub_categories: sub_categories // Directly embed subcategories
       });
   
       // Save the new category to the database
       const savedCategory = await newCategory.save();
-      console.log('New Category saved:', savedCategory);
-  
-      // Prepare and save subcategories
-      const subCategoryPromises = sub_categories.map(async (subCategoryData) => {
-        const newSubCategory = new SubCategory({
-          name: subCategoryData.name,
-          categoryId: savedCategory._id, // Associate subcategory with the saved category
-        });
-  
-        // Save subcategory
-        const savedSubCategory = await newSubCategory.save();
-        console.log('New SubCategory saved:', savedSubCategory);
-        return savedSubCategory;
-      });
-  
-      // Wait for all subcategories to be saved
-      const savedSubCategories = await Promise.all(subCategoryPromises);
+      console.log('New Category with embedded subcategories saved:', savedCategory);
   
       // Prepare the response with saved data
       const response = {
@@ -48,10 +41,10 @@ async function addCategory(req, res) {
           category_id: savedCategory._id,
           name: savedCategory.name,
           category_image: savedCategory.category_image,
-          security_fee: savedCategory.security_fee,
-          sub_categories: savedSubCategories.map(sub => ({
+          sub_categories: savedCategory.sub_categories.map(sub => ({
             sub_category_id: sub._id,
             name: sub.name,
+            security_fee: sub.security_fee,
           })),
         },
       };
@@ -68,11 +61,12 @@ async function addCategory(req, res) {
 
   async function updateCategory(req, res) {
     try {
-      const { category_id } = req.query;
-      const { name, security_fee, category_image, sub_categories } = req.body;
+      const { category_id, categoryId } = req.query;
+      const categoryIdToUse = category_id || categoryId; // Support both parameter names
+      const { name, category_image, sub_categories } = req.body;
   
       // Find the category by ID
-      const category = await Category.findById(category_id);
+      const category = await Category.findById(categoryIdToUse);
   
       if (!category) {
         return res.status(404).json({
@@ -83,64 +77,44 @@ async function addCategory(req, res) {
   
       // Update category details
       category.name = name || category.name;
-      category.security_fee = security_fee || category.security_fee;
       category.category_image = category_image || category.category_image;
+
+      // If sub_categories are provided, update them
+      if (sub_categories && sub_categories.length > 0) {
+        // Validate that each subcategory has required fields including security_fee
+        for (const subCat of sub_categories) {
+          if (!subCat.name || subCat.security_fee === undefined || subCat.security_fee === null) {
+            return res.status(400).json({
+              message: 'Each subcategory must have name and security_fee.',
+              status: false,
+            });
+          }
+        }
+
+        // Update embedded subcategories
+        category.sub_categories = sub_categories;
+      }
   
       // Save updated category
       await category.save();
       console.log('Category updated:', category);
   
-      // If sub_categories are provided, update them
-      if (sub_categories && sub_categories.length > 0) {
-        // Delete old subcategories and add new ones
-        await SubCategory.deleteMany({ categoryId: category._id });
-  
-        const subCategoryPromises = sub_categories.map(async (subCategoryData) => {
-          const newSubCategory = new SubCategory({
-            name: subCategoryData.name,
-            categoryId: category._id, // Associate subcategory with the category
-          });
-  
-          // Save new subcategory
-          await newSubCategory.save();
-          return newSubCategory;
-        });
-  
-        const savedSubCategories = await Promise.all(subCategoryPromises);
-        console.log('SubCategories updated:', savedSubCategories);
-  
-        // Prepare the response
-        const response = {
-          message: 'Category and Subcategories updated successfully',
-          status: true,
-          category: {
-            category_id: category._id,
-            name: category.name,
-            category_image: category.category_image,
-            security_fee: category.security_fee,
-            sub_categories: savedSubCategories.map(sub => ({
-              sub_category_id: sub._id,
-              name: sub.name,
-            })),
-          },
-        };
-  
-        return res.status(200).json(response);
-      }
-  
-      // If no subcategories are provided, return only the updated category
+      // Prepare the response
       const response = {
-        message: 'Category updated successfully',
+        message: 'Category and Subcategories updated successfully',
         status: true,
         category: {
           category_id: category._id,
           name: category.name,
           category_image: category.category_image,
-          security_fee: category.security_fee,
-          sub_categories: [],
+          sub_categories: category.sub_categories.map(sub => ({
+            sub_category_id: sub._id,
+            name: sub.name,
+            security_fee: sub.security_fee,
+          })),
         },
       };
-  
+
       return res.status(200).json(response);
   
     } catch (err) {
@@ -155,23 +129,18 @@ async function addCategory(req, res) {
 
   async function deleteCategory(req, res) {
     try {
-      const { category_id } = req.query;
+      const { category_id, categoryId } = req.query;
+      const categoryIdToUse = category_id || categoryId; // Support both parameter names
   
-      // Find the category by ID
-      const category = await Category.findById(category_id);
+      // Find and delete the category by ID (subcategories are automatically deleted since they're embedded)
+      const deletedCategory = await Category.findByIdAndDelete(categoryIdToUse);
   
-      if (!category) {
+      if (!deletedCategory) {
         return res.status(404).json({
           message: 'Category not found',
           status: false,
         });
       }
-  
-      // Delete all subcategories associated with this category
-      await SubCategory.deleteMany({ categoryId: category._id });
-  
-      // Delete the category
-      await Category.findByIdAndDelete(category_id);
   
       // Return success response
       return res.status(200).json({
@@ -199,23 +168,16 @@ async function getAllCategories(req, res) {
       });
     }
 
-    // Loop through each category and populate subcategories
-    const formattedCategories = await Promise.all(categories.map(async (category) => {
-      // Fetch the subcategories for each category
-      const subCategories = await SubCategory.find({ categoryId: category._id }).lean();
-      // Format the category data
-      const formattedCategory = {
-        category_id: category._id,
-        category_image: category.category_image,
-        name: category.name,
-        security_fee: category.security_fee,
-        sub_categories: subCategories.map(subCategory => ({
-          sub_category_id: subCategory._id,
-          name: subCategory.name,
-        }))
-      };
-
-      return formattedCategory;
+    // Format the categories with embedded subcategories
+    const formattedCategories = categories.map(category => ({
+      category_id: category._id,
+      category_image: category.category_image,
+      name: category.name,
+      sub_categories: category.sub_categories?.map(subCategory => ({
+        sub_category_id: subCategory._id,
+        name: subCategory.name,
+        security_fee: subCategory.security_fee,
+      })) || []
     }));
 
     // Prepare the response
