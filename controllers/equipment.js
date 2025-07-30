@@ -652,16 +652,8 @@ function queryMatches(equipment, query) {
 
   async function getRandomEquipmentImages(req, res) {
     try {
-      // Fetch all live equipment with populated categories and owner details
+      // Fetch all live equipment with populated owner details only
       const equipments = await Equipment.find({ equipment_status: "Active" })
-        .populate({
-          path: 'subCategoryId',
-          model: Category, // Reference to Category model
-          populate: {
-            path: 'sub_categories', // Populate sub_categories
-            model: 'SubCategory', // Reference to SubCategory model
-          },
-        })
         .populate({
           path: 'ownerId',
           model: User, // Reference to User model
@@ -675,17 +667,30 @@ function queryMatches(equipment, query) {
         });
       }
   
+      // Manually populate subcategory data for each equipment
+      const equipmentWithSubCategories = await Promise.all(
+        equipments.map(async (equipment) => {
+          const subCategoryData = await findSubCategoryById(equipment.subCategoryId);
+          return {
+            ...equipment.toObject(),
+            subCategoryData: subCategoryData
+          };
+        })
+      );
+  
       const categoryMap = {};
       const result = [];
       const usedEquipmentIds = new Set();
   
       // Group equipment by categories
-      equipments.forEach((equipment) => {
-        const categoryId = equipment.subCategoryId._id.toString();
-        if (!categoryMap[categoryId]) {
-          categoryMap[categoryId] = [];
+      equipmentWithSubCategories.forEach((equipment) => {
+        if (equipment.subCategoryData && equipment.subCategoryData.categoryId) {
+          const categoryId = equipment.subCategoryData.categoryId.toString();
+          if (!categoryMap[categoryId]) {
+            categoryMap[categoryId] = [];
+          }
+          categoryMap[categoryId].push(equipment);
         }
-        categoryMap[categoryId].push(equipment);
       });
   
       // Flatten categories into an array
@@ -741,7 +746,7 @@ function queryMatches(equipment, query) {
         }
   
         // If all categories are exhausted, allow repeating equipment
-        if (result.length < 20 && usedEquipmentIds.size === equipments.length) {
+        if (result.length < 20 && usedEquipmentIds.size === equipmentWithSubCategories.length) {
           break;
         }
       }
@@ -749,23 +754,26 @@ function queryMatches(equipment, query) {
       // Fill up to 20 results if fewer than 20 images were added
       while (result.length < 20) {
         const randomEquipment =
-          equipments[Math.floor(Math.random() * equipments.length)];
-        const randomImage =
-          randomEquipment.images[
-            Math.floor(Math.random() * randomEquipment.images.length)
-          ];
-        result.push({
-          equipmentId: randomEquipment._id,
-          image: randomImage,
-          owner: randomEquipment.ownerId
-            ? {
-                _id: randomEquipment.ownerId._id,
-                name: randomEquipment.ownerId.name,
-                email: randomEquipment.ownerId.email,
-                profile_image: randomEquipment.ownerId.profile_image,
-              }
-            : null,
-        });
+          equipmentWithSubCategories[Math.floor(Math.random() * equipmentWithSubCategories.length)];
+        
+        if (randomEquipment.images && randomEquipment.images.length > 0) {
+          const randomImage =
+            randomEquipment.images[
+              Math.floor(Math.random() * randomEquipment.images.length)
+            ];
+          result.push({
+            equipmentId: randomEquipment._id,
+            image: randomImage,
+            owner: randomEquipment.ownerId
+              ? {
+                  _id: randomEquipment.ownerId._id,
+                  name: randomEquipment.ownerId.name,
+                  email: randomEquipment.ownerId.email,
+                  profile_image: randomEquipment.ownerId.profile_image,
+                }
+              : null,
+          });
+        }
       }
   
       return res.status(200).json({
