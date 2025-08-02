@@ -17,6 +17,19 @@ const conversationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Equipment",
       required: false,
+    },
+    isResolved: {
+      type: Boolean,
+      default: false,
+    },
+    resolvedAt: {
+      type: Date,
+      required: false,
+    },
+    resolvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      required: false,
     }
   },
   {

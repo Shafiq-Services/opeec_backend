@@ -1,6 +1,7 @@
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
+const Admin = require("../models/admin");
 const EventStore = require("../models/EventStore");
 
 const JWT_SECRET = process.env.JWT_SECRET || "Opeec";
@@ -9,14 +10,45 @@ const typingUsers = new Map();
 
 let io;
 
+// Helper function to get user details for socket events
+async function getUserDetails(userId) {
+  try {
+    const user = await User.findById(userId).select('name email picture');
+    if (!user) {
+      // Try to find admin if user not found
+      const admin = await Admin.findById(userId).select('name email profile_picture');
+      if (admin) {
+        return {
+          _id: admin._id,
+          name: admin.name,
+          email: admin.email,
+          picture: admin.profile_picture || null,
+          userType: 'admin'
+        };
+      }
+      return null;
+    }
+    return {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      picture: user.picture || null,
+      userType: 'user'
+    };
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    return null;
+  }
+}
+
 const sendEventToUser = (userId, event, data) => {
-  console.log("Connected Users:", connectedUsers);
+  console.log(`Connected Users (${connectedUsers.size}):`, Array.from(connectedUsers.entries()));
   const socketId = connectedUsers.get(String(userId));
   if (socketId) {
     io.to(socketId).emit(event, data);
     console.log(`Event "${event}" sent to user ${userId}:`, data);
   } else {
-    console.warn(`User with ID ${userId} is not connected.`);
+    console.warn(`User with ID ${userId} is not connected. Available users: [${Array.from(connectedUsers.keys()).join(', ')}]`);
   }
 };
 
@@ -39,7 +71,7 @@ const initializeSocket = (server) => {
   console.log("Socket server initialized...");
 
   io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
     if (!token) {
       console.error("Socket connection denied: Token missing");
       return next(new Error("Token missing"));
@@ -47,8 +79,19 @@ const initializeSocket = (server) => {
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
-      socket.userId = decoded.userId;
-      console.log(`Socket authenticated for user: ${decoded.userId}`);
+      
+      // Handle both user and admin tokens
+      const userId = decoded.userId || decoded.adminId;
+      const userType = decoded.userId ? 'user' : 'admin';
+      
+      if (!userId) {
+        console.error("Socket connection denied: Invalid token structure", decoded);
+        return next(new Error("Invalid token structure"));
+      }
+      
+      socket.userId = userId;
+      socket.userType = userType;
+      console.log(`Socket authenticated for ${userType}: ${userId}`);
       next();
     } catch (error) {
       console.error("Socket connection denied: Invalid or expired token", error);
@@ -58,11 +101,12 @@ const initializeSocket = (server) => {
 
   io.on("connection", (socket) => {
     const userId = socket.userId;
+    const userType = socket.userType;
     connectedUsers.set(userId, socket.id);
-    console.log(`User connected: ${userId}, Socket ID: ${socket.id}`);
+    console.log(`${userType.charAt(0).toUpperCase() + userType.slice(1)} connected: ${userId}, Socket ID: ${socket.id}`);
 
     // Automatically notify user's contacts that they are online
-    socket.broadcast.emit("userOnline", { userId });
+    socket.broadcast.emit("userOnline", { userId, userType });
 
     // Simplified chat events - only what frontend needs to emit
     socket.on("joinConversation", ({ conversationId }) => {
@@ -76,46 +120,54 @@ const initializeSocket = (server) => {
     });
 
     // Typing indicator events - only frontend involvement needed
-    socket.on("startTyping", ({ conversationId, receiverId }) => {
+    socket.on("startTyping", async ({ conversationId, receiverId }) => {
       if (!conversationId || !receiverId) return;
       
       const typingKey = `${conversationId}_${userId}`;
       typingUsers.set(typingKey, Date.now());
       
-      // Notify the receiver that user is typing
-      sendEventToUser(receiverId, "userTyping", {
+      // Get user details for socket events
+      const typingUserDetails = await getUserDetails(userId);
+      const receiverDetails = await getUserDetails(receiverId);
+      
+      const typingData = {
         conversationId,
         userId,
-        isTyping: true
-      });
+        isTyping: true,
+        typingUser: typingUserDetails,
+        receiver: receiverDetails
+      };
+      
+      // Notify the receiver that user is typing
+      sendEventToUser(receiverId, "userTyping", typingData);
       
       // Also emit to conversation room
-      socket.to(`conversation_${conversationId}`).emit("userTyping", {
-        conversationId,
-        userId,
-        isTyping: true
-      });
+      socket.to(`conversation_${conversationId}`).emit("userTyping", typingData);
     });
 
-    socket.on("stopTyping", ({ conversationId, receiverId }) => {
+    socket.on("stopTyping", async ({ conversationId, receiverId }) => {
       if (!conversationId || !receiverId) return;
       
       const typingKey = `${conversationId}_${userId}`;
       typingUsers.delete(typingKey);
       
-      // Notify the receiver that user stopped typing
-      sendEventToUser(receiverId, "userTyping", {
+      // Get user details for socket events
+      const typingUserDetails = await getUserDetails(userId);
+      const receiverDetails = await getUserDetails(receiverId);
+      
+      const typingData = {
         conversationId,
         userId,
-        isTyping: false
-      });
+        isTyping: false,
+        typingUser: typingUserDetails,
+        receiver: receiverDetails
+      };
+      
+      // Notify the receiver that user stopped typing
+      sendEventToUser(receiverId, "userTyping", typingData);
       
       // Also emit to conversation room
-      socket.to(`conversation_${conversationId}`).emit("userTyping", {
-        conversationId,
-        userId,
-        isTyping: false
-      });
+      socket.to(`conversation_${conversationId}`).emit("userTyping", typingData);
     });
 
     // Restore all previous socket functionality
@@ -262,10 +314,10 @@ const initializeSocket = (server) => {
     });
 
     socket.on("disconnect", () => {
-      console.log(`User disconnected: ${userId}`);
+      console.log(`${userType.charAt(0).toUpperCase() + userType.slice(1)} disconnected: ${userId}`);
       
       // Automatically notify user's contacts that they are offline
-      socket.broadcast.emit("userOffline", { userId });
+      socket.broadcast.emit("userOffline", { userId, userType });
       
       // Clean up typing indicators for this user
       for (const [key, value] of typingUsers.entries()) {
@@ -279,7 +331,7 @@ const initializeSocket = (server) => {
   });
 
   // Clean up typing indicators that are older than 5 seconds
-  setInterval(() => {
+  setInterval(async () => {
     const now = Date.now();
     for (const [key, timestamp] of typingUsers.entries()) {
       if (now - timestamp > 5000) { // 5 seconds timeout
@@ -288,11 +340,16 @@ const initializeSocket = (server) => {
         // Extract conversationId and userId from key
         const [conversationId, userId] = key.split('_');
         
-        // Notify that user stopped typing
+        // Get user details for timeout event
+        const typingUserDetails = await getUserDetails(userId);
+        
+        // Notify that user stopped typing (timeout)
         io.to(`conversation_${conversationId}`).emit("userTyping", {
           conversationId,
           userId,
-          isTyping: false
+          isTyping: false,
+          typingUser: typingUserDetails,
+          reason: 'timeout'
         });
       }
     }
