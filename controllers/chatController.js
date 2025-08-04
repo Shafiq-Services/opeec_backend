@@ -83,7 +83,37 @@ exports.getConversations = async (req, res) => {
           (participant) => participant.toString() !== userId.toString()
         );
 
-        const opponentUser = await User.findById(opponent).select("name picture");
+        // Find opponent user (could be user or admin)
+        let opponentUser = await User.findById(opponent).select("name picture email");
+        if (!opponentUser) {
+          // Try to find admin if user not found
+          opponentUser = await Admin.findById(opponent).select("name email profile_picture");
+          if (opponentUser) {
+            // Normalize admin data structure to match user structure
+            opponentUser = {
+              _id: opponentUser._id,
+              name: opponentUser.name,
+              picture: opponentUser.profile_picture,
+              email: opponentUser.email,
+              userType: 'admin'
+            };
+          }
+        } else {
+          // Add userType to user data
+          opponentUser = {
+            _id: opponentUser._id,
+            name: opponentUser.name,
+            picture: opponentUser.picture,
+            email: opponentUser.email,
+            userType: 'user'
+          };
+        }
+
+        // Skip this conversation if opponent not found in either collection
+        if (!opponentUser) {
+          console.warn(`Opponent with ID ${opponent} not found in User or Admin collections`);
+          return null;
+        }
         
         // Get unread count for this conversation
         const unreadCount = await Message.countDocuments({
@@ -109,20 +139,25 @@ exports.getConversations = async (req, res) => {
           };
         }
 
+        // Skip conversations with no messages
+        if (!conversation.lastMessage) {
+          return null;
+        }
+
         return {
           conversationId: conversation._id,
           equipment: equipmentResponse,
-          lastMessage: conversation.lastMessage
-            ? {
-                text: conversation.lastMessage.content,
-                createdAt: conversation.lastMessage.createdAt,
-                sentByYou: conversation.lastMessage.sender.toString() === userId.toString(),
-              }
-            : null,
+          lastMessage: {
+            text: conversation.lastMessage.content,
+            createdAt: conversation.lastMessage.createdAt,
+            sentByYou: conversation.lastMessage.sender.toString() === userId.toString(),
+          },
           opponent: {
             id: opponentUser._id,
             name: opponentUser.name,
             picture: opponentUser.picture,
+            email: opponentUser.email,
+            userType: opponentUser.userType,
             isOnline: isOnline
           },
           unreadCount: unreadCount,
@@ -131,9 +166,12 @@ exports.getConversations = async (req, res) => {
       })
     );
 
+    // Filter out null conversations (where opponent wasn't found)
+    const validConversations = conversationsWithDetails.filter(conv => conv !== null);
+
     res.json({
       message: "Conversations retrieved successfully",
-      conversations: conversationsWithDetails,
+      conversations: validConversations,
     });
   } catch (error) {
     console.error("Error in getConversations:", error);
@@ -546,6 +584,11 @@ exports.getAdminSupportConversations = async (req, res) => {
         // Check if user is online
         const isOnline = connectedUsers.has(user._id.toString());
 
+        // Skip conversations with no messages
+        if (!conversation.lastMessage) {
+          return null;
+        }
+
         return {
           _id: conversation._id,
           conversationId: conversation._id,
@@ -556,13 +599,11 @@ exports.getAdminSupportConversations = async (req, res) => {
             email: user.email,
             isOnline: isOnline
           },
-          lastMessage: conversation.lastMessage
-            ? {
-                text: conversation.lastMessage.content,
-                createdAt: conversation.lastMessage.createdAt,
-                sentByAdmin: conversation.lastMessage.sender.toString() === adminId.toString(),
-              }
-            : null,
+          lastMessage: {
+            text: conversation.lastMessage.content,
+            createdAt: conversation.lastMessage.createdAt,
+            sentByAdmin: conversation.lastMessage.sender.toString() === adminId.toString(),
+          },
           unreadCount: unreadCount,
           createdAt: conversation.createdAt,
           updatedAt: conversation.updatedAt,
