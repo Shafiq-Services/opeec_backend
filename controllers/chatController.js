@@ -304,6 +304,9 @@ exports.getMessages = async (req, res) => {
     const response = {
       message: "Messages retrieved successfully",
       messages: messagesWithSentByYou,
+      conversation: {
+        conversationId: conversationId,
+      },
       pagination: {
         currentPage: pageNumber,
         totalPages: Math.ceil(totalMessages / itemsPerPage),
