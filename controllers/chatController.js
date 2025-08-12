@@ -151,6 +151,7 @@ exports.getConversations = async (req, res) => {
             text: conversation.lastMessage.content,
             createdAt: conversation.lastMessage.createdAt,
             sentByYou: conversation.lastMessage.sender.toString() === userId.toString(),
+            status: conversation.lastMessage.status || 'sent'
           },
           opponent: {
             id: opponentUser._id,
