@@ -6,7 +6,7 @@ const Admin = require("../models/admin");
 const Equipment = require("../models/equipment");
 const Category = require("../models/categories");
 const EventStore = require("../models/EventStore");
-const {sendEventToUser, connectedUsers} = require("../utils/socketService");
+const {sendEventToUser, connectedUsers, isUserJoinedToConversation} = require("../utils/socketService");
 
 // Helper function to get user details for socket events
 async function getUserDetails(userId) {
@@ -357,13 +357,17 @@ exports.sendMessage = async (req, res) => {
       await conversation.save();
     }
 
-    // Create message with initial status 'sent'
+    // Check if receiver has joined this conversation (to prevent unread count increment)
+    const isReceiverJoined = isUserJoinedToConversation(receiverId, conversation._id);
+    
+    // Create message with initial status 'sent' and set read status based on join status
     const message = await new Message({
       conversation: conversation._id,
       sender: senderId,
       receiver: receiverId,
       content: text,
-      status: 'sent'
+      status: 'sent',
+      read: isReceiverJoined // Mark as read if receiver is joined to conversation
     }).save();
 
     conversation.lastMessage = message._id;
@@ -374,8 +378,15 @@ exports.sendMessage = async (req, res) => {
     let messageStatus = 'sent';
     
     if (isReceiverOnline) {
-      messageStatus = 'delivered';
-      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      if (isReceiverJoined) {
+        // If receiver is both online and joined to conversation, mark as read
+        messageStatus = 'read';
+        await Message.findByIdAndUpdate(message._id, { status: 'read' });
+      } else {
+        // If receiver is online but not joined, mark as delivered
+        messageStatus = 'delivered';
+        await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      }
     }
 
     // Get user details for socket events
@@ -460,12 +471,16 @@ exports.sendSupportMessage = async (req, res) => {
       await conversation.save();
     }
 
+    // Check if admin has joined this conversation (to prevent unread count increment)
+    const isAdminJoined = isUserJoinedToConversation(adminId, conversation._id);
+    
     const message = await new Message({
       conversation: conversation._id,
       sender: userId,
       receiver: adminId,
       content: text,
-      status: 'sent'
+      status: 'sent',
+      read: isAdminJoined // Mark as read if admin is joined to conversation
     }).save();
 
     conversation.lastMessage = message._id;
@@ -480,8 +495,15 @@ exports.sendSupportMessage = async (req, res) => {
     let messageStatus = 'sent';
     
     if (isAdminOnline) {
-      messageStatus = 'delivered';
-      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      if (isAdminJoined) {
+        // If admin is both online and joined to conversation, mark as read
+        messageStatus = 'read';
+        await Message.findByIdAndUpdate(message._id, { status: 'read' });
+      } else {
+        // If admin is online but not joined, mark as delivered
+        messageStatus = 'delivered';
+        await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      }
     }
 
     // Notify admin via socket
@@ -849,13 +871,17 @@ exports.adminReplySupportMessage = async (req, res) => {
     // Get the user (receiver)
     const receiverId = conversation.participants.find(id => id.toString() !== adminId.toString());
     
+    // Check if user has joined this conversation (to prevent unread count increment)
+    const isUserJoined = isUserJoinedToConversation(receiverId, conversationId);
+    
     // Create message with initial status 'sent'
     const message = await new Message({
       conversation: conversationId,
       sender: adminId,
       receiver: receiverId,
       content: text,
-      status: 'sent'
+      status: 'sent',
+      read: isUserJoined // Mark as read if user is joined to conversation
     }).save();
 
     // Update conversation's last message
@@ -867,8 +893,15 @@ exports.adminReplySupportMessage = async (req, res) => {
     let messageStatus = 'sent';
     
     if (isReceiverOnline) {
-      messageStatus = 'delivered';
-      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      if (isUserJoined) {
+        // If user is both online and joined to conversation, mark as read
+        messageStatus = 'read';
+        await Message.findByIdAndUpdate(message._id, { status: 'read' });
+      } else {
+        // If user is online but not joined, mark as delivered
+        messageStatus = 'delivered';
+        await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      }
     }
 
     // Get user details for socket events

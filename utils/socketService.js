@@ -7,6 +7,7 @@ const EventStore = require("../models/EventStore");
 const JWT_SECRET = process.env.JWT_SECRET || "Opeec";
 const connectedUsers = new Map();
 const typingUsers = new Map();
+const joinedConversations = new Map(); // userId -> Set of conversationIds
 
 let io;
 
@@ -111,11 +112,29 @@ const initializeSocket = (server) => {
     // Simplified chat events - only what frontend needs to emit
     socket.on("joinConversation", ({ conversationId }) => {
       socket.join(`conversation_${conversationId}`);
+      
+      // Track that user has joined this conversation
+      const userIdStr = userId.toString();
+      if (!joinedConversations.has(userIdStr)) {
+        joinedConversations.set(userIdStr, new Set());
+      }
+      joinedConversations.get(userIdStr).add(conversationId);
+      
       console.log(`User ${userId} joined conversation ${conversationId}`);
     });
 
     socket.on("leaveConversation", ({ conversationId }) => {
       socket.leave(`conversation_${conversationId}`);
+      
+      // Track that user has left this conversation
+      const userIdStr = userId.toString();
+      if (joinedConversations.has(userIdStr)) {
+        joinedConversations.get(userIdStr).delete(conversationId);
+        if (joinedConversations.get(userIdStr).size === 0) {
+          joinedConversations.delete(userIdStr);
+        }
+      }
+      
       console.log(`User ${userId} left conversation ${conversationId}`);
     });
 
@@ -326,6 +345,9 @@ const initializeSocket = (server) => {
         }
       }
       
+      // Clean up joined conversations for this user
+      joinedConversations.delete(userId.toString());
+      
       connectedUsers.delete(userId.toString());
     });
   });
@@ -358,4 +380,19 @@ const initializeSocket = (server) => {
   return io;
 };
 
-module.exports = { initializeSocket, sendEventToUser, connectedUsers, typingUsers, io };
+// Helper function to check if user has joined a conversation
+const isUserJoinedToConversation = (userId, conversationId) => {
+  const userIdStr = userId.toString();
+  const conversationIdStr = conversationId.toString();
+  return joinedConversations.has(userIdStr) && joinedConversations.get(userIdStr).has(conversationIdStr);
+};
+
+module.exports = { 
+  initializeSocket, 
+  sendEventToUser, 
+  connectedUsers, 
+  typingUsers, 
+  joinedConversations,
+  isUserJoinedToConversation,
+  io 
+};
