@@ -67,8 +67,7 @@ exports.getConversations = async (req, res) => {
   try {
     const userId = req.userId;
 
-    // Mark user as online when they access conversations
-    connectedUsers.set(userId, Date.now());
+    // User's online status is managed by socket connection, no need to manually set here
 
     const conversations = await Conversation.find({
       participants: userId,
@@ -188,8 +187,7 @@ exports.getMessages = async (req, res) => {
     const itemsPerPage = parseInt(req.query.itemsPerPage) || 50;
     const skip = (pageNumber - 1) * itemsPerPage;
 
-    // Mark user as online when they access messages
-    connectedUsers.set(userId, Date.now());
+    // User's online status is managed by socket connection, no need to manually set here
 
     // Retrieve the conversation and ensure it exists
     const conversation = await Conversation.findById(conversationId);
@@ -518,6 +516,8 @@ exports.sendSupportMessage = async (req, res) => {
 exports.getSupportMessages = async (req, res) => {
   try {
     const { userId } = req;
+    
+    // User's online status is managed by socket connection, no need to manually set here
     const admin = await Admin.findOne();
     if (!admin) return res.status(500).json({ error: "Admin not available" });
 
@@ -529,6 +529,13 @@ exports.getSupportMessages = async (req, res) => {
       return res.status(200).json({ message: "No support messages found", messages: [] });
     }
 
+    // Get unread messages that will be marked as read
+    const unreadMessages = await Message.find({
+      conversation: conversation._id,
+      receiver: userId,
+      read: false
+    }).select('sender _id');
+
     const messages = await Message.find({ conversation: conversation._id })
       .sort({ createdAt: -1 })
       .select("-conversation -read -__v"); // Exclude fields
@@ -536,6 +543,50 @@ exports.getSupportMessages = async (req, res) => {
     if (messages.length === 0) {
       return res.status(200).json({ message: "No support messages found", messages: [] });
     }
+
+    // AUTOMATICALLY mark messages as read for the receiver and update status
+    if (unreadMessages.length > 0) {
+      await Message.updateMany(
+        {
+          conversation: conversation._id,
+          receiver: userId,
+          read: false,
+        },
+        { 
+          read: true,
+          status: 'read'
+        }
+      );
+
+      // Emit read receipts to admin via socket
+      const adminId = admin._id;
+      const userDetails = await getUserDetails(userId);
+      const adminDetails = await getUserDetails(adminId);
+      
+      const readMessageIds = unreadMessages
+        .filter(msg => msg.sender.toString() === adminId.toString())
+        .map(msg => msg._id);
+      
+      if (readMessageIds.length > 0) {
+        sendEventToUser(adminId.toString(), "messagesRead", {
+          conversationId: conversation._id,
+          messageIds: readMessageIds,
+          readBy: userId,
+          readByUser: userDetails,
+          sender: adminDetails
+        });
+      }
+    }
+
+    // Mark messages as delivered for the sender (if user is online)
+    await Message.updateMany(
+      {
+        conversation: conversation._id,
+        sender: { $ne: userId },
+        status: 'sent'
+      },
+      { status: 'delivered' }
+    );
 
     res.status(200).json({ message: "Support messages retrieved successfully", messages });
   } catch (error) {
