@@ -467,6 +467,7 @@ exports.sendSupportMessage = async (req, res) => {
       sender: userId,
       receiver: adminId,
       content: text,
+      status: 'sent'
     }).save();
 
     conversation.lastMessage = message._id;
@@ -476,6 +477,15 @@ exports.sendSupportMessage = async (req, res) => {
     const userDetails = await getUserDetails(userId);
     const adminDetails = await getUserDetails(adminId);
 
+    // Check if admin is online and update status accordingly
+    const isAdminOnline = connectedUsers.has(adminId.toString());
+    let messageStatus = 'sent';
+    
+    if (isAdminOnline) {
+      messageStatus = 'delivered';
+      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+    }
+
     // Notify admin via socket
     const messageData = {
       _id: message._id,
@@ -484,6 +494,7 @@ exports.sendSupportMessage = async (req, res) => {
       senderId: userId,
       receiverId: adminId,
       createdAt: message.createdAt,
+      status: messageStatus,
       isNewSupportMessage: true,
       sender: userDetails,
       receiver: adminDetails,
@@ -829,7 +840,8 @@ exports.adminReplySupportMessage = async (req, res) => {
 
     // Emit to user if online
     if (isReceiverOnline) {
-      sendEventToUser(receiverId, "newSupportReply", messageData);
+      // Emit newMessage event to user (same as regular messages for consistency)
+      sendEventToUser(receiverId, "newMessage", messageData);
       
       // Emit delivery confirmation to admin
       sendEventToUser(adminId, "messageDelivered", {

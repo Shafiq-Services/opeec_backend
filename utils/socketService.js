@@ -43,7 +43,7 @@ async function getUserDetails(userId) {
 
 const sendEventToUser = (userId, event, data) => {
   console.log(`Connected Users (${connectedUsers.size}):`, Array.from(connectedUsers.entries()));
-  const socketId = connectedUsers.get(String(userId));
+  const socketId = connectedUsers.get(userId.toString());
   if (socketId) {
     io.to(socketId).emit(event, data);
     console.log(`Event "${event}" sent to user ${userId}:`, data);
@@ -102,7 +102,7 @@ const initializeSocket = (server) => {
   io.on("connection", (socket) => {
     const userId = socket.userId;
     const userType = socket.userType;
-    connectedUsers.set(userId, socket.id);
+    connectedUsers.set(userId.toString(), socket.id);
     console.log(`${userType.charAt(0).toUpperCase() + userType.slice(1)} connected: ${userId}, Socket ID: ${socket.id}`);
 
     // Automatically notify user's contacts that they are online
@@ -123,7 +123,7 @@ const initializeSocket = (server) => {
     socket.on("startTyping", async ({ conversationId, receiverId }) => {
       if (!conversationId || !receiverId) return;
       
-      const typingKey = `${conversationId}_${userId}`;
+      const typingKey = `${conversationId}_${userId.toString()}`;
       typingUsers.set(typingKey, Date.now());
       
       // Get user details for socket events
@@ -148,7 +148,7 @@ const initializeSocket = (server) => {
     socket.on("stopTyping", async ({ conversationId, receiverId }) => {
       if (!conversationId || !receiverId) return;
       
-      const typingKey = `${conversationId}_${userId}`;
+      const typingKey = `${conversationId}_${userId.toString()}`;
       typingUsers.delete(typingKey);
       
       // Get user details for socket events
@@ -321,12 +321,12 @@ const initializeSocket = (server) => {
       
       // Clean up typing indicators for this user
       for (const [key, value] of typingUsers.entries()) {
-        if (key.includes(`_${userId}`)) {
+        if (key.includes(`_${userId.toString()}`)) {
           typingUsers.delete(key);
         }
       }
       
-      connectedUsers.delete(userId);
+      connectedUsers.delete(userId.toString());
     });
   });
 
