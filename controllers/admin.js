@@ -238,20 +238,30 @@ exports.sendOtpForPasswordReset = async (req, res) => {
   }
 };
 
-// Get Admin FCM Token
+// Get User FCM Token (Admin can get any user's FCM token)
 exports.getFCMToken = async (req, res) => {
   try {
-    const adminId = req.adminId; // From admin middleware
+    const { userId } = req.query;
 
-    // Find the admin by ID
-    const admin = await Admin.findById(adminId);
-    if (!admin) {
-      return res.status(404).json({ message: 'Admin not found' });
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Find the user by ID
+    const User = require('../models/user'); // Import User model
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
     }
 
     res.status(200).json({ 
       message: 'FCM token retrieved successfully', 
-      fcmToken: admin.fcm_token 
+      fcmToken: user.fcm_token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email
+      }
     });
   } catch (error) {
     res.status(500).json({ message: 'Error in retrieving FCM token', error });
