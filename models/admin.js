@@ -17,6 +17,7 @@ const adminSchema = new mongoose.Schema({
   about: { type: String, default: "", trim: true },
   password: { type: String, required: true },
   profile_picture: { type: String, default: "" },
+  fcm_token: { type: String, default: "" },
   otpDetails: otpSchema
 }, { 
   timestamps: true // Replaces created_at with createdAt/updatedAt

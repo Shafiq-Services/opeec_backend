@@ -232,8 +232,28 @@ exports.sendOtpForPasswordReset = async (req, res) => {
       admin.password = hashedPassword;
       await admin.save();
   
-      res.status(200).json({ message: 'Admin password reset successfully' });
-    } catch (error) {
-      res.status(500).json({ message: 'Error in resetting password', error });
+          res.status(200).json({ message: 'Admin password reset successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error in resetting password', error });
+  }
+};
+
+// Get Admin FCM Token
+exports.getFCMToken = async (req, res) => {
+  try {
+    const adminId = req.adminId; // From admin middleware
+
+    // Find the admin by ID
+    const admin = await Admin.findById(adminId);
+    if (!admin) {
+      return res.status(404).json({ message: 'Admin not found' });
     }
-  };
+
+    res.status(200).json({ 
+      message: 'FCM token retrieved successfully', 
+      fcmToken: admin.fcm_token 
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error in retrieving FCM token', error });
+  }
+};

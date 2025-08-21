@@ -13,6 +13,7 @@ router.put('/block', userController.blockUser);
 router.put('/unblock', userController.unBlockUser);
 router.get('/all', userController.getAllUsers);
 router.get('/search', userController.searchUsers);
+
 router.put('/update-profile', userController.updateUserProfileByAdmin);
 
 module.exports = router; 

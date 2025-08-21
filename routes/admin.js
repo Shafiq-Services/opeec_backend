@@ -21,4 +21,7 @@ router.get('/profile', adminController.getProfile);
 // Update Admin Profile
 router.put('/update', adminController.updateProfile);
 
+// Get Admin FCM Token
+router.get('/get_fcm', adminController.getFCMToken);
+
 module.exports = router;

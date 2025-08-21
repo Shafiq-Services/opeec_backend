@@ -571,6 +571,7 @@ exports.getAllUsers = async (req, res) => {
         total_rentals: totalRentals,
         is_blocked: user.is_blocked,
         block_reason: user.block_reason,
+        fcm_token: user.fcm_token || "",
         createdAt: user.createdAt
       };
     }));
@@ -617,3 +618,5 @@ exports.searchUsers = async (req, res) => {
     res.status(500).json({ message: 'Error searching users', error });
   }
 };
+
+
