@@ -24,4 +24,10 @@ router.put('/update', adminController.updateProfile);
 // Get Admin FCM Token
 router.get('/get_fcm', adminController.getFCMToken);
 
+// Send Notification to User
+router.post('/send_notification', adminController.sendNotification);
+
+// Send Bulk Notifications
+router.post('/send_bulk_notification', adminController.sendBulkNotification);
+
 module.exports = router;

@@ -267,3 +267,211 @@ exports.getFCMToken = async (req, res) => {
     res.status(500).json({ message: 'Error in retrieving FCM token', error });
   }
 };
+
+// Send Notification to User (Admin)
+exports.sendNotification = async (req, res) => {
+  try {
+    const { title, body, userId, fcmToken, details } = req.body;
+    const adminId = req.adminId; // From admin middleware
+
+    // Import required modules
+    const admin = require("../utils/firebase");
+    const Notification = require("../models/notification");
+    const User = require("../models/user");
+
+    // Validate required fields
+    if (!title || !body) {
+      return res.status(400).json({ message: "Title and body are required" });
+    }
+
+    let targetUser;
+    let targetFcmToken;
+
+    // If userId is provided, get user's FCM token
+    if (userId) {
+      targetUser = await User.findById(userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      targetFcmToken = targetUser.fcm_token;
+      
+      if (!targetFcmToken) {
+        return res.status(400).json({ message: "User doesn't have FCM token" });
+      }
+    } 
+    // If FCM token is provided directly
+    else if (fcmToken) {
+      targetUser = await User.findOne({ fcm_token: fcmToken });
+      if (!targetUser) {
+        return res.status(404).json({ message: "User with FCM token not found" });
+      }
+      targetFcmToken = fcmToken;
+    } 
+    else {
+      return res.status(400).json({ message: "Either userId or fcmToken is required" });
+    }
+
+    // Construct the Firebase message
+    const message = {
+      notification: {
+        title: title,
+        body: body,
+      },
+      data: {
+        details: details ? JSON.stringify(details) : "{}",
+        sentByAdmin: "true",
+        adminId: adminId.toString()
+      },
+      token: targetFcmToken,
+    };
+
+    // Send the notification using Firebase Admin SDK
+    const response = await admin.messaging().send(message);
+    console.log("Admin notification sent successfully:", response);
+
+    // Store the notification in the database
+    const notification = new Notification({
+      title,
+      body,
+      senderId: adminId, // Admin as sender
+      receiverId: targetUser._id,
+      fcmToken: targetFcmToken,
+      details: {
+        ...details,
+        sentByAdmin: true
+      }
+    });
+
+    await notification.save();
+
+    res.status(200).json({ 
+      message: "Notification sent successfully",
+      recipient: {
+        userId: targetUser._id,
+        name: targetUser.name,
+        email: targetUser.email
+      },
+      notification: {
+        title,
+        body,
+        details
+      }
+    });
+  } catch (error) {
+    console.error("Error sending admin notification:", error);
+    res.status(500).json({ 
+      message: "Error sending notification", 
+      error: error.message 
+    });
+  }
+};
+
+// Send Bulk Notifications (Admin)
+exports.sendBulkNotification = async (req, res) => {
+  try {
+    const { title, body, userIds, details } = req.body;
+    const adminId = req.adminId;
+
+    // Import required modules
+    const admin = require("../utils/firebase");
+    const Notification = require("../models/notification");
+    const User = require("../models/user");
+
+    // Validate required fields
+    if (!title || !body) {
+      return res.status(400).json({ message: "Title and body are required" });
+    }
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ message: "User IDs array is required" });
+    }
+
+    // Get users with valid FCM tokens
+    const users = await User.find({ 
+      _id: { $in: userIds },
+      fcm_token: { $ne: "", $exists: true }
+    }).select('_id name email fcm_token');
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: "No users found with valid FCM tokens" });
+    }
+
+    const results = {
+      successful: [],
+      failed: []
+    };
+
+    // Send notifications to each user
+    for (const user of users) {
+      try {
+        // Construct the Firebase message
+        const message = {
+          notification: {
+            title: title,
+            body: body,
+          },
+          data: {
+            details: details ? JSON.stringify(details) : "{}",
+            sentByAdmin: "true",
+            adminId: adminId.toString(),
+            isBulkMessage: "true"
+          },
+          token: user.fcm_token,
+        };
+
+        // Send the notification
+        const response = await admin.messaging().send(message);
+        
+        // Store in database
+        const notification = new Notification({
+          title,
+          body,
+          senderId: adminId,
+          receiverId: user._id,
+          fcmToken: user.fcm_token,
+          details: {
+            ...details,
+            sentByAdmin: true,
+            isBulkMessage: true
+          }
+        });
+
+        await notification.save();
+
+        results.successful.push({
+          userId: user._id,
+          name: user.name,
+          email: user.email,
+          messageId: response
+        });
+
+      } catch (error) {
+        console.error(`Failed to send notification to user ${user._id}:`, error);
+        results.failed.push({
+          userId: user._id,
+          name: user.name,
+          email: user.email,
+          error: error.message
+        });
+      }
+    }
+
+    res.status(200).json({
+      message: "Bulk notification process completed",
+      summary: {
+        requested: userIds.length,
+        found: users.length,
+        successful: results.successful.length,
+        failed: results.failed.length
+      },
+      results
+    });
+
+  } catch (error) {
+    console.error("Error sending bulk notifications:", error);
+    res.status(500).json({ 
+      message: "Error sending bulk notifications", 
+      error: error.message 
+    });
+  }
+};
