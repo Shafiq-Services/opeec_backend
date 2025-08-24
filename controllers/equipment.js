@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews} = require("../utils/common_methods");
 const Order = require('../models/orders');
 const { sendEventToUser } = require('../utils/socketService');
+const { createAdminNotification } = require('./adminNotificationController');
 
 // Helper function to find subcategory by ID across all categories
 async function findSubCategoryById(subCategoryId) {
@@ -162,6 +163,28 @@ const addEquipment = async (req, res) => {
     });
 
     const savedEquipment = await newEquipment.save();
+
+    // Get user details for notification
+    const owner = await User.findById(req.userId).select('name email');
+
+    // Send admin notification for new equipment submission
+    await createAdminNotification(
+      'equipment_submission',
+      `New equipment "${name}" submitted by ${owner.name} for approval`,
+      {
+        userId: req.userId,
+        equipmentId: savedEquipment._id,
+        data: {
+          equipmentName: name,
+          ownerName: owner.name,
+          ownerEmail: owner.email,
+          category: subCategory.categoryName,
+          subcategory: subCategory.name,
+          submissionDate: new Date()
+        }
+      }
+    );
+
     res.status(201).json({ message: 'Equipment added successfully.', data: savedEquipment });
 
   } catch (error) {
@@ -233,6 +256,9 @@ const addEquipment = async (req, res) => {
         const equipment = await Equipment.findById(equipmentId);
         if (!equipment) return res.status(404).json({ message: 'Equipment not found.' });
 
+        // Check if this is a resubmission after rejection
+        const isResubmissionAfterRejection = equipment.equipment_status === 'Rejected';
+
         // Replace images instead of adding them
         if (images) {
             equipment.images = images; // Replace existing images with new ones
@@ -255,6 +281,29 @@ const addEquipment = async (req, res) => {
 
         // Save the updated equipment
         const updatedEquipment = await equipment.save();
+
+        // Send admin notification for equipment resubmission if it was previously rejected
+        if (isResubmissionAfterRejection) {
+            const owner = await User.findById(userId).select('name email');
+
+            await createAdminNotification(
+                'equipment_resubmission',
+                `Equipment "${name}" resubmitted by ${owner.name} after rejection`,
+                {
+                    userId: userId,
+                    equipmentId: updatedEquipment._id,
+                    data: {
+                        equipmentName: name,
+                        ownerName: owner.name,
+                        ownerEmail: owner.email,
+                        category: subCategory.categoryName,
+                        subcategory: subCategory.name,
+                        resubmissionDate: new Date()
+                    }
+                }
+            );
+        }
+
         res.status(200).json({ message: 'Equipment updated successfully.', data: updatedEquipment });
 
     } catch (error) {
@@ -1079,6 +1128,31 @@ async function updateEquipmentStatus(req, res) {
 
     // ✅ Validate only modified fields to avoid schema errors
     await equipment.save({ validateModifiedOnly: true });
+
+    // Send admin notification for equipment resubmission (when rejected equipment becomes active/pending)
+    if (oldStatus === 'Rejected' && (status === 'Active' || status === 'Pending')) {
+      const owner = await User.findById(equipment.ownerId).select('name email');
+      const subCategory = await findSubCategoryById(equipment.subCategoryId);
+      
+      await createAdminNotification(
+        'equipment_resubmission',
+        `Equipment "${equipment.name}" resubmitted by ${owner.name} after rejection`,
+        {
+          userId: equipment.ownerId,
+          equipmentId: equipment._id,
+          data: {
+            equipmentName: equipment.name,
+            ownerName: owner.name,
+            ownerEmail: owner.email,
+            category: subCategory ? subCategory.categoryName : 'Unknown',
+            subcategory: subCategory ? subCategory.name : 'Unknown',
+            previousStatus: oldStatus,
+            newStatus: status,
+            resubmissionDate: new Date()
+          }
+        }
+      );
+    }
 
     // 🔔 Send socket event to equipment owner about status change
     const socketEventData = {

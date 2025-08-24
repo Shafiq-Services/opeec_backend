@@ -8,6 +8,7 @@ const Equipment = require('../models/equipment'); // Import the Equipment model
 const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews } = require("../utils/common_methods");
 const Order = require('../models/orders'); // Import the Order model
 const mongoose = require('mongoose');
+const { createAdminNotification } = require('./adminNotificationController');
 
 // User Signup
 exports.signup = async (req, res) => {
@@ -37,6 +38,20 @@ exports.signup = async (req, res) => {
 
     await user.save();
     await sendOtp(email);
+
+    // Send admin notification for new user registration
+    await createAdminNotification(
+      'user_registration',
+      `New user ${name} registered with email ${email}`,
+      {
+        userId: user._id,
+        data: {
+          userName: name,
+          userEmail: email,
+          registrationDate: new Date()
+        }
+      }
+    );
 
     // Return success message
     res.status(201).json({ message: 'User created successfully' });
@@ -295,10 +310,67 @@ exports.resendIdCardSelfie = async (req, res) => {
     user.rejection_reason = '';
     await user.save();
 
+    // Send admin notification for user verification request
+    await createAdminNotification(
+      'user_verification_request',
+      `${user.name} submitted ID documents for verification`,
+      {
+        userId: user._id,
+        data: {
+          userName: user.name,
+          userEmail: user.email,
+          submissionDate: new Date()
+        }
+      }
+    );
+
     res.status(200).json({ message: 'Verification request sent successfully' });
   }
   catch (error) {
     res.status(500).json({ message: 'Error in resending ID card selfie', error });
+  }
+};
+
+// Request account reactivation (for blocked users)
+exports.requestAccountReactivation = async (req, res) => {
+  const { appeal_message } = req.body;
+
+  try {
+    const userId = req.userId;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if user is blocked
+    if (!user.is_blocked) {
+      return res.status(400).json({ message: 'Account is not blocked' });
+    }
+
+    if (!appeal_message || appeal_message.trim() === '') {
+      return res.status(400).json({ message: 'Appeal message is required' });
+    }
+
+    // Send admin notification for user appeal request
+    await createAdminNotification(
+      'user_appeal_request',
+      `${user.name} has requested account reactivation`,
+      {
+        userId: user._id,
+        data: {
+          userName: user.name,
+          userEmail: user.email,
+          blockReason: user.block_reason,
+          appealMessage: appeal_message.trim(),
+          appealDate: new Date()
+        }
+      }
+    );
+
+    res.status(200).json({ message: 'Account reactivation request sent successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error in requesting account reactivation', error });
   }
 };
 

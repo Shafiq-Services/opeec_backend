@@ -1,6 +1,7 @@
-const nodemailer = require('nodemailer');
-const User = require('../models/User'); // Import the User model
+
+const User = require('../models/user'); // Import the User model
 const Admin = require('../models/admin'); // Import the Admin model
+const { sendOTPEmail } = require('./emailService'); // Import the email service
 
 // Function to generate and send OTP
 const sendOtp = async (email) => {
@@ -23,28 +24,11 @@ const sendOtp = async (email) => {
     );
 
     if (!user && !admin) {
-      throw new Error('User not found'); 
+      throw new Error('User or admin not found with this email');
     }
 
-    // Create a transporter for sending emails
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',  // Change to your mail service
-      auth: {
-        user: process.env.EMAIL,  // Your email address
-        pass: process.env.EMAIL_PASSWORD   // Your email password or app-specific password
-      }
-    });
-
-    // Mail options
-    const mailOptions = {
-      from: 'Opeec',
-      to: email,
-      subject: 'Your OTP for Login Verification',
-      text: `Your OTP is: ${otp}. This OTP is valid for 10 minutes.`
-    };
-
-    // Send the email with the OTP
-    await transporter.sendMail(mailOptions);
+    // Send OTP email using the email service
+    await sendOTPEmail(email, otp);
 
   } catch (error) {
     console.error('Error sending OTP:', error); // Log the error if OTP sending fails

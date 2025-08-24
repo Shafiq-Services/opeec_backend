@@ -5,6 +5,8 @@ const cron = require('node-cron');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const { calculateOrderFees } = require('../utils/feeCalculations');
+const { createAdminNotification } = require('./adminNotificationController');
+const User = require('../models/user');
 
 // Helper function to create subcategory lookup pipeline for embedded subcategories
 function createSubcategoryLookupPipeline() {
@@ -129,6 +131,30 @@ exports.addOrder = async (req, res) => {
     });
 
     const savedOrder = await newOrder.save();
+
+    // Get user and equipment details for notification
+    const user = await User.findById(userId).select('name email');
+    
+    // Send admin notification for new rental booking
+    await createAdminNotification(
+      'rental_booking',
+      `New rental booking for "${equipment.name}" by ${user.name}`,
+      {
+        userId: userId,
+        equipmentId: equipmentId,
+        orderId: savedOrder._id,
+        data: {
+          userName: user.name,
+          userEmail: user.email,
+          equipmentName: equipment.name,
+          equipmentOwner: equipment.ownerId,
+          startDate: start_date,
+          endDate: end_date,
+          rentalFee: rental_fee,
+          bookingDate: new Date()
+        }
+      }
+    );
     
     // Return order with calculated fees for frontend
     const orderResponse = {
@@ -592,6 +618,70 @@ exports.addBuyerReview = async (req, res) => {
   }
 };
 
+// Dispute penalty
+exports.disputePenalty = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { orderId, dispute_reason } = req.body;
+
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: "Valid Order ID is required." });
+    }
+
+    if (!dispute_reason || dispute_reason.trim() === '') {
+      return res.status(400).json({ message: "Dispute reason is required." });
+    }
+
+    const order = await Order.findById(orderId).populate('equipmentId', 'name ownerId');
+    if (!order) return res.status(404).json({ message: "Order not found." });
+
+    // Check if the user is the renter
+    if (String(order.userId) !== userId) {
+      return res.status(403).json({ message: "Only the renter can dispute penalties." });
+    }
+
+    // Check if order has penalties
+    if (!order.penalty_apply || order.penalty_amount <= 0) {
+      return res.status(400).json({ message: "No penalties to dispute for this order." });
+    }
+
+    // Get user details
+    const User = require('../models/user');
+    const renter = await User.findById(userId).select('name email');
+    const owner = await User.findById(order.equipmentId.ownerId).select('name email');
+
+    // Send admin notification for penalty dispute
+    await createAdminNotification(
+      'penalty_dispute',
+      `${renter.name} disputed penalty of $${order.penalty_amount} for order ${orderId}`,
+      {
+        userId: userId,
+        equipmentId: order.equipmentId._id,
+        orderId: order._id,
+        data: {
+          equipmentName: order.equipmentId.name,
+          renterName: renter.name,
+          renterEmail: renter.email,
+          ownerName: owner.name,
+          ownerEmail: owner.email,
+          penaltyAmount: order.penalty_amount,
+          disputeReason: dispute_reason.trim(),
+          disputeDate: new Date(),
+          orderStatus: order.rental_status
+        }
+      }
+    );
+
+    return res.status(200).json({
+      message: "Penalty dispute submitted successfully. Admin will review your case.",
+      success: true
+    });
+
+  } catch (error) {
+    return res.status(500).json({ message: "Error submitting penalty dispute.", error: error.message });
+  }
+};
+
 // Helper: Calculates future time offset
 const getFutureTime = (timestamp, offsetMinutes) => {
   return moment(timestamp).add(offsetMinutes, 'minutes').toDate();
@@ -697,6 +787,37 @@ const processOrders = async () => {
           status_change_timestamp: order.rental_schedule.end_date,
           penalty_amount: DAILY_PENALTY
         });
+
+        // Send admin notification for late return
+        try {
+          const equipment = await Equipment.findById(order.equipmentId).populate('ownerId', 'name email');
+          const User = require('../models/user');
+          const renter = await User.findById(order.userId).select('name email');
+          const daysLate = Math.ceil((now - order.rental_schedule.end_date) / (1000 * 60 * 60 * 24));
+
+          await createAdminNotification(
+            'late_return_alert',
+            `Order ${order._id} is ${daysLate} day(s) overdue for return`,
+            {
+              userId: order.userId,
+              equipmentId: order.equipmentId,
+              orderId: order._id,
+              data: {
+                equipmentName: equipment?.name || 'Unknown',
+                renterName: renter?.name || 'Unknown',
+                renterEmail: renter?.email || 'Unknown',
+                ownerName: equipment?.ownerId?.name || 'Unknown',
+                daysLate: daysLate,
+                originalEndDate: order.rental_schedule.end_date,
+                penaltyAmount: DAILY_PENALTY,
+                lateDate: new Date()
+              }
+            }
+          );
+        } catch (notificationError) {
+          console.error('Error sending late return notification:', notificationError);
+        }
+
         console.log(`⏳ Order ${order._id} changed from Ongoing → Late!`);
       }
 

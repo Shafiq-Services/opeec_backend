@@ -36,6 +36,9 @@ router.put('/update', userController.updateUser);
 // Resend ID card selfie for verification
 router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
 
+// Request account reactivation for blocked users
+router.post('/request_account_reactivation', userController.requestAccountReactivation);
+
 router.get('/get_fcm', userController.getFCMToken);
 
 module.exports = router;

@@ -59,6 +59,19 @@ const saveEvent = (key, data) => {
     console.log("Event Saved");
 };
 
+// Send unread admin notifications count
+const sendAdminUnreadCount = async (adminId) => {
+  try {
+    const AdminNotification = require('../models/adminNotification');
+    const unreadCount = await AdminNotification.countDocuments({ isRead: false });
+    
+    sendEventToUser(adminId, 'adminNotificationUnreadCount', { unreadCount });
+    console.log(`📊 Sent unread count ${unreadCount} to admin ${adminId}`);
+  } catch (error) {
+    console.error('Error sending admin unread count:', error);
+  }
+};
+
 const initializeSocket = (server) => {
   io = new Server(server, {
     cors: {
@@ -105,6 +118,11 @@ const initializeSocket = (server) => {
     const userType = socket.userType;
     connectedUsers.set(userId.toString(), socket.id);
     console.log(`${userType.charAt(0).toUpperCase() + userType.slice(1)} connected: ${userId}, Socket ID: ${socket.id}`);
+
+    // Send unread count to admin when they connect
+    if (userType === 'admin') {
+      sendAdminUnreadCount(userId.toString());
+    }
 
     // Automatically notify user's contacts that they are online
     socket.broadcast.emit("userOnline", { userId, userType });
@@ -390,6 +408,7 @@ const isUserJoinedToConversation = (userId, conversationId) => {
 module.exports = { 
   initializeSocket, 
   sendEventToUser, 
+  sendAdminUnreadCount,
   connectedUsers, 
   typingUsers, 
   joinedConversations,
