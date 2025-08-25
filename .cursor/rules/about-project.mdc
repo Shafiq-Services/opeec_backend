@@ -1,0 +1,343 @@
+---
+description: This is overall info about the project
+alwaysApply: false
+---
+# OPEEC Project - Complete Overview & Reference
+
+🏗️ **PROJECT IDENTITY:**
+- **Name:** OPEEC (Equipment Rental Platform)
+- **Type:** Backend API Server (Node.js/Express/MongoDB)
+- **Purpose:** Equipment rental marketplace connecting equipment owners with renters
+- **Architecture:** RESTful APIs + Real-time Socket.IO + Email Services
+
+---
+
+## 🏗️ **PROJECT STRUCTURE:**
+
+```
+opeec/
+├── config/           # Database, environment, Firebase config
+├── controllers/      # Business logic (15+ controllers)
+├── models/          # Mongoose schemas (12+ models)
+├── routes/          # Express route definitions
+├── middlewares/     # Auth, validation, common middleware
+├── utils/           # Shared services (email, socket, upload, calculations)
+├── Workers/         # Background processes (video processing)
+├── index.js         # Main server entry point
+├── package.json     # Dependencies and scripts
+└── .cursor/rules/   # Project standards and guidelines
+```
+
+---
+
+## 🛠️ **TECHNOLOGY STACK:**
+
+### **Core:**
+- **Node.js** + **Express.js** - Backend framework
+- **MongoDB** + **Mongoose** - Database and ODM
+- **Socket.IO** - Real-time communication
+- **JWT** - Authentication tokens
+
+### **Services:**
+- **Nodemailer** - Email service (SMTP)
+- **Azure Blob Storage** - File/image uploads
+- **Firebase Admin** - Push notifications
+- **Stripe** - Payment processing
+- **Node-cron** - Scheduled tasks
+
+### **Key Dependencies:**
+- `bcryptjs` - Password hashing
+- `moment` - Date manipulation
+- `multer` - File upload handling
+- `cors` - Cross-origin requests
+
+---
+
+## 📊 **DATABASE MODELS & RELATIONSHIPS:**
+
+### **Core Entities:**
+```javascript
+User (userId) 
+├── owns → Equipment (equipmentId, ownerId)
+├── creates → Order (orderId, userId, equipmentId)
+└── sends → Message (messageId, senderId, receiverId)
+
+Admin (adminId)
+├── receives → AdminNotification (notificationId)
+└── manages → PercentageSetting (pricing configuration)
+
+Categories (categoryId)
+├── contains → SubCategories (embedded)
+└── used by → Equipment (subCategoryId)
+
+Order (orderId)
+├── references → User (userId)
+├── references → Equipment (equipmentId)  
+├── contains → PricingBreakdown (stored fields)
+└── tracks → RentalStatus (Booked→Delivered→Ongoing→Returned)
+```
+
+### **Key Models:**
+- **User:** Authentication, profile, verification status
+- **Equipment:** Rental items with images, pricing, location
+- **Order:** Complete rental transactions with pricing breakdown
+- **AdminNotification:** System notifications with email integration
+- **Categories:** Equipment categorization with subcategories
+- **Conversation/Message:** Chat system for equipment inquiries
+- **PercentageSetting:** Dynamic pricing configuration
+
+---
+
+## 🔐 **AUTHENTICATION SYSTEM:**
+
+### **JWT Implementation:**
+- **User Tokens:** `{ userId, ... }` 
+- **Admin Tokens:** `{ adminId, ... }`
+- **Middleware:** `req.userId` / `req.adminId` extraction
+- **Socket Auth:** JWT validation on connection
+
+### **Access Control:**
+- **Public:** Registration, login, equipment listing
+- **User Protected:** Profile, orders, chat, equipment submission
+- **Admin Protected:** User management, order oversight, notifications
+
+---
+
+## 🚀 **API STRUCTURE & KEY ENDPOINTS:**
+
+### **User APIs (`/user/`):**
+- `POST /signup` - User registration with email verification
+- `POST /login` - Authentication with JWT response
+- `POST /resend-id-card-selfie` - ID verification submission
+- `POST /request-account-reactivation` - Appeal blocked accounts
+
+### **Equipment APIs (`/equipment/`):**
+- `GET /list` - Browse available equipment with filters
+- `GET /details` - Get detailed equipment information
+- `POST /add` - Submit equipment for approval (triggers admin notification)
+- `PUT /update` - Update equipment (triggers resubmission notification)
+
+### **Order APIs (`/order/`):**
+- `POST /add` - Create rental order with complete pricing breakdown
+- `GET /current-rentals` - Active rentals for user/owner
+- `GET /history-rentals` - Completed rental history
+- `POST /dispute-penalty` - Contest late fees (triggers admin notification)
+
+### **Admin APIs (`/admin/`):**
+- **Users:** `/admin/users/*` - User management and verification
+- **Equipment:** `/admin/equipment/*` - Equipment approval workflow
+- **Orders:** `/admin/orders/*` - Rental oversight and monitoring with complete pricing breakdown
+- **Notifications:** `/admin/notifications/list` - Admin notification feed
+- **Settings:** `/admin/settings/*` - Platform configuration
+
+### **Chat APIs (`/chat/`):**
+- `POST /send-message` - User-to-user equipment inquiries
+- `POST /send-support-message` - User-to-admin support tickets
+- `POST /admin-reply-support` - Admin responses to support
+
+---
+
+## ⚡ **REAL-TIME SOCKET EVENTS:**
+
+### **Admin Events:**
+- `adminNotification` - New system notifications with email backup
+- `adminNotificationUnreadCount` - Live unread count updates
+- `newSupportMessage` - User support ticket alerts
+
+### **Chat Events:**
+- `newMessage` - Real-time chat messages
+- `messageDelivered` - Delivery confirmations
+- `messagesRead` - Read receipts
+- `userTyping` / `stopTyping` - Typing indicators
+
+### **Presence Events:**
+- `userOnline` / `userOffline` - Connection status
+- `joinConversation` / `leaveConversation` - Chat room management
+
+---
+
+## 💰 **PRICING & FEE CALCULATION:**
+
+### **Dynamic Pricing Model:**
+```javascript
+// Stored in PercentageSetting model:
+{
+  adminFeePercentage: 10.0,      // Platform fee
+  taxPercentage: 13.0,           // Government tax
+  insurancePercentage: 9.0,      // Insurance base rate
+  dailyInsuranceMultiplier: 0.015, // Daily insurance scaling
+  depositPercentage: 20.1,       // Security deposit rate
+  stripeFeePercentage: 1.3       // Payment processing fee
+}
+```
+
+### **Order Pricing Storage:**
+```javascript
+// Complete breakdown stored in Order model:
+{
+  rental_fee: 44.0,           // Base rental amount
+  platform_fee: 4.40,        // Admin fee
+  tax_amount: 6.29,           // Tax calculation
+  insurance_amount: 14.40,    // Insurance (if selected)
+  deposit_amount: 24.00,      // Deposit (if selected)
+  subtotal: 58.40,           // Pre-tax total
+  total_amount: 72.59        // Final amount
+}
+```
+
+---
+
+## 📧 **EMAIL NOTIFICATION SYSTEM:**
+
+### **Email Service (`utils/emailService.js`):**
+- **SMTP Configuration:** Hostinger email service
+- **Templates:** HTML + Text versions for all emails
+- **Types:** OTP verification, Admin notifications
+
+### **Admin Email Notifications:**
+Triggered for all admin events with professional templates:
+- User registrations, verifications, appeals
+- Equipment submissions, resubmissions  
+- Rental bookings, late returns, penalty disputes
+
+---
+
+## 🔄 **BUSINESS FLOWS:**
+
+### **Equipment Listing Flow:**
+1. User submits equipment → Admin notification
+2. Admin approves/rejects → Status update
+3. If rejected + resubmitted → Resubmission notification
+4. Approved equipment appears in marketplace
+
+### **Rental Flow:**
+1. User books equipment → Rental notification + email
+2. Status progression: Booked → Delivered → Ongoing → Returned
+3. Automated late detection → Late return alerts
+4. Penalty disputes → Admin notification system
+
+### **Support Flow:**
+1. User sends support message → Admin socket + email alert
+2. Admin replies → User receives response
+3. Real-time chat with typing indicators
+
+---
+
+## 🕐 **AUTOMATED PROCESSES:**
+
+### **Cron Jobs (`node-cron`):**
+- **Order Status Monitoring:** Automatic status transitions
+- **Late Return Detection:** 24+ hour overdue alerts
+- **Penalty Application:** Automated late fee calculations
+
+### **Background Workers:**
+- **Video Processing:** Equipment video uploads
+- **Email Queue:** Async email delivery
+
+---
+
+## 📁 **KEY UTILITIES:**
+
+### **Core Services:**
+- `utils/emailService.js` - Email templates and sending
+- `utils/socketService.js` - Socket.IO management
+- `utils/feeCalculations.js` - Pricing calculations
+- `utils/upload.js` - Azure blob storage integration
+- `utils/common_methods.js` - Rating and review calculations
+
+### **Configuration:**
+- `config/db.js` - MongoDB connection
+- `config/serviceAccount.js` - Firebase credentials
+- `config/config.js` - Environment variables
+
+---
+
+## 🔧 **CURRENT STANDARDS:**
+
+### **API Conventions:**
+- Query parameters over path parameters: `?orderId=...`
+- Consistent route naming: `/entity/action`
+- JWT middleware: `req.userId` / `req.adminId`
+- Comprehensive error handling with proper HTTP codes
+
+### **Database Conventions:**
+- Mongoose schemas with validation
+- Proper indexing for performance
+- Reference relationships with populate
+- Embedded subdocuments where appropriate
+
+### **Socket Conventions:**
+- JWT authentication on connection
+- Room-based messaging: `conversation_${id}`
+- Typing indicator management
+- Connection state tracking
+
+---
+
+## 🚨 **RECENT MAJOR UPDATES:**
+
+### **Pricing System Overhaul:**
+- **Before:** Only stored `rental_fee` and calculated everything dynamically
+- **After:** Store complete pricing breakdown (platform_fee, tax_amount, etc.)
+- **Impact:** All order APIs now handle complete pricing data
+
+### **Admin Order API Enhancement:**
+- **Enhanced Response Structure:** Admin order API now returns comprehensive order details with complete pricing breakdown
+- **New Response Format:** Structured response with `order` object and `ui_helpers` for better admin panel experience
+- **Pricing Audit Trail:** Includes percentage inputs used for calculations (admin fee, tax, insurance, deposit percentages)
+- **Enhanced UI Helpers:** Duration labels, address formatting, and refund preview calculations
+
+### **Admin Notification System:**
+- **Real-time socket events** for 8 notification types
+- **Email backup system** with professional templates
+- **Database persistence** with unread count tracking
+
+### **Email Service Migration:**
+- **Centralized service** in `utils/emailService.js`
+- **Professional templates** with HTML/text versions
+- **OTP and admin notification** email automation
+
+---
+
+## 🎯 **DEVELOPMENT GUIDELINES:**
+
+### **Adding New Features:**
+1. Create model in `models/`
+2. Add business logic in `controllers/`
+3. Define routes in `routes/`
+4. Add middleware if needed
+5. Update this documentation
+
+### **Testing Approach:**
+- Manual API testing via Postman
+- Socket event testing via temporary functions
+- Email testing with real SMTP delivery
+
+### **Code Standards:**
+- Follow existing naming conventions
+- Add proper error handling
+- Include console logging for debugging
+- Update admin notifications for relevant events
+
+---
+
+## 📋 **QUICK REFERENCE:**
+
+### **Environment Variables:**
+- `MONGODB_URI` - Database connection
+- `JWT_SECRET` - Token signing
+- `EMAIL` / `EMAIL_PASSWORD` - SMTP credentials
+- `AZURE_CONNECTION_STRING` - File storage
+
+### **Default Ports:**
+- Server: 5001
+- MongoDB: Default (27017)
+- Socket.IO: Same as HTTP server
+
+### **Key Constants:**
+- Admin fee: 10%
+- Tax rate: 13%
+- Insurance: 9% + daily multiplier
+- Deposit: 20.1%
+
+This comprehensive overview ensures Cursor understands the complete OPEEC project structure, business logic, and current implementation without needing to search through individual files.

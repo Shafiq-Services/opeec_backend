@@ -1,4 +1,5 @@
 ---
+description: For work related to creating or modifying APIs
 alwaysApply: false
 ---
 This rule defines the project-wide conventions and structure for backend API development using Node.js, Express, and Mongoose.

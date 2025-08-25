@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+Before doing any work go through about-project.mdc then while doing the work follow node-api-structure.mdc and socket-implementation-structure.mdc and after doing work update about-project.mdc

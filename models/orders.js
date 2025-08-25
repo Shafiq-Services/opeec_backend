@@ -19,13 +19,18 @@ const orderSchema = new mongoose.Schema({
 
   location: locationSchema,
 
-  // Only store base rental fee - others calculated dynamically from percentageSettings
+  // Pricing breakdown - all amounts stored from frontend calculations
   rental_fee: { type: Number, required: true },
+  platform_fee: { type: Number, required: true },
+  tax_amount: { type: Number, required: true },
+  insurance_amount: { type: Number, default: 0 },
+  deposit_amount: { type: Number, default: 0 },
+  total_amount: { type: Number, required: true },
+  subtotal: { type: Number, required: true },
 
   // Insurance or Deposit (only one applies per order)
   security_option: {
     insurance: { type: Boolean, default: false },     // true = insurance, false = deposit
-    // Amounts calculated dynamically from percentageSettings and rental_fee
   },
 
   cancellation: {

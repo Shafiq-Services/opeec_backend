@@ -85,6 +85,12 @@ exports.addOrder = async (req, res) => {
       lat,
       lng,
       rental_fee,
+      platform_fee,
+      tax_amount,
+      insurance_amount,
+      deposit_amount,
+      total_amount,
+      subtotal,
       is_insurance
     } = req.body;
 
@@ -97,6 +103,10 @@ exports.addOrder = async (req, res) => {
       { name: 'lat', value: lat },
       { name: 'lng', value: lng },
       { name: 'rental_fee', value: rental_fee },
+      { name: 'platform_fee', value: platform_fee },
+      { name: 'tax_amount', value: tax_amount },
+      { name: 'total_amount', value: total_amount },
+      { name: 'subtotal', value: subtotal },
       { name: 'is_insurance', value: is_insurance }
     ];
 
@@ -110,21 +120,19 @@ exports.addOrder = async (req, res) => {
     const equipment = await Equipment.findById(equipmentId);
     if (!equipment) return res.status(404).json({ message: 'Equipment not found.' });
 
-    // Calculate rental days for fee calculation
-    const startDate = new Date(start_date);
-    const endDate = new Date(end_date);
-    const rentalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-
-    // Calculate fees dynamically
-    const feeCalculation = await calculateOrderFees(rental_fee, is_insurance, rentalDays);
-
-    // Create new order
+    // Create new order with all pricing data from frontend
     const newOrder = new Order({
       userId,
       equipmentId,
       rental_schedule: { start_date, end_date },
       location: { address, lat, lng },
       rental_fee,
+      platform_fee,
+      tax_amount,
+      insurance_amount: is_insurance ? insurance_amount : 0,
+      deposit_amount: is_insurance ? 0 : deposit_amount,
+      total_amount,
+      subtotal,
       security_option: {
         insurance: is_insurance
       }
@@ -156,13 +164,11 @@ exports.addOrder = async (req, res) => {
       }
     );
     
-    // Return order with calculated fees for frontend
-    const orderResponse = {
-      ...savedOrder.toObject(),
-      ...feeCalculation
-    };
-
-    res.status(201).json({ message: 'Order created successfully.', data: orderResponse });
+    // Return saved order with all pricing data
+    res.status(201).json({ 
+      message: 'Order created successfully.', 
+      data: savedOrder.toObject()
+    });
 
   } catch (err) {
     console.error('Error creating order:', err);
@@ -235,8 +241,13 @@ exports.getCurrentRentals = async (req, res) => {
         penalty_amount: order.penalty_amount ?? 0,
         status_change_timestamp: statusChangeTime,
         rental_days: order.rental_days ?? 0,
-        subtotal: order.subtotal ?? order.rental_fee + (order.insurance_amount || 0),
-        total_amount: order.total_amount ?? order.rental_fee + order.platform_fee + order.tax_amount + (order.insurance_amount || 0),
+        // Use stored pricing data directly (no more calculations needed)
+        platform_fee: order.platform_fee,
+        tax_amount: order.tax_amount,
+        insurance_amount: order.insurance_amount,
+        deposit_amount: order.deposit_amount,
+        subtotal: order.subtotal,
+        total_amount: order.total_amount,
       };
     });
 
@@ -318,8 +329,13 @@ exports.getHistoryRentals = async (req, res) => {
         penalty_amount: order.penalty_amount ?? 0,
         status_change_timestamp: statusChangeTime,
         rental_days: order.rental_days ?? 0,
-        subtotal: order.subtotal ?? order.rental_fee + (order.insurance_amount || 0),
-        total_amount: order.total_amount ?? order.rental_fee + order.platform_fee + order.tax_amount + (order.insurance_amount || 0),
+        // Use stored pricing data directly (no more calculations needed)
+        platform_fee: order.platform_fee,
+        tax_amount: order.tax_amount,
+        insurance_amount: order.insurance_amount,
+        deposit_amount: order.deposit_amount,
+        subtotal: order.subtotal,
+        total_amount: order.total_amount,
       };
     });
 
@@ -864,6 +880,9 @@ exports.getRentalsByStatus = async (req, res) => {
 
     let statusFilter = status !== "All" ? { rental_status: status } : {};
 
+    // Get percentage settings for pricing inputs audit trail
+    const percentageSettings = await require('../models/percentageSettings').findOne({}) || {};
+
     const orders = await Order.aggregate([
       {
         $lookup: {
@@ -884,6 +903,15 @@ exports.getRentalsByStatus = async (req, res) => {
         },
       },
       { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "equipment.ownerId",
+          foreignField: "_id",
+          as: "owner",
+        },
+      },
+      { $unwind: { path: "$owner", preserveNullAndEmptyArrays: true } },
       { $match: statusFilter },
       {
         $project: {
@@ -894,11 +922,21 @@ exports.getRentalsByStatus = async (req, res) => {
           rental_fee: 1,
           platform_fee: 1,
           tax_amount: 1,
+          insurance_amount: 1,
+          deposit_amount: 1,
+          subtotal: 1,
           total_amount: 1,
+          security_option: 1,
           penalty_apply: 1,
           penalty_amount: 1,
           buyer_review: 1,
+          return_status: 1,
+          cancellation: 1,
+          owner_images: 1,
+          buyer_images: 1,
+          status_change_timestamp: 1,
           createdAt: 1,
+          updatedAt: 1,
           equipment: {
             _id: "$equipment._id",
             name: "$equipment.name",
@@ -920,29 +958,122 @@ exports.getRentalsByStatus = async (req, res) => {
             email: "$user.email",
             profile_image: "$user.profile_image",
           },
+          owner: {
+            _id: "$owner._id",
+            name: "$owner.name",
+            email: "$owner.email",
+            profile_image: "$owner.profile_image",
+          },
         },
       },
     ]);
 
-    const formattedOrders = orders.map(order => ({
-      _id: order._id,
-      rental_status: order.rental_status,
-      rental_schedule: order.rental_schedule,
-      location: order.location,
-      rental_fee: order.rental_fee,
-      platform_fee: order.platform_fee ?? 0,
-      tax_amount: order.tax_amount ?? 0,
-      total_amount: order.total_amount ?? 0,
-      penalty_apply: order.penalty_apply ?? false,
-      penalty_amount: order.penalty_amount ?? 0,
-      buyer_review: order.buyer_review,
-      createdAt: order.createdAt,
-      equipment: order.equipment,
-      category: order.category,
-      subcategory: order.subcategory,
-      user: order.user,
-      ownerId: order.equipment?.ownerId,
-    }));
+    const formattedOrders = orders.map(order => {
+      // Calculate rental days
+      const startDate = new Date(order.rental_schedule.start_date);
+      const endDate = new Date(order.rental_schedule.end_date);
+      const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+
+      // Calculate equipment value (estimated from daily rate * 30 days)
+      const estimatedEquipmentValue = (order.equipment.rental_price * 30);
+
+      return {
+        order: {
+          _id: order._id,
+
+          equipment: {
+            _id: order.equipment._id,
+            name: order.equipment.name,
+            category: order.category?.name || "Uncategorized",
+            subcategory: order.subcategory?.name || "Uncategorized",
+            daily_rate: order.equipment.rental_price,
+            images: order.equipment.images || []
+          },
+
+          parties: {
+            buyer: {
+              _id: order.user._id,
+              name: order.user.name,
+              email: order.user.email
+            },
+            owner: {
+              _id: order.owner._id,
+              name: order.owner.name,
+              email: order.owner.email
+            }
+          },
+
+          rental_schedule: {
+            start_date: order.rental_schedule.start_date,
+            end_date: order.rental_schedule.end_date,
+            days: days
+          },
+
+          location: order.location,
+
+          security_option: {
+            insurance: order.security_option?.insurance || false
+          },
+
+          pricing: {
+            rental_fee: order.rental_fee,
+            insurance_amount: order.insurance_amount || 0,
+            deposit_amount: order.deposit_amount || 0,
+            platform_fee: order.platform_fee,
+            tax_amount: order.tax_amount,
+            subtotal: order.subtotal,
+            total_amount: order.total_amount,
+
+            inputs: {
+              equipment_value: estimatedEquipmentValue,
+              admin_fee_percent: percentageSettings.adminFeePercentage || 0,
+              tax_percent: percentageSettings.taxPercentage || 0,
+              base_insurance_percent: percentageSettings.insurancePercentage || 0,
+              daily_insurance_multiplier: percentageSettings.dailyInsuranceMultiplier || 0,
+              deposit_percent: percentageSettings.depositPercentage || 0
+            }
+          },
+
+          images: {
+            owner_images: order.owner_images || [],
+            buyer_images: order.buyer_images || []
+          },
+
+          status: {
+            rental_status: order.rental_status,
+            return_status: order.return_status || { is_returned: false, returned_at: null },
+            cancellation: order.cancellation || { is_cancelled: false, reason: null, cancelled_at: null },
+            penalty: {
+              penalty_apply: order.penalty_apply || false,
+              penalty_amount: order.penalty_amount || 0
+            }
+          },
+
+          review: {
+            rating: order.buyer_review?.rating || 0,
+            comment: order.buyer_review?.comment || null
+          },
+
+          timestamps: {
+            status_change_timestamp: order.status_change_timestamp,
+            createdAt: order.createdAt,
+            updatedAt: order.updatedAt
+          }
+        },
+
+        ui_helpers: {
+          display: {
+            duration_label: `${startDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })} ${startDate.getDate()} → ${endDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })} ${endDate.getDate()} (${days} day(s))`,
+            address_short: order.location.address
+          },
+          refund_preview: {
+            enabled: !order.security_option?.insurance,
+            stripe_fee_percent: percentageSettings.stripeFeePercentage || 0,
+            refundable_deposit_amount: !order.security_option?.insurance ? order.deposit_amount : null
+          }
+        }
+      };
+    });
 
     return res.status(200).json({
       message: "Rentals fetched successfully.",
@@ -950,6 +1081,7 @@ exports.getRentalsByStatus = async (req, res) => {
       orders: formattedOrders,
     });
   } catch (error) {
+    console.error('Error in getRentalsByStatus:', error);
     return res.status(500).json({
       message: "Error fetching rentals.",
       error: error.message,
