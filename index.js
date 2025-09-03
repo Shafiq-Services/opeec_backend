@@ -21,6 +21,9 @@ const chatRoutes = require('./routes/chatRoutes');
 const notificationRoutes = require('./routes/notification');
 const stripeRoutes = require('./routes/stripeRoutes');
 const percentageSettings = require('./routes/percentageSettings');
+const walletRoutes = require('./routes/wallet.routes');
+const withdrawalRoutes = require('./routes/withdrawal.routes');
+const adminWithdrawalRoutes = require('./routes/admin.withdrawal.routes');
 const { initializeSocket, sendEventToUser, connectedUsers } = require("./utils/socketService");
 const { createAdminNotification } = require('./controllers/adminNotificationController');
 
@@ -76,6 +79,9 @@ app.use('/upload', uploadRoutes);
 app.use("/notification", notificationRoutes);
 app.use("/stripe", stripeRoutes);
 app.use('/perrcentageSettings', percentageSettings);
+app.use('/wallet', walletRoutes);
+app.use('/withdrawals', withdrawalRoutes);
+app.use('/admin/withdrawals', adminWithdrawalRoutes);
 
 // Base route
 app.get('/', (req, res) => res.send('Hello from Node API server'));

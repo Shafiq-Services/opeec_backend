@@ -391,6 +391,19 @@ exports.cancelOrder = async (req, res) => {
     order.rental_status = "Cancelled";
     await order.save();
 
+    // Process settlement for cancelled order
+    try {
+      const currentTime = new Date();
+      const startDate = new Date(order.rental_schedule.start_date);
+      const isBeforeCutoff = currentTime < startDate;
+      
+      await processOrderCancellation(order._id, isBeforeCutoff);
+      console.log(`💰 Settlement processed for cancelled order: ${order._id}`);
+    } catch (settlementError) {
+      console.error(`❌ Settlement error for cancelled order ${order._id}:`, settlementError);
+      // Continue with order cancellation even if settlement fails
+    }
+
     return res.status(200).json({
       message: "Order canceled successfully.",
       status: true,
@@ -554,6 +567,22 @@ exports.finishOrder = async (req, res) => {
     equipment.equipment_status = "Active";
     await equipment.save();
     await order.save();
+
+    // Process settlement for finished order
+    try {
+      if (order.rental_status === 'Late' && order.penalty_amount > 0) {
+        // Process as late return with penalty
+        await processLateReturnSettlement(order._id, order.penalty_amount);
+        console.log(`💰 Late return settlement processed for order: ${order._id}`);
+      } else {
+        // Process as normal completion
+        await processOrderCompletion(order._id);
+        console.log(`💰 Completion settlement processed for order: ${order._id}`);
+      }
+    } catch (settlementError) {
+      console.error(`❌ Settlement error for finished order ${order._id}:`, settlementError);
+      // Continue with order completion even if settlement fails
+    }
 
     return res.status(200).json({ message: "Order status updated to 'Finished'.", status: true });
   } catch (err) {
@@ -855,6 +884,15 @@ const processOrders = async () => {
         });
         const hoursWaited = ((now - order.status_change_timestamp) / (1000 * 60 * 60)).toFixed(1);
         console.log(`🚀 Order ${order._id} changed from Returned → Finished (waited ${hoursWaited}h)`);
+        
+        // Process settlement for automatically finished order
+        try {
+          await processOrderCompletion(order._id);
+          console.log(`💰 Auto-completion settlement processed for order: ${order._id}`);
+        } catch (settlementError) {
+          console.error(`❌ Auto-settlement error for order ${order._id}:`, settlementError);
+          // Continue with order processing even if settlement fails
+        }
       }
     }
 

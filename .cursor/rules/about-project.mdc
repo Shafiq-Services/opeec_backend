@@ -340,4 +340,33 @@ Triggered for all admin events with professional templates:
 - Insurance: 9% + daily multiplier
 - Deposit: 20.1%
 
+---
+
+## 🏦 **WALLET & WITHDRAWALS MODULE:**
+
+### **New Models (Additive):**
+- **SellerWallet:** Cached balance tracking per seller (available, pending, total)
+- **TransactionLog:** Complete audit trail of all money movements with types
+- **WithdrawalRequest:** Seller payout requests with admin approval workflow
+
+### **New Endpoints (Additive):**
+- `GET /wallet` - Seller wallet balances and transaction history
+- `POST /withdrawals` - Create withdrawal request (validates available balance)
+- `GET /withdrawals` - Seller's own withdrawal requests
+- `GET /admin/withdrawals` - Admin withdrawal review dashboard
+- `POST /admin/withdrawals/:id/approve|reject|mark-paid` - Admin workflow actions
+
+### **Settlement Integration:**
+- **Order Completion:** Credits rental_fee to seller as ORDER_EARNING
+- **Cancellations:** Processes refunds based on timing (before/after cutoff)
+- **Late Returns:** Handles penalties that exceed deposit coverage
+- **Deposit Refunds:** Tracks deposit returns to renters
+
+### **Key Features:**
+- **Additive Only:** Zero impact on existing API contracts or Stripe flows
+- **Audit Trail:** Complete transaction history with order references
+- **Balance Caching:** Fast wallet queries with background recomputation
+- **Admin Workflow:** Request → Review → Approve → Pay workflow
+- **Settlement Automation:** Listens to existing order lifecycle events
+
 This comprehensive overview ensures Cursor understands the complete OPEEC project structure, business logic, and current implementation without needing to search through individual files.
