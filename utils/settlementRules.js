@@ -199,14 +199,14 @@ function determineSettlement(order, event) {
         
       case 'late_return_with_penalty':
         // Late return with penalty
-        const earnings = calculateSellerEarnings(order);
+        const lateReturnEarnings = calculateSellerEarnings(order);
         const penalty = calculatePenaltySettlement(order);
         
         const transactions = [{
           type: 'ORDER_EARNING',
-          amount: earnings.seller_earning,
+          amount: lateReturnEarnings.seller_earning,
           description: 'Rental completed (late) - earnings from order',
-          metadata: { order_breakdown: earnings.breakdown }
+          metadata: { order_breakdown: lateReturnEarnings.breakdown }
         }];
         
         // Add penalty transaction if seller is responsible for part of it
@@ -221,7 +221,7 @@ function determineSettlement(order, event) {
         
         return {
           type: 'late_completion',
-          seller_earning: earnings.seller_earning,
+          seller_earning: lateReturnEarnings.seller_earning,
           seller_penalty: penalty.seller_penalty,
           transactions
         };
