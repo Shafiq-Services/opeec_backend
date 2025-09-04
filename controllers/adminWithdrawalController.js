@@ -39,7 +39,7 @@ exports.getAllWithdrawalRequests = async (req, res) => {
       WithdrawalRequest.countDocuments(filter)
     ]);
 
-    // Format response with seller information
+    // Format response with seller information (admin view includes screenshot)
     const formattedRequests = withdrawalRequests.map(request => ({
       _id: request._id,
       seller: {
@@ -50,13 +50,15 @@ exports.getAllWithdrawalRequests = async (req, res) => {
       },
       amount: request.amount,
       status: request.status,
-      payment_method: request.payment_method,
       rejection_reason: request.rejection_reason || '',
       reviewed_by: request.reviewed_by_admin_id ? {
         name: request.reviewed_by_admin_id.name,
         email: request.reviewed_by_admin_id.email
       } : null,
-      external_reference: request.external_reference || {},
+      // Admin can see all external reference details including screenshot
+      transaction_id: request.external_reference?.transaction_id || '',
+      screenshot_url: request.external_reference?.screenshot_url || '',
+      payment_notes: request.external_reference?.notes || '',
       createdAt: request.createdAt,
       reviewed_at: request.reviewed_at,
       approved_at: request.approved_at,
@@ -256,10 +258,17 @@ exports.rejectWithdrawalRequest = async (req, res) => {
 exports.markWithdrawalAsPaid = async (req, res) => {
   try {
     const { id } = req.params;
-    const { external_reference = {} } = req.body;
+    const { transaction_id, screenshot_url, notes } = req.body;
     const adminId = req.adminId;
 
-    console.log(`💳 Admin ${adminId} marking withdrawal as paid: ${id}`);
+    // Validate required fields
+    if (!transaction_id || transaction_id.trim() === '') {
+      return res.status(400).json({ 
+        message: 'Transaction ID is required when marking as paid' 
+      });
+    }
+
+    console.log(`💳 Admin ${adminId} marking withdrawal as paid: ${id} with transaction: ${transaction_id}`);
 
     // Find the withdrawal request
     const withdrawalRequest = await WithdrawalRequest.findById(id)
@@ -282,18 +291,15 @@ exports.markWithdrawalAsPaid = async (req, res) => {
     withdrawalRequest.reviewed_at = new Date();
     withdrawalRequest.paid_at = new Date();
     
-    // Update external reference information
-    if (external_reference.transaction_id) {
-      withdrawalRequest.external_reference.transaction_id = external_reference.transaction_id;
+    // Update external reference information (admin proof)
+    withdrawalRequest.external_reference.transaction_id = transaction_id.trim();
+    
+    if (screenshot_url && screenshot_url.trim() !== '') {
+      withdrawalRequest.external_reference.screenshot_url = screenshot_url.trim();
     }
-    if (external_reference.receipt_url) {
-      withdrawalRequest.external_reference.receipt_url = external_reference.receipt_url;
-    }
-    if (external_reference.screenshot_url) {
-      withdrawalRequest.external_reference.screenshot_url = external_reference.screenshot_url;
-    }
-    if (external_reference.notes) {
-      withdrawalRequest.external_reference.notes = external_reference.notes;
+    
+    if (notes && notes.trim() !== '') {
+      withdrawalRequest.external_reference.notes = notes.trim();
     }
     
     await withdrawalRequest.save();
@@ -339,7 +345,9 @@ exports.markWithdrawalAsPaid = async (req, res) => {
         _id: withdrawalRequest._id,
         status: withdrawalRequest.status,
         amount: withdrawalRequest.amount,
-        external_reference: withdrawalRequest.external_reference,
+        transaction_id: withdrawalRequest.external_reference.transaction_id,
+        screenshot_url: withdrawalRequest.external_reference.screenshot_url || '',
+        notes: withdrawalRequest.external_reference.notes || '',
         paid_at: withdrawalRequest.paid_at,
         payout_transaction_id: withdrawalRequest.payout_transaction_id
       }

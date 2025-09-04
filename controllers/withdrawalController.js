@@ -8,29 +8,13 @@ const { getWalletBalances, createWithdrawalHold } = require('../utils/walletServ
 exports.createWithdrawalRequest = async (req, res) => {
   try {
     const sellerId = req.userId;
-    const { amount, payment_method } = req.body;
+    const { amount } = req.body;
 
     // Validation
     if (!amount || amount <= 0) {
       return res.status(400).json({ 
         success: false,
         message: 'Valid withdrawal amount is required' 
-      });
-    }
-
-    if (!payment_method || !payment_method.type) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Payment method is required' 
-      });
-    }
-
-    // Validate payment method type
-    const validPaymentTypes = ['bank_transfer', 'paypal', 'stripe_express', 'other'];
-    if (!validPaymentTypes.includes(payment_method.type)) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Invalid payment method'
       });
     }
 
@@ -47,11 +31,16 @@ exports.createWithdrawalRequest = async (req, res) => {
       });
     }
 
-    // Create withdrawal request
+    // Create withdrawal request (payment method handled via chat)
     const withdrawalRequest = new WithdrawalRequest({
       sellerId,
       amount: Math.round(amount * 100) / 100, // Round to 2 decimal places
-      payment_method,
+      payment_method: {
+        type: 'other',
+        details: {
+          other_details: 'Payment method to be arranged via chat'
+        }
+      },
       status: 'Pending'
     });
 
@@ -93,7 +82,7 @@ exports.getWithdrawalRequests = async (req, res) => {
       .limit(parseInt(limit))
       .lean();
 
-    // Format response for mobile UI - simple structure
+    // Format response for mobile UI - simple structure (user sees transaction_id but not screenshot)
     const formattedRequests = withdrawalRequests.map(request => ({
       id: request._id,
       amount: request.amount,
@@ -104,8 +93,8 @@ exports.getWithdrawalRequests = async (req, res) => {
         minute: '2-digit',
         hour12: true 
       }),
-      payment_method: request.payment_method.type,
-      rejection_reason: request.rejection_reason || ''
+      rejection_reason: request.rejection_reason || '',
+      transaction_id: request.external_reference?.transaction_id || '' // User can see transaction ID for their records
     }));
 
     console.log(`✅ Found ${withdrawalRequests.length} withdrawal requests`);

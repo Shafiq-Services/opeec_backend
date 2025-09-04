@@ -25,15 +25,16 @@ const withdrawalRequestSchema = new mongoose.Schema({
     index: true
   },
   
-  // Payment method information
+  // Payment method information (optional - handled via chat)
   payment_method: {
     type: {
       type: String,
       enum: ['bank_transfer', 'paypal', 'stripe_express', 'other'],
-      required: true
+      required: false,
+      default: 'other'
     },
     
-    // Payment details (bank account, PayPal email, etc.)
+    // Payment details (optional - handled via chat between admin and user)
     details: {
       account_number: { type: String },
       routing_number: { type: String },

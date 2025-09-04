@@ -60,7 +60,8 @@ const walletInfoExample = {
  * 
  * Body:
  * - amount: Withdrawal amount (must not exceed available balance)
- * - payment_method: Payment method object with type and details
+ * 
+ * Note: Payment method is handled via chat between admin and user
  */
 const createWithdrawalExample = {
   method: 'POST',
@@ -70,16 +71,7 @@ const createWithdrawalExample = {
     'Content-Type': 'application/json'
   },
   body: {
-    "amount": 100.00,
-    "payment_method": {
-      "type": "bank_transfer",
-      "details": {
-        "account_number": "1234567890",
-        "routing_number": "123456789",
-        "account_holder_name": "John Doe",
-        "bank_name": "Example Bank"
-      }
-    }
+    "amount": 100.00
   },
   expectedResponse: {
     "success": true,
@@ -113,8 +105,8 @@ const getWithdrawalsExample = {
         "status": "Pending",
         "date": "2024-01-15T14:20:00.000Z",
         "time": "02:20 PM",
-        "payment_method": "bank_transfer",
-        "rejection_reason": ""
+        "rejection_reason": "",
+        "transaction_id": ""
       },
       {
         "id": "64f1a2b3c4d5e6f7g8h9i0j4",
@@ -122,8 +114,8 @@ const getWithdrawalsExample = {
         "status": "Approved",
         "date": "2024-01-10T09:30:00.000Z",
         "time": "09:30 AM",
-        "payment_method": "paypal",
-        "rejection_reason": ""
+        "rejection_reason": "",
+        "transaction_id": ""
       }
     ]
   }
@@ -164,18 +156,11 @@ const adminGetWithdrawalsExample = {
         },
         "amount": 100.00,
         "status": "Pending",
-        "payment_method": {
-          "type": "bank_transfer",
-          "details": {
-            "account_number": "1234567890",
-            "routing_number": "123456789",
-            "account_holder_name": "John Doe",
-            "bank_name": "Example Bank"
-          }
-        },
         "rejection_reason": "",
         "reviewed_by": null,
-        "external_reference": {},
+        "transaction_id": "TXN_98765",
+        "screenshot_url": "https://uploads.example.com/proof.jpg",
+        "payment_notes": "Wire transfer completed",
         "createdAt": "2024-01-15T14:20:00.000Z"
       }
     ]
@@ -183,13 +168,15 @@ const adminGetWithdrawalsExample = {
 };
 
 /**
- * POST /admin/withdrawals/:id/mark-paid - Mark withdrawal as paid
+ * POST /admin/withdrawals/:id/mark-paid - Mark withdrawal as paid with proof
  * 
  * Headers:
  * Authorization: Bearer {admin_jwt_token}
  * 
  * Body:
- * - external_reference (optional): Payment reference information
+ * - transaction_id (REQUIRED): External payment transaction ID
+ * - screenshot_url (optional): Screenshot of payment proof (admin only)
+ * - notes (optional): Additional payment notes
  */
 const adminMarkPaidExample = {
   method: 'POST',
@@ -199,12 +186,9 @@ const adminMarkPaidExample = {
     'Content-Type': 'application/json'
   },
   body: {
-    "external_reference": {
-      "transaction_id": "TXN_12345678",
-      "receipt_url": "https://bank.example.com/receipts/12345",
-      "screenshot_url": "https://uploads.example.com/payment_screenshot.jpg",
-      "notes": "Payment processed via wire transfer"
-    }
+    "transaction_id": "TXN_12345678",
+    "screenshot_url": "https://uploads.example.com/payment_screenshot.jpg",
+    "notes": "Payment processed via wire transfer"
   },
   expectedResponse: {
     "message": "Withdrawal request marked as paid successfully",
@@ -212,12 +196,9 @@ const adminMarkPaidExample = {
       "_id": "64f1a2b3c4d5e6f7g8h9i0j3",
       "status": "Paid",
       "amount": 100.00,
-      "external_reference": {
-        "transaction_id": "TXN_12345678",
-        "receipt_url": "https://bank.example.com/receipts/12345",
-        "screenshot_url": "https://uploads.example.com/payment_screenshot.jpg",
-        "notes": "Payment processed via wire transfer"
-      },
+      "transaction_id": "TXN_12345678",
+      "screenshot_url": "https://uploads.example.com/payment_screenshot.jpg",
+      "notes": "Payment processed via wire transfer",
       "paid_at": "2024-01-15T16:30:00.000Z",
       "payout_transaction_id": "64f1a2b3c4d5e6f7g8h9i0j5"
     }
@@ -233,20 +214,11 @@ const adminMarkPaidExample = {
  */
 const validationTests = {
   // Test insufficient balance for withdrawal
-  insufficientBalanceTest: {
+      insufficientBalanceTest: {
     method: 'POST',
     url: '/withdrawals',
     body: {
-      "amount": 999999.99,
-      "payment_method": {
-        "type": "bank_transfer",
-        "details": {
-          "account_number": "1234567890",
-          "routing_number": "123456789",
-          "account_holder_name": "John Doe",
-          "bank_name": "Example Bank"
-        }
-      }
+      "amount": 999999.99
     },
     expectedError: {
       "success": false,
@@ -254,19 +226,14 @@ const validationTests = {
     }
   },
 
-  // Test invalid payment method
-  invalidPaymentMethodTest: {
+  // Test missing amount
+  missingAmountTest: {
     method: 'POST',
     url: '/withdrawals',
-    body: {
-      "amount": 50.00,
-      "payment_method": {
-        "type": "invalid_method"
-      }
-    },
+    body: {},
     expectedError: {
       "success": false,
-      "message": "Invalid payment method"
+      "message": "Valid withdrawal amount is required"
     }
   },
 
@@ -274,10 +241,22 @@ const validationTests = {
   invalidStatusTest: {
     method: 'POST',
     url: '/admin/withdrawals/64f1a2b3c4d5e6f7g8h9i0j3/mark-paid',
-    body: {},
+    body: {
+      "transaction_id": "TXN_123"
+    },
     expectedError: {
       "message": "Only approved withdrawal requests can be marked as paid",
       "current_status": "Pending"
+    }
+  },
+
+  // Test missing transaction ID
+  missingTransactionIdTest: {
+    method: 'POST',
+    url: '/admin/withdrawals/64f1a2b3c4d5e6f7g8h9i0j3/mark-paid',
+    body: {},
+    expectedError: {
+      "message": "Transaction ID is required when marking as paid"
     }
   }
 };
@@ -305,8 +284,9 @@ const endpointSummary = {
     {
       method: 'POST',
       path: '/withdrawals',
-      description: 'Create new withdrawal request',
+      description: 'Create new withdrawal request (payment method arranged via chat)',
       auth: 'User JWT required',
+      required: 'amount only',
       response: 'Simple { success, message } structure'
     },
     {
@@ -314,7 +294,7 @@ const endpointSummary = {
       path: '/withdrawals',
       description: 'Get seller\'s own withdrawal requests',
       auth: 'User JWT required',
-      response: 'Simple { requests[] } structure'
+      response: 'Simple { requests[] } structure with transaction_id (payment method handled via chat)'
     }
   ],
 
@@ -322,9 +302,9 @@ const endpointSummary = {
     {
       method: 'GET',
       path: '/admin/withdrawals',
-      description: 'Get all withdrawal requests for review',
+      description: 'Get all withdrawal requests for admin review',
       auth: 'Admin JWT required',
-      pagination: 'Yes'
+      response: 'Includes transaction_id, screenshot_url, and payment_notes for admin'
     },
     {
       method: 'POST',
@@ -343,8 +323,10 @@ const endpointSummary = {
     {
       method: 'POST',
       path: '/admin/withdrawals/:id/mark-paid',
-      description: 'Mark withdrawal as paid and finalize',
+      description: 'Mark withdrawal as paid with external transaction proof',
       auth: 'Admin JWT required',
+      required: 'transaction_id (external payment reference)',
+      optional: 'screenshot_url (admin proof), notes',
       action: 'Creates SELLER_PAYOUT transaction'
     }
   ]
