@@ -25,8 +25,10 @@ module.exports.adminMiddleware = async (req, res, next) => {
 
     console.log("🔹 Fetching Admin from Database, Admin ID:", req.adminId);
 
-    // Check if admin exists in the database
-    const admin = await Admin.findById(req.adminId);
+    // Check if admin exists in the database with timeout
+    const admin = await Admin.findById(req.adminId)
+      .maxTimeMS(5000) // 5 second timeout for this specific query
+      .lean(); // Use lean() for better performance since we only need to check existence
     
     if (!admin) {
       console.error("❌ Admin Not Found with ID:", req.adminId); // Debugging: Admin not found

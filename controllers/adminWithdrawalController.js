@@ -3,15 +3,15 @@ const { getWalletBalances, releaseWithdrawalHold, createSellerPayout } = require
 const { createAdminNotification } = require('./adminNotificationController');
 
 /**
- * Get all withdrawal requests for admin review
+ * Get all withdrawal requests for admin review with comprehensive details
  * GET /admin/withdrawals
  */
 exports.getAllWithdrawalRequests = async (req, res) => {
   try {
-    const { page = 1, limit = 20, status } = req.query;
+    const { page = 1, limit = 10, status, selected_withdrawal_id } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    console.log(`📋 Admin fetching withdrawal requests - Status filter: ${status || 'all'}`);
+    console.log(`📋 Admin fetching withdrawal requests - Status filter: ${status || 'all'}, Selected: ${selected_withdrawal_id || 'none'}`);
 
     // Build query filter
     const filter = {};
@@ -39,7 +39,7 @@ exports.getAllWithdrawalRequests = async (req, res) => {
       WithdrawalRequest.countDocuments(filter)
     ]);
 
-    // Format response with seller information (admin view includes screenshot)
+    // Format withdrawal list for table
     const formattedRequests = withdrawalRequests.map(request => ({
       _id: request._id,
       seller: {
@@ -50,36 +50,98 @@ exports.getAllWithdrawalRequests = async (req, res) => {
       },
       amount: request.amount,
       status: request.status,
-      rejection_reason: request.rejection_reason || '',
-      reviewed_by: request.reviewed_by_admin_id ? {
-        name: request.reviewed_by_admin_id.name,
-        email: request.reviewed_by_admin_id.email
-      } : null,
-      // Admin can see all external reference details including screenshot
-      transaction_id: request.external_reference?.transaction_id || '',
-      screenshot_url: request.external_reference?.screenshot_url || '',
-      payment_notes: request.external_reference?.notes || '',
-      createdAt: request.createdAt,
-      reviewed_at: request.reviewed_at,
-      approved_at: request.approved_at,
-      paid_at: request.paid_at,
-      rejected_at: request.rejected_at
+      requested_time: request.createdAt,
+      // Display formatted date and time
+      requested_date: new Date(request.createdAt).toLocaleDateString('en-US', {
+        month: '2-digit',
+        day: '2-digit', 
+        year: 'numeric'
+      }),
+      requested_time_formatted: new Date(request.createdAt).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
     }));
+
+    // Get selected withdrawal details for sidebar
+    let selectedWithdrawalDetails = null;
+    if (selected_withdrawal_id) {
+      const selectedWithdrawal = await WithdrawalRequest.findById(selected_withdrawal_id)
+        .populate('sellerId', 'name email profile_image')
+        .populate('reviewed_by_admin_id', 'name email')
+        .lean();
+
+      if (selectedWithdrawal) {
+        selectedWithdrawalDetails = {
+          _id: selectedWithdrawal._id,
+          seller: {
+            _id: selectedWithdrawal.sellerId._id,
+            name: selectedWithdrawal.sellerId.name,
+            email: selectedWithdrawal.sellerId.email,
+            profile_image: selectedWithdrawal.sellerId.profile_image || ''
+          },
+          amount: selectedWithdrawal.amount,
+          status: selectedWithdrawal.status,
+          requested_date: new Date(selectedWithdrawal.createdAt).toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit', 
+            year: 'numeric'
+          }),
+          requested_time: new Date(selectedWithdrawal.createdAt).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          }),
+          // Status-specific dates
+          approval_date: selectedWithdrawal.approved_at ? new Date(selectedWithdrawal.approved_at).toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit', 
+            year: 'numeric'
+          }) : null,
+          approval_time: selectedWithdrawal.approved_at ? new Date(selectedWithdrawal.approved_at).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          }) : null,
+          rejection_date: selectedWithdrawal.rejected_at ? new Date(selectedWithdrawal.rejected_at).toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit', 
+            year: 'numeric'
+          }) : null,
+          rejection_time: selectedWithdrawal.rejected_at ? new Date(selectedWithdrawal.rejected_at).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          }) : null,
+          // Transaction details (for approved/paid status)
+          transaction_id: selectedWithdrawal.external_reference?.transaction_id || '',
+          screenshot_url: selectedWithdrawal.external_reference?.screenshot_url || '',
+          payment_notes: selectedWithdrawal.external_reference?.notes || '',
+          // Rejection details
+          rejection_reason: selectedWithdrawal.rejection_reason || '',
+          // Admin who reviewed
+          reviewed_by: selectedWithdrawal.reviewed_by_admin_id ? {
+            name: selectedWithdrawal.reviewed_by_admin_id.name,
+            email: selectedWithdrawal.reviewed_by_admin_id.email
+          } : null
+        };
+      }
+    }
 
     const totalPages = Math.ceil(totalCount / parseInt(limit));
 
-    console.log(`✅ Retrieved ${withdrawalRequests.length} withdrawal requests for admin`);
+    console.log(`✅ Retrieved ${withdrawalRequests.length} withdrawal requests for admin${selectedWithdrawalDetails ? ' with selected details' : ''}`);
 
     res.status(200).json({
       message: 'Withdrawal requests retrieved successfully',
-      withdrawal_requests: formattedRequests,
+      withdrawals: formattedRequests,
+      selected_withdrawal: selectedWithdrawalDetails,
       pagination: {
         current_page: parseInt(page),
         total_pages: totalPages,
-        total_items: totalCount,
-        items_per_page: parseInt(limit),
-        has_next: parseInt(page) < totalPages,
-        has_previous: parseInt(page) > 1
+        total_count: totalCount,
+        showing_text: `Showing ${Math.min(skip + 1, totalCount)} to ${Math.min(skip + parseInt(limit), totalCount)} of ${totalCount} products`
       }
     });
 
