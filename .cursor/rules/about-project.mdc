@@ -350,11 +350,13 @@ Triggered for all admin events with professional templates:
 - **WithdrawalRequest:** Seller payout requests with admin approval workflow
 
 ### **New Endpoints (Additive):**
-- `GET /wallet` - Seller wallet balances and transaction history
+- `GET /wallet` - **UNIFIED wallet API** - returns balance, pending withdrawals, and history in single response
 - `POST /withdrawals` - Create withdrawal request (validates available balance)
-- `GET /withdrawals` - Seller's own withdrawal requests
+- `GET /withdrawals` - Seller's own withdrawal requests (deprecated - use unified wallet API)
 - `GET /admin/withdrawals` - Admin withdrawal review dashboard
-- `POST /admin/withdrawals/:id/approve|reject|mark-paid` - Admin workflow actions
+- `POST /admin/withdrawals/:id/approve` - Admin approval (requires transaction_id + optional screenshot_url)
+- `POST /admin/withdrawals/:id/reject` - Admin rejection (requires transaction_id + rejection_reason)
+- `POST /admin/withdrawals/:id/mark-paid` - Admin mark as paid (requires transaction_id + optional screenshot_url)
 
 ### **Settlement Integration:**
 - **Order Completion:** Credits rental_fee to seller as ORDER_EARNING
@@ -366,7 +368,15 @@ Triggered for all admin events with professional templates:
 - **Additive Only:** Zero impact on existing API contracts or Stripe flows
 - **Audit Trail:** Complete transaction history with order references
 - **Balance Caching:** Fast wallet queries with background recomputation
-- **Admin Workflow:** Request → Review → Approve → Pay workflow
+- **Admin Workflow:** Request → Review → Approve (with transaction_id) → Pay OR Request → Review → Reject (with transaction_id + reason)
+- **Unified Mobile API:** Single `/wallet` endpoint returns balance, pending withdrawals, and history
+- **Transaction ID Requirements:** All admin actions (approve/reject/paid) require transaction_id for audit trail
 - **Settlement Automation:** Listens to existing order lifecycle events
+
+### **Recent Updates (Latest Session):**
+- **Enhanced Admin Workflow:** Both approval and rejection now require transaction_id from admin
+- **Unified Wallet API:** Single endpoint returns all wallet data matching mobile UI requirements  
+- **Dummy Data:** Added test data for emailadress208@gmail.com with $23.0 balance and withdrawal history
+- **Withdrawal Status Flow:** Pending → Approved (transaction_id + screenshot) OR Rejected (transaction_id + reason)
 
 This comprehensive overview ensures Cursor understands the complete OPEEC project structure, business logic, and current implementation without needing to search through individual files.

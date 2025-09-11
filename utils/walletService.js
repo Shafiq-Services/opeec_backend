@@ -51,13 +51,13 @@ async function computeAndUpdateBalance(sellerId) {
       lastTransactionId = transaction._id;
     }
 
-    // Get pending withdrawals (approved but not paid)
+    // Get pending withdrawals (only requests that are still pending or approved, not rejected/paid)
     const pendingWithdrawals = await WithdrawalRequest.find({
       sellerId,
-      status: { $in: ['Approved'] }
+      status: { $in: ['Pending', 'Approved'] }
     });
 
-    // Calculate pending balance (money that's approved for withdrawal)
+    // Calculate pending balance (money held for pending and approved withdrawals)
     const pendingBalance = pendingWithdrawals.reduce((sum, withdrawal) => sum + withdrawal.amount, 0);
     
     // Available balance is total minus pending

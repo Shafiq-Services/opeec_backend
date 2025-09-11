@@ -161,9 +161,23 @@ exports.getAllWithdrawalRequests = async (req, res) => {
 exports.approveWithdrawalRequest = async (req, res) => {
   try {
     const { id } = req.params;
+    const { transaction_id, screenshot_url, notes } = req.body;
     const adminId = req.adminId; // Extract from admin JWT middleware
 
-    console.log(`✅ Admin ${adminId} approving withdrawal request: ${id}`);
+    // Validate required fields for approval
+    if (!transaction_id || transaction_id.trim() === '') {
+      return res.status(400).json({ 
+        message: 'Transaction ID is required for approval' 
+      });
+    }
+
+    if (!screenshot_url || screenshot_url.trim() === '') {
+      return res.status(400).json({ 
+        message: 'Screenshot URL is required for approval' 
+      });
+    }
+
+    console.log(`✅ Admin ${adminId} approving withdrawal request: ${id} with transaction: ${transaction_id}`);
 
     // Find the withdrawal request
     const withdrawalRequest = await WithdrawalRequest.findById(id)
@@ -185,6 +199,17 @@ exports.approveWithdrawalRequest = async (req, res) => {
     withdrawalRequest.reviewed_by_admin_id = adminId;
     withdrawalRequest.reviewed_at = new Date();
     withdrawalRequest.approved_at = new Date();
+    
+    // Store transaction details for approved requests
+    if (!withdrawalRequest.external_reference) {
+      withdrawalRequest.external_reference = {};
+    }
+    withdrawalRequest.external_reference.transaction_id = transaction_id.trim();
+    withdrawalRequest.external_reference.screenshot_url = screenshot_url.trim(); // Now mandatory
+    
+    if (notes && notes.trim() !== '') {
+      withdrawalRequest.external_reference.notes = notes.trim();
+    }
     
     await withdrawalRequest.save();
 
@@ -215,6 +240,9 @@ exports.approveWithdrawalRequest = async (req, res) => {
         _id: withdrawalRequest._id,
         status: withdrawalRequest.status,
         amount: withdrawalRequest.amount,
+        transaction_id: withdrawalRequest.external_reference.transaction_id,
+        screenshot_url: withdrawalRequest.external_reference.screenshot_url,
+        notes: withdrawalRequest.external_reference.notes || '',
         approved_at: withdrawalRequest.approved_at
       }
     });
@@ -235,11 +263,15 @@ exports.approveWithdrawalRequest = async (req, res) => {
 exports.rejectWithdrawalRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    const { rejection_reason } = req.body;
+    const { rejection_reason, transaction_id } = req.body;
     const adminId = req.adminId;
 
     if (!rejection_reason || rejection_reason.trim() === '') {
       return res.status(400).json({ message: 'Rejection reason is required' });
+    }
+
+    if (!transaction_id || transaction_id.trim() === '') {
+      return res.status(400).json({ message: 'Transaction ID is required for rejection' });
     }
 
     console.log(`❌ Admin ${adminId} rejecting withdrawal request: ${id}`);
@@ -265,6 +297,12 @@ exports.rejectWithdrawalRequest = async (req, res) => {
     withdrawalRequest.reviewed_by_admin_id = adminId;
     withdrawalRequest.reviewed_at = new Date();
     withdrawalRequest.rejected_at = new Date();
+    
+    // Store transaction ID for rejected requests
+    if (!withdrawalRequest.external_reference) {
+      withdrawalRequest.external_reference = {};
+    }
+    withdrawalRequest.external_reference.transaction_id = transaction_id.trim();
     
     await withdrawalRequest.save();
 
@@ -300,6 +338,7 @@ exports.rejectWithdrawalRequest = async (req, res) => {
         _id: withdrawalRequest._id,
         status: withdrawalRequest.status,
         rejection_reason: withdrawalRequest.rejection_reason,
+        transaction_id: withdrawalRequest.external_reference.transaction_id,
         rejected_at: withdrawalRequest.rejected_at
       }
     });
@@ -372,8 +411,8 @@ exports.markWithdrawalAsPaid = async (req, res) => {
       withdrawalRequest.amount,
       withdrawalRequest._id,
       {
-        external_transaction_id: external_reference.transaction_id,
-        receipt_url: external_reference.receipt_url,
+        external_transaction_id: withdrawalRequest.external_reference.transaction_id,
+        receipt_url: withdrawalRequest.external_reference.screenshot_url,
         processed_by_admin_id: adminId
       }
     );
@@ -395,7 +434,7 @@ exports.markWithdrawalAsPaid = async (req, res) => {
           sellerName: withdrawalRequest.sellerId.name,
           sellerEmail: withdrawalRequest.sellerId.email,
           amount: withdrawalRequest.amount,
-          transactionId: external_reference.transaction_id || '',
+          transactionId: withdrawalRequest.external_reference.transaction_id || '',
           paidDate: new Date()
         }
       }

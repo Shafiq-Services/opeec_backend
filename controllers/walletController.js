@@ -1,7 +1,8 @@
 const { getWalletBalances, getUnifiedHistory, ensureWallet } = require('../utils/walletService');
+const WithdrawalRequest = require('../models/withdrawalRequest');
 
 /**
- * Get seller wallet information for mobile UI
+ * Get unified wallet information including balance, pending withdrawals, and history
  * GET /wallet
  */
 exports.getWalletInfo = async (req, res) => {
@@ -9,75 +10,61 @@ exports.getWalletInfo = async (req, res) => {
     const sellerId = req.userId; // Extract from JWT middleware
     const { limit = 50 } = req.query; // Get more history for mobile, no pagination needed
 
-    console.log(`📊 Getting wallet info for seller: ${sellerId}`);
+    console.log(`📊 Getting unified wallet info for seller: ${sellerId}`);
 
     // Ensure wallet exists and get current balances
     await ensureWallet(sellerId);
     const balances = await getWalletBalances(sellerId);
 
-    // Get unified history
-    const historyData = await getUnifiedHistory(sellerId, {
-      page: 1,
-      limit: parseInt(limit)
-    });
+    // Get withdrawal requests (pending and history)
+    const withdrawalRequests = await WithdrawalRequest.find({ sellerId })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .lean();
 
-    // Format history for mobile UI - simple structure matching the screenshot
-    const formattedHistory = historyData.history.map(item => {
-      let type, amount;
-      
-      // Map transaction types to UI labels
-      switch (item.ui_type) {
-        case 'Deposit':
-          type = 'Deposit';
-          amount = Math.abs(item.amount); // Always positive for deposits
-          break;
-        case 'Payment':
-          type = 'Payment';
-          amount = -Math.abs(item.amount); // Always negative
-          break;
-        case 'Withdraw':
-        case 'Withdraw Hold':
-        case 'Withdraw Release':
-          type = 'Withdraw';
-          amount = -Math.abs(item.amount); // Always negative
-          break;
-        case 'Withdraw Request':
-          type = 'Withdraw Request';
-          amount = -Math.abs(item.amount); // Always negative
-          break;
-        case 'Penalty':
-        case 'Refund':
-        case 'Deposit Refund':
-          type = 'Withdraw';
-          amount = -Math.abs(item.amount); // Always negative
-          break;
-        default:
-          type = item.ui_type;
-          amount = item.amount;
-      }
-
-      return {
-        type,
-        amount,
-        date: item.created_at,
-        time: new Date(item.created_at).toLocaleTimeString('en-US', { 
+    // Separate pending and completed withdrawals
+    const pendingWithdrawals = withdrawalRequests
+      .filter(request => request.status === 'Pending')
+      .map(request => ({
+        type: 'Withdraw Request',
+        amount: -request.amount, // Negative for withdrawal
+        date: request.createdAt,
+        time: new Date(request.createdAt).toLocaleTimeString('en-US', { 
           hour: '2-digit', 
           minute: '2-digit',
           hour12: true 
-        })
-      };
-    });
+        }),
+        status: request.status
+      }));
 
-    console.log(`✅ Wallet info retrieved - Total Balance: $${balances.total_balance}`);
+    // Format completed withdrawals for history
+    const withdrawalHistory = withdrawalRequests
+      .filter(request => ['Approved', 'Paid', 'Rejected'].includes(request.status))
+      .map(request => ({
+        type: request.status, // 'Approved', 'Rejected', etc.
+        amount: -request.amount, // Negative for withdrawal
+        date: request.createdAt,
+        time: new Date(request.createdAt).toLocaleTimeString('en-US', { 
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: true 
+        }),
+        transaction_id: request.external_reference?.transaction_id || '',
+        reason: request.rejection_reason || '',
+        status: request.status
+      }));
 
-    // Return simplified structure matching mobile UI
+    console.log(`✅ Unified wallet info retrieved - Available Balance: $${balances.available_balance}, Total: $${balances.total_balance}, Pending: ${pendingWithdrawals.length}, History: ${withdrawalHistory.length}`);
+
+    // Return unified structure matching the screenshot
     res.status(200).json({
-      balance: balances.total_balance, // Single balance as shown in UI
-      history: formattedHistory
+      total_balance: balances.available_balance, // Show available balance (excluding pending withdrawals)
+      pending: pendingWithdrawals, // Pending withdrawal requests
+      history: withdrawalHistory // Approved/Rejected withdrawal history
     });
 
   } catch (error) {
-    console.error('❌ Error getting wallet info:', error);
+    console.error('❌ Error getting unified wallet info:', error);
     res.status(500).json({ 
       message: 'Error retrieving wallet information', 
       error: error.message 
@@ -98,10 +85,10 @@ exports.refreshWallet = async (req, res) => {
     // Force recompute balances from transaction log
     const balances = await getWalletBalances(sellerId, true);
 
-    console.log(`✅ Wallet refreshed - Total Balance: $${balances.total_balance}`);
+    console.log(`✅ Wallet refreshed - Available Balance: $${balances.available_balance}, Total Balance: $${balances.total_balance}`);
 
     res.status(200).json({
-      balance: balances.total_balance // Simplified response matching mobile UI
+      total_balance: balances.available_balance // Show available balance (excluding pending withdrawals)
     });
 
   } catch (error) {
