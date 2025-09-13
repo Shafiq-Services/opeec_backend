@@ -615,7 +615,7 @@ exports.getAllUsers = async (req, res) => {
       });
     }
     
-    // Get equipment counts and rental counts for each user
+    // Get equipment counts, rental counts, and wallet amounts for each user
     const usersWithStats = await Promise.all(users.map(async (user) => {
       // Get equipment count
       const equipmentCount = await Equipment.countDocuments({ ownerId: user._id });
@@ -625,6 +625,18 @@ exports.getAllUsers = async (req, res) => {
       const totalRentals = await Order.countDocuments({ 
         equipmentId: { $in: userEquipments.map(eq => eq._id) }
       });
+      
+      // Get wallet amounts (available + pending = total wallet amount)
+      let walletAmount = 0;
+      try {
+        const { getWalletBalances, ensureWallet } = require('../utils/walletService');
+        await ensureWallet(user._id);
+        const balances = await getWalletBalances(user._id);
+        walletAmount = balances.available_balance + balances.pending_balance;
+      } catch (walletError) {
+        console.warn(`Warning: Could not fetch wallet for user ${user._id}:`, walletError.message);
+        walletAmount = 0;
+      }
       
       // Return only required fields
       return {
@@ -641,6 +653,7 @@ exports.getAllUsers = async (req, res) => {
         lng: user.location?.lng || "",
         equipment_count: equipmentCount,
         total_rentals: totalRentals,
+        wallet_amount: walletAmount,
         is_blocked: user.is_blocked,
         block_reason: user.block_reason,
         fcm_token: user.fcm_token || "",

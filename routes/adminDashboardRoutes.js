@@ -7,6 +7,7 @@ const { adminMiddleware } = require('../middleWares/adminMiddleWare');
 router.use(adminMiddleware);
 
 // Dashboard Routes
-router.get('/summary', dashboardController.summary);
+router.get('/summary', dashboardController.getDashboardData); // New comprehensive endpoint
+// router.get('/summary', dashboardController.summary); // Legacy endpoint
 
 module.exports = router; 
