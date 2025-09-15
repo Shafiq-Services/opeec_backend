@@ -37,8 +37,11 @@ async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1
       depositAmount = (rentalFee * settings.depositPercentage) / 100;
     }
     
-    // Calculate total amount
-    const totalAmount = rentalFee + platformFee + taxAmount + insuranceAmount;
+    // Calculate total amount - must include deposit when applicable
+    const totalAmount = rentalFee + platformFee + taxAmount + insuranceAmount + depositAmount;
+    
+    // Subtotal should include rental fee + platform fee + insurance/deposit (before tax)
+    const subtotal = rentalFee + platformFee + insuranceAmount + depositAmount;
     
     return {
       rental_fee: Math.round(rentalFee * 100) / 100,
@@ -47,7 +50,7 @@ async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1
       insurance_amount: Math.round(insuranceAmount * 100) / 100,
       deposit_amount: Math.round(depositAmount * 100) / 100,
       total_amount: Math.round(totalAmount * 100) / 100,
-      subtotal: Math.round((rentalFee + insuranceAmount) * 100) / 100
+      subtotal: Math.round(subtotal * 100) / 100
     };
   } catch (error) {
     console.error('Fee calculation error:', error);

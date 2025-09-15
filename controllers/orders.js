@@ -120,6 +120,33 @@ exports.addOrder = async (req, res) => {
     const equipment = await Equipment.findById(equipmentId);
     if (!equipment) return res.status(404).json({ message: 'Equipment not found.' });
 
+    // Backend validation: Verify pricing calculations match expected values
+    try {
+      const { calculateOrderFees } = require('../utils/feeCalculations');
+      const rentalDays = Math.ceil((new Date(end_date) - new Date(start_date)) / (1000 * 60 * 60 * 24)) || 1;
+      const expectedFees = await calculateOrderFees(rental_fee, is_insurance, rentalDays);
+      
+      // Allow small rounding differences (±$0.05)
+      const tolerance = 0.05;
+      const providedFees = { platform_fee, tax_amount, total_amount, subtotal };
+      const feesToValidate = ['platform_fee', 'tax_amount', 'total_amount', 'subtotal'];
+      
+      for (const fee of feesToValidate) {
+        const expected = expectedFees[fee];
+        const provided = providedFees[fee];
+        
+        if (Math.abs(expected - provided) > tolerance) {
+          console.warn(`⚠️ Pricing validation failed for ${fee}: expected ${expected}, got ${provided}`);
+          return res.status(400).json({ 
+            message: `Invalid pricing calculation for ${fee}. Expected: $${expected}, provided: $${provided}` 
+          });
+        }
+      }
+    } catch (validationError) {
+      console.error('Pricing validation error:', validationError);
+      // Continue with order creation if validation fails (non-blocking for now)
+    }
+
     // Create new order with all pricing data from frontend
     const newOrder = new Order({
       userId,

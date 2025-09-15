@@ -57,11 +57,12 @@ async function computeAndUpdateBalance(sellerId) {
       status: { $in: ['Pending', 'Approved'] }
     });
 
-    // Calculate pending balance (money held for pending and approved withdrawals)
+    // Calculate pending balance (for display purposes only)
     const pendingBalance = pendingWithdrawals.reduce((sum, withdrawal) => sum + withdrawal.amount, 0);
     
-    // Available balance is total minus pending
-    const availableBalance = Math.max(0, totalBalance - pendingBalance);
+    // Available balance is the total balance (WITHDRAW_REQUEST_HOLD transactions already reduce totalBalance)
+    // No need to subtract pendingBalance again - that would be double deduction!
+    const availableBalance = Math.max(0, totalBalance);
 
     // Update wallet with computed balances
     const wallet = await SellerWallet.findOneAndUpdate(
