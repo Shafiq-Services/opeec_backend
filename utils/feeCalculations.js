@@ -19,8 +19,9 @@ async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1
     // Calculate platform fee
     const platformFee = (rentalFee * settings.adminFeePercentage) / 100;
     
-    // Calculate tax on rental + platform fee
-    const taxableAmount = rentalFee + platformFee;
+    // Calculate tax on rental + platform fee (use rounded platform fee for tax calculation)
+    const roundedPlatformFee = Math.round(platformFee * 100) / 100;
+    const taxableAmount = rentalFee + roundedPlatformFee;
     const taxAmount = (taxableAmount * settings.taxPercentage) / 100;
     
     // Calculate insurance or deposit
@@ -37,11 +38,17 @@ async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1
       depositAmount = (rentalFee * settings.depositPercentage) / 100;
     }
     
+    // Use rounded values for final calculations to ensure consistency
+    const roundedRentalFee = Math.round(rentalFee * 100) / 100;
+    const roundedTaxAmount = Math.round(taxAmount * 100) / 100;
+    const roundedInsuranceAmount = Math.round(insuranceAmount * 100) / 100;
+    const roundedDepositAmount = Math.round(depositAmount * 100) / 100;
+    
     // Calculate total amount - must include deposit when applicable
-    const totalAmount = rentalFee + platformFee + taxAmount + insuranceAmount + depositAmount;
+    const totalAmount = roundedRentalFee + roundedPlatformFee + roundedTaxAmount + roundedInsuranceAmount + roundedDepositAmount;
     
     // Subtotal should include rental fee + platform fee + insurance/deposit (before tax)
-    const subtotal = rentalFee + platformFee + insuranceAmount + depositAmount;
+    const subtotal = roundedRentalFee + roundedPlatformFee + roundedInsuranceAmount + roundedDepositAmount;
     
     return {
       rental_fee: Math.round(rentalFee * 100) / 100,

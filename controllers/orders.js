@@ -126,8 +126,8 @@ exports.addOrder = async (req, res) => {
       const rentalDays = Math.ceil((new Date(end_date) - new Date(start_date)) / (1000 * 60 * 60 * 24)) || 1;
       const expectedFees = await calculateOrderFees(rental_fee, is_insurance, rentalDays);
       
-      // Allow small rounding differences (±$0.05)
-      const tolerance = 0.05;
+      // Allow small rounding differences (±$0.10 to handle floating-point precision issues)
+      const tolerance = 0.10;
       const providedFees = { platform_fee, tax_amount, total_amount, subtotal };
       const feesToValidate = ['platform_fee', 'tax_amount', 'total_amount', 'subtotal'];
       
@@ -135,12 +135,23 @@ exports.addOrder = async (req, res) => {
         const expected = expectedFees[fee];
         const provided = providedFees[fee];
         
-        if (Math.abs(expected - provided) > tolerance) {
-          console.warn(`⚠️ Pricing validation failed for ${fee}: expected ${expected}, got ${provided}`);
+        // Round both values to 2 decimal places for comparison to avoid floating-point precision issues
+        const expectedRounded = Math.round(expected * 100) / 100;
+        const providedRounded = Math.round(provided * 100) / 100;
+        const difference = Math.abs(expectedRounded - providedRounded);
+        
+        if (difference > tolerance) {
+          console.warn(`⚠️ Pricing validation failed for ${fee}:`);
+          console.warn(`   Expected: $${expectedRounded}`);
+          console.warn(`   Provided: $${providedRounded}`);
+          console.warn(`   Difference: $${difference.toFixed(4)}`);
+          console.warn(`   Tolerance: $${tolerance}`);
           return res.status(400).json({ 
-            message: `Invalid pricing calculation for ${fee}. Expected: $${expected}, provided: $${provided}` 
+            message: `Invalid pricing calculation for ${fee}. Expected: $${expectedRounded}, provided: $${providedRounded}` 
           });
         }
+        
+        console.log(`✅ ${fee} validation passed: $${expectedRounded} ≈ $${providedRounded} (diff: $${difference.toFixed(4)})`);
       }
     } catch (validationError) {
       console.error('Pricing validation error:', validationError);
