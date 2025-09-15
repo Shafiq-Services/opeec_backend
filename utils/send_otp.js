@@ -13,13 +13,20 @@ const sendOtp = async (email) => {
     // Find the user by email and update the OTP and expiry time
     const user = await User.findOneAndUpdate(
       { email },
-      { otp, otpExpiry: new Date(expiry) }, // Save OTP and expiry to DB
+      { 
+        'otpDetails.otp': otp, 
+        'otpDetails.otpExpiry': new Date(expiry),
+        'otpDetails.isOtpVerified': false
+      }, // Save OTP and expiry to otpDetails subdocument
       { new: true } // Return the updated user document
     );
 
     const admin = await Admin.findOneAndUpdate(
       { email },
-      { otp, otpExpiry: new Date(expiry) }, // Save OTP and expiry to DB
+      { 
+        'otpDetails.otp': otp, 
+        'otpDetails.otpExpiry': new Date(expiry)
+      }, // Save OTP and expiry to admin otpDetails
       { new: true } // Return the updated user document
     );
 

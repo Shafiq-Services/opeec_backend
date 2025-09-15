@@ -37,9 +37,14 @@ exports.signup = async (req, res) => {
     });
 
     await user.save();
+    console.log('✅ User saved successfully:', user._id);
+    
+    console.log('📧 Attempting to send OTP...');
     await sendOtp(email);
+    console.log('✅ OTP sent successfully');
 
     // Send admin notification for new user registration
+    console.log('📢 Attempting to create admin notification...');
     await createAdminNotification(
       'user_registration',
       `New user ${name} registered with email ${email}`,
@@ -52,6 +57,7 @@ exports.signup = async (req, res) => {
         }
       }
     );
+    console.log('✅ Admin notification created successfully');
 
     // Return success message
     res.status(201).json({ message: 'User created successfully' });
@@ -158,15 +164,26 @@ exports.verifyUserOtp = async (req, res) => {
       return res.status(400).json({ message: 'User not found' });
     }
 
+    console.log('🔍 Debug OTP Verification:');
+    console.log('   Received OTP:', otp, typeof otp);
+    console.log('   Stored OTP:', user.otpDetails?.otp, typeof user.otpDetails?.otp);
+    console.log('   OTP Expiry:', user.otpDetails?.otpExpiry);
+    console.log('   Current Time:', new Date());
+    console.log('   Is Expired?', user.otpDetails?.otpExpiry < Date.now());
+
     // Check if OTP exists and is not expired
     if (!user.otpDetails?.otp || user.otpDetails?.otpExpiry < Date.now()) {
+      console.log('❌ OTP validation failed: Missing or expired');
       return res.status(400).json({ message: 'Invalid or expired OTP' });
     }
 
     // Verify the OTP
     if (user.otpDetails.otp !== parseInt(otp)) {
+      console.log('❌ OTP mismatch:', user.otpDetails.otp, '!==', parseInt(otp));
       return res.status(400).json({ message: 'Invalid OTP' });
     }
+
+    console.log('✅ OTP verification successful');
 
     // OTP verified, update the user to set isOtpVerified and remove OTP
     await User.updateOne({ email }, { 
