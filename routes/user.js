@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/user');
+const appSettingsController = require('../controllers/appSettingsController');
 const { userMiddleware } = require("../middleWares/user");
 
 // ---------------------- Public Routes ----------------------
@@ -22,6 +23,9 @@ router.post('/forgot_or_reset_password_otp', userController.forgotOrResetPasswor
 
 // Reset user password
 router.post('/reset_password', userController.resetPassword);
+
+// Get public app settings (URLs, share message, etc.)
+router.get('/app-settings', appSettingsController.getPublicAppSettings);
 
 // ---------------------- Protected User Routes ----------------------
 
