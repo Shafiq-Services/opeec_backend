@@ -600,6 +600,7 @@ function queryMatches(equipment, query) {
       const token = req.headers.authorization?.split(" ")[1];
       var conversationId = "";
 
+      // Optional token verification - only set conversationId if valid token is provided
       if (token && token.trim() !== "") {  // Ensure token is not empty or just whitespace
         try {
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -614,8 +615,9 @@ function queryMatches(equipment, query) {
           conversationId = conversationId?._id || "";
           console.log(conversationId);
         } catch (error) {
-          console.error("Invalid token:", error);
-          return res.status(401).json({ message: "Invalid or malformed token" });
+          // Don't return error for invalid token, just log it and continue without conversationId
+          console.error("Invalid token (continuing without conversation ID):", error);
+          conversationId = "";
         }
       }
       
