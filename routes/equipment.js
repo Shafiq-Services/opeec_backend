@@ -7,6 +7,8 @@ const equipmentDropdownController = require('../controllers/equipmentDropDown');
 // Public route (no auth needed)
 router.get('/random-images', equipmentController.getRandomEquipmentImages);
 router.get('/get_listing', equipmentController.getAllEquipments);
+router.get('/get', equipmentController.getEquipmentDetails);
+
 // Apply user middleware to all routes
 router.use(userMiddleware);
 
@@ -33,7 +35,5 @@ router.get('/my_equipment', equipmentController.getMyEquipments);
 
 // Get equipment dropdowns
 router.get('/equipment-dropdowns', equipmentDropdownController.getEquipmentDropdowns);
-
-router.get('/get', equipmentController.getEquipmentDetails);
 
 module.exports = router;
