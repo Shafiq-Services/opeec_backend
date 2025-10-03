@@ -27,9 +27,9 @@ exports.signup = async (req, res) => {
     }
 
     // Validate gender
-    const validGenders = ['male', 'female'];
+    const validGenders = ['male', 'female', 'other'];
     if (!validGenders.includes(gender.toLowerCase())) {
-      return res.status(400).json({ message: 'Gender must be male or female' });
+      return res.status(400).json({ message: 'Gender must be male, female, or other' });
     }
 
     // Validate DOB format
@@ -244,9 +244,9 @@ exports.updateUser = async (req, res) => {
     }
 
     // Validate gender
-    const validGenders = ['male', 'female'];
+    const validGenders = ['male', 'female', 'other'];
     if (!validGenders.includes(gender.toLowerCase())) {
-      return res.status(400).json({ message: 'Gender must be male or female' });
+      return res.status(400).json({ message: 'Gender must be male, female, or other' });
     }
 
     // Validate DOB format
