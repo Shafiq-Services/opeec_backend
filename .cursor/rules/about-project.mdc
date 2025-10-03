@@ -276,6 +276,15 @@ Triggered for all admin events with professional templates:
 
 ## 🚨 **RECENT MAJOR UPDATES:**
 
+### **User Registration & Profile System Overhaul (Latest):**
+- **New User Verification:** Users are now verified by default (`isUserVerified: true`)
+- **Enhanced Signup Fields:** Added required fields - `age`, `gender`, `DOB`, `address`, `about`
+- **Profile Image Required:** `profile_image` is now mandatory, removed `id_card_selfie` requirement
+- **Gender Validation:** Limited to `male` and `female` options only
+- **Location Schema:** Default `lat: 0.0`, `lng: 0.0` to avoid null values
+- **Profile APIs Updated:** Both user and admin profile APIs return standardized field set
+- **Update API Enhanced:** User profile update now handles all new required fields with validation
+
 ### **Pricing System Overhaul:**
 - **Before:** Only stored `rental_fee` and calculated everything dynamically
 - **After:** Store complete pricing breakdown (platform_fee, tax_amount, etc.)

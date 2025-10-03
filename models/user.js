@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 
 // Standardized Location Schema
 const locationSchema = new mongoose.Schema({
-  address: { type: String, trim: true },
-  lat: { type: Number, min: -90, max: 90 },
-  lng: { type: Number, min: -180, max: 180 }
+  address: { type: String, required: true, trim: true },
+  lat: { type: Number, min: -90, max: 90, default: 0.0 },
+  lng: { type: Number, min: -180, max: 180, default: 0.0 }
 }, { _id: false });
 
 // OTP Schema for reusability
@@ -19,14 +19,14 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, trim: true },
   password: { type: String, required: true },
-  profile_image: { type: String, default: "" },
-  id_card_selfie: { type: String, default: "" },
-  age: { type: Number, min: 0, max: 150 },
-  gender: { type: String, enum: ['male', 'female', 'other'] },
-  DOB: { type: String },
-  location: locationSchema,
+  profile_image: { type: String, required: true },
+  age: { type: Number, required: true, min: 0, max: 150 },
+  gender: { type: String, required: true, enum: ['male', 'female'] },
+  DOB: { type: String, required: true },
+  about: { type: String, required: true, trim: true },
+  location: { type: locationSchema, required: true },
   otpDetails: otpSchema,
-  isUserVerified: { type: Boolean, default: false },
+  isUserVerified: { type: Boolean, default: true },
   rejection_reason: { type: String, default: "" },
   is_blocked: { type: Boolean, default: false },
   block_reason: { type: String, default: "" },

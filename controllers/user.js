@@ -13,7 +13,30 @@ const { createAdminNotification } = require('./adminNotificationController');
 // User Signup
 exports.signup = async (req, res) => {
   try {
-    const { name, email, password, id_card_selfie, phone_number } = req.body;
+    const { name, email, password, profile_image, age, gender, DOB, address, about } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password || !profile_image || !age || !gender || !DOB || !address || !about) {
+      return res.status(400).json({ message: 'All fields are required: name, email, password, profile_image, age, gender, DOB, address, about' });
+    }
+
+    // Validate age
+    const ageNum = parseInt(age);
+    if (isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
+      return res.status(400).json({ message: 'Age must be a valid number between 0 and 150' });
+    }
+
+    // Validate gender
+    const validGenders = ['male', 'female'];
+    if (!validGenders.includes(gender.toLowerCase())) {
+      return res.status(400).json({ message: 'Gender must be male or female' });
+    }
+
+    // Validate DOB format
+    const dobDate = new Date(DOB);
+    if (isNaN(dobDate.getTime())) {
+      return res.status(400).json({ message: 'DOB must be a valid date' });
+    }
 
     // Check if the email already exists
     const existingUser = await User.findOne({ email });
@@ -29,11 +52,17 @@ exports.signup = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      verified: false,
-      id_card_selfie,
-      phone_number,
-      isUserVerified: false,
-      rejection_reason: ''
+      profile_image,
+      age: ageNum,
+      gender: gender.toLowerCase(),
+      DOB,
+      about,
+      location: {
+        address,
+        lat: 0.0,
+        lng: 0.0
+      },
+      isUserVerified: true
     });
 
     await user.save();
@@ -201,12 +230,55 @@ exports.verifyUserOtp = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const userId = req.userId;    
-    const { name, profileImage } = req.body;
+    const { name, email, profile_image, age, gender, DOB, address } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !profile_image || !age || !gender || !DOB || !address) {
+      return res.status(400).json({ message: 'All fields are required: name, email, profile_image, age, gender, DOB, address' });
+    }
+
+    // Validate age
+    const ageNum = parseInt(age);
+    if (isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
+      return res.status(400).json({ message: 'Age must be a valid number between 0 and 150' });
+    }
+
+    // Validate gender
+    const validGenders = ['male', 'female'];
+    if (!validGenders.includes(gender.toLowerCase())) {
+      return res.status(400).json({ message: 'Gender must be male or female' });
+    }
+
+    // Validate DOB format
+    const dobDate = new Date(DOB);
+    if (isNaN(dobDate.getTime())) {
+      return res.status(400).json({ message: 'DOB must be a valid date' });
+    }
+
+    // Check if email is being changed and if it's already taken by another user
+    if (email) {
+      const existingUser = await User.findOne({ email, _id: { $ne: userId } });
+      if (existingUser) {
+        return res.status(400).json({ message: 'Email is already registered by another user' });
+      }
+    }
 
     // Find user by ID and update profile
     const user = await User.findByIdAndUpdate(
       userId,
-      { name, profile_image: profileImage },
+      { 
+        name, 
+        email,
+        profile_image,
+        age: ageNum,
+        gender: gender.toLowerCase(),
+        DOB,
+        location: {
+          address,
+          lat: 0.0,
+          lng: 0.0
+        }
+      },
       { new: true }
     );
 
@@ -214,35 +286,51 @@ exports.updateUser = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.status(200).json({ message: 'User updated successfully', "user" : {name: user.name, profileImage: user.profile_image} });
+    res.status(200).json({ 
+      message: 'User updated successfully', 
+      "user": {
+        name: user.name,
+        email: user.email,
+        profile_image: user.profile_image,
+        age: user.age,
+        gender: user.gender,
+        DOB: user.DOB,
+        address: user.location?.address
+      } 
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error in updating user', error });
   }
 };
 
-// Update User Profile
+// Get User Profile
 exports.getprofile = async (req, res) => {
   try {
     const userId = req.userId;    
 
-    // Find user by ID and update profile
+    // Find user by ID
     const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const average_rating = await getUserAverageRating(userId);
-    const reviews = await getSellerReviews(userId);
-    res.status(200).json({ message: 'User profile fetched successfully', "user": {
-        _id: user._id,
+    res.status(200).json({ 
+      message: 'User profile fetched successfully', 
+      "user": {
         name: user.name,
         email: user.email,
         profile_image: user.profile_image,
-        isOtpVerified: user.otpDetails?.isOtpVerified,
-        average_rating: average_rating,
-        reviews: reviews,
-    } });
+        age: user.age,
+        gender: user.gender,
+        DOB: user.DOB,
+        address: user.location?.address || "",
+        isUserVerified: user.isUserVerified,
+        is_blocked: user.is_blocked,
+        block_reason: user.block_reason,
+        fcm_token: user.fcm_token
+      } 
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error in getting user profile', error });
   }
@@ -657,24 +745,17 @@ exports.getAllUsers = async (req, res) => {
       
       // Return only required fields
       return {
-        _id: user._id,
         name: user.name,
         email: user.email,
         profile_image: user.profile_image,
-        id_card_selfie: user.id_card_selfie,
         age: user.age || "",
         gender: user.gender || "",
         DOB: user.DOB || "",
         address: user.location?.address || "",
-        lat: user.location?.lat || "",
-        lng: user.location?.lng || "",
-        equipment_count: equipmentCount,
-        total_rentals: totalRentals,
-        wallet_amount: walletAmount,
+        isUserVerified: user.isUserVerified,
         is_blocked: user.is_blocked,
         block_reason: user.block_reason,
-        fcm_token: user.fcm_token || "",
-        createdAt: user.createdAt
+        fcm_token: user.fcm_token || ""
       };
     }));
 
