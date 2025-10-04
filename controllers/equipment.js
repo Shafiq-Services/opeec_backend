@@ -75,6 +75,43 @@ async function getMultipleSubCategoryDetails(subCategoryIds) {
   }
 }
 
+// Helper function to get reservation text for equipment
+async function getReservationText(equipmentId) {
+  try {
+    // Active rental statuses that mean equipment is reserved
+    const activeOrderStatuses = ['Booked', 'Delivered', 'Ongoing', 'Late'];
+    
+    // Find active order for this equipment
+    const activeOrder = await Order.findOne({
+      equipmentId: equipmentId,
+      rental_status: { $in: activeOrderStatuses }
+    })
+    .sort({ 'rental_schedule.end_date': -1 }) // Get the latest ending reservation
+    .select('rental_schedule.end_date');
+    
+    if (!activeOrder || !activeOrder.rental_schedule || !activeOrder.rental_schedule.end_date) {
+      return ''; // Not reserved
+    }
+    
+    // Format the date as "Reserved till HH:MM - DD/MM/YY"
+    const endDate = new Date(activeOrder.rental_schedule.end_date);
+    
+    // Extract time components
+    const hours = String(endDate.getHours()).padStart(2, '0');
+    const minutes = String(endDate.getMinutes()).padStart(2, '0');
+    
+    // Extract date components
+    const day = String(endDate.getDate()).padStart(2, '0');
+    const month = String(endDate.getMonth() + 1).padStart(2, '0');
+    const year = String(endDate.getFullYear()).slice(-2);
+    
+    return `Reserved till ${hours}:${minutes} - ${day}/${month}/${year}`;
+  } catch (error) {
+    console.error('Error getting reservation text:', error);
+    return '';
+  }
+}
+
 const addEquipment = async (req, res) => {
   const {
     subCategoryId,
@@ -391,38 +428,39 @@ async function getAllEquipments(req, res) {
         // If subcategory details not found, try to fetch individually
         const subCategoryData = await findSubCategoryById(equipment.subCategoryId);
 
-        return {
-          _id: equipment._id,
-          average_rating: await getAverageRating(equipment._id),
-          created_at: equipment.createdAt ? equipment.createdAt.toGMTString() : new Date().toGMTString(),
-          delivery_by_owner: equipment.delivery_by_owner,
-          description: equipment.description,
-          equipment_price: equipment.equipment_price,
-          images: equipment.images,
-          isFavorite: userId ? (await User.findById(userId))?.favorite_equipments.includes(equipment._id) || false : false,
-          location: {
-            address: equipment.location?.address || "",
-            lat: equipment.location?.lat || 0.0,
-            lng: equipment.location?.lng || 0.0,
-            range: equipment.location?.range || 0,
-          },
-          make: equipment.make,
-          maximum_trip_duration: equipment.maximum_trip_duration,
-          minimum_trip_duration: equipment.minimum_trip_duration,
-          model: equipment.model,
-          name: equipment.name,
-          notice_period: equipment.notice_period,
-          ownerId: equipment.ownerId,
-          postal_code: equipment.postal_code,
-          rental_price: equipment.rental_price,
-          serial_number: equipment.serial_number,
-          sub_category_id: equipment.subCategoryId,
-          sub_category_name: subCategoryData ? subCategoryData.name : 'Unknown',
-          categoryId: subCategoryData ? subCategoryData.categoryId : null,
-          category_name: subCategoryData ? subCategoryData.categoryName : 'Unknown',
-          equipment_status: equipment.equipment_status,
-          reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
-        };
+      return {
+        _id: equipment._id,
+        average_rating: await getAverageRating(equipment._id),
+        created_at: equipment.createdAt ? equipment.createdAt.toGMTString() : new Date().toGMTString(),
+        delivery_by_owner: equipment.delivery_by_owner,
+        description: equipment.description,
+        equipment_price: equipment.equipment_price,
+        images: equipment.images,
+        isFavorite: userId ? (await User.findById(userId))?.favorite_equipments.includes(equipment._id) || false : false,
+        location: {
+          address: equipment.location?.address || "",
+          lat: equipment.location?.lat || 0.0,
+          lng: equipment.location?.lng || 0.0,
+          range: equipment.location?.range || 0,
+        },
+        make: equipment.make,
+        maximum_trip_duration: equipment.maximum_trip_duration,
+        minimum_trip_duration: equipment.minimum_trip_duration,
+        model: equipment.model,
+        name: equipment.name,
+        notice_period: equipment.notice_period,
+        ownerId: equipment.ownerId,
+        postal_code: equipment.postal_code,
+        rental_price: equipment.rental_price,
+        serial_number: equipment.serial_number,
+        sub_category_id: equipment.subCategoryId,
+        sub_category_name: subCategoryData ? subCategoryData.name : 'Unknown',
+        categoryId: subCategoryData ? subCategoryData.categoryId : null,
+        category_name: subCategoryData ? subCategoryData.categoryName : 'Unknown',
+        equipment_status: equipment.equipment_status,
+        reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
+        reserved_till: await getReservationText(equipment._id),
+      };
       }
 
       return {
@@ -456,6 +494,7 @@ async function getAllEquipments(req, res) {
         category_name: subCategoryDetails.category_name,
         equipment_status: equipment.equipment_status,
         reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
+        reserved_till: await getReservationText(equipment._id),
       };
     }));
     
@@ -551,6 +590,7 @@ async function getMyEquipments(req, res) {
           category_name: category ? category.name : null,
           equipment_status: equipment.equipment_status,
           reason: ["Rejected", "Blocked"].includes(equipment.equipment_status) ? equipment.reason : "",
+          reserved_till: await getReservationText(equipment._id),
         };
       })
     );
@@ -657,6 +697,7 @@ function queryMatches(equipment, query) {
         reason: equipment.reason || '',
         sub_category_fk: equipment.subCategoryId || '',
         conversationId,
+        reserved_till: await getReservationText(equipment._id),
       };
   
       // Returning the response
@@ -898,7 +939,7 @@ async function getUserShop(req, res) {
     const subCategoryMap = await getMultipleSubCategoryDetails(subCategoryIds);
 
     // Map equipment data to match the required format
-    const formattedEquipments = equipments.map(equipment => {
+    const formattedEquipments = await Promise.all(equipments.map(async equipment => {
       const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
       return {
         _id: equipment._id,
@@ -926,9 +967,10 @@ async function getUserShop(req, res) {
         average_rating: owner_average_rating,
         reviews: reviews,
         },
-        conversationId
+        conversationId,
+        reserved_till: await getReservationText(equipment._id),
       };
-    });
+    }));
 
     // Prepare the response
     const response = {
@@ -1009,7 +1051,7 @@ async function getFavoriteEquipments(req, res) {
     const average_rating = await getAverageRating(favoriteEquipments);
 
     // Add "isFavorite" flag and additional details to each equipment
-    const formattedFavoriteEquipments = favoriteEquipments.map(equipment => {
+    const formattedFavoriteEquipments = await Promise.all(favoriteEquipments.map(async equipment => {
       const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
       return {
         _id: equipment._id,
@@ -1035,8 +1077,9 @@ async function getFavoriteEquipments(req, res) {
         sub_category_id: equipment.subCategoryId,
         sub_category_name: subCategoryDetails ? subCategoryDetails.sub_category_name : null,
         isFavorite: user.favorite_equipments.includes(equipment._id), // All these are favorites
+        reserved_till: await getReservationText(equipment._id),
       };
-    });
+    }));
 
     return res.status(200).json({
       message: 'Favorite equipments retrieved successfully',
@@ -1257,6 +1300,7 @@ async function getEquipmentByStatus(req, res) {
         } : null,
         status: equipment.equipment_status,
         isBooked: !!isBooked, // Convert to boolean
+        reserved_till: await getReservationText(equipment._id),
         created_at: equipment.createdAt
       };
     }));
@@ -1325,7 +1369,7 @@ async function searchEquipment(req, res) {
       });
     }
     // Format the response
-    const formattedEquipments = equipments.map(equipment => ({
+    const formattedEquipments = await Promise.all(equipments.map(async equipment => ({
       _id: equipment._id,
       name: equipment.name,
       make: equipment.make,
@@ -1347,8 +1391,9 @@ async function searchEquipment(req, res) {
         profile_image: equipment.ownerId.profile_image
       } : null,
       status: equipment.equipment_status,
+      reserved_till: await getReservationText(equipment._id),
       created_at: equipment.createdAt
-    }));
+    })));
     res.status(200).json({ message: 'Equipment fetched successfully', equipments: formattedEquipments });
   } catch (error) {
     console.error("🔴 Error in searchEquipment:", error);
