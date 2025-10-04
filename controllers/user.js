@@ -13,11 +13,11 @@ const { createAdminNotification } = require('./adminNotificationController');
 // User Signup
 exports.signup = async (req, res) => {
   try {
-    const { name, email, password, profile_image, age, gender, DOB, address, about } = req.body;
+    const { name, email, password, profile_image, age, gender, DOB, address, about, phone_number } = req.body;
 
     // Validate required fields
-    if (!name || !email || !password || !profile_image || !age || !gender || !DOB || !address || !about) {
-      return res.status(400).json({ message: 'All fields are required: name, email, password, profile_image, age, gender, DOB, address, about' });
+    if (!name || !email || !password || !profile_image || !age || !gender || !DOB || !address || !about || !phone_number) {
+      return res.status(400).json({ message: 'All fields are required: name, email, password, profile_image, age, gender, DOB, address, about, phone_number' });
     }
 
     // Validate age
@@ -51,6 +51,7 @@ exports.signup = async (req, res) => {
     const user = new User({
       name,
       email,
+      phone_number,
       password: hashedPassword,
       profile_image,
       age: ageNum,
@@ -230,11 +231,11 @@ exports.verifyUserOtp = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const userId = req.userId;    
-    const { name, email, profile_image, age, gender, DOB, address } = req.body;
+    const { name, email, profile_image, age, gender, DOB, address, phone_number } = req.body;
 
     // Validate required fields
-    if (!name || !email || !profile_image || !age || !gender || !DOB || !address) {
-      return res.status(400).json({ message: 'All fields are required: name, email, profile_image, age, gender, DOB, address' });
+    if (!name || !email || !profile_image || !age || !gender || !DOB || !address || !phone_number) {
+      return res.status(400).json({ message: 'All fields are required: name, email, profile_image, age, gender, DOB, address, phone_number' });
     }
 
     // Validate age
@@ -269,6 +270,7 @@ exports.updateUser = async (req, res) => {
       { 
         name, 
         email,
+        phone_number,
         profile_image,
         age: ageNum,
         gender: gender.toLowerCase(),
@@ -291,6 +293,7 @@ exports.updateUser = async (req, res) => {
       "user": {
         name: user.name,
         email: user.email,
+        phone_number: user.phone_number,
         profile_image: user.profile_image,
         age: user.age,
         gender: user.gender,
@@ -320,6 +323,7 @@ exports.getprofile = async (req, res) => {
       "user": {
         name: user.name,
         email: user.email,
+        phone_number: user.phone_number,
         profile_image: user.profile_image,
         age: user.age,
         gender: user.gender,
@@ -747,6 +751,7 @@ exports.getAllUsers = async (req, res) => {
       return {
         name: user.name,
         email: user.email,
+        phone_number: user.phone_number || "",
         profile_image: user.profile_image,
         age: user.age || "",
         gender: user.gender || "",

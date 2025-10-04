@@ -8,6 +8,7 @@
  * - about (random description)
  * - location.address (random address)
  * - profile_image (default if empty)
+ * - phone_number (random phone number)
  * 
  * Usage:
  * node scripts/migrateUserData.js
@@ -69,6 +70,24 @@ const DEFAULT_PROFILE_IMAGES = [
   "https://via.placeholder.com/150/F7DC6F/FFFFFF?text=User"
 ];
 
+const SAMPLE_PHONE_NUMBERS = [
+  "+1-555-0123",
+  "+1-555-0124", 
+  "+1-555-0125",
+  "+1-555-0126",
+  "+1-555-0127",
+  "+1-555-0128",
+  "+1-555-0129",
+  "+1-555-0130",
+  "+1-555-0131",
+  "+1-555-0132",
+  "+1-555-0133",
+  "+1-555-0134",
+  "+1-555-0135",
+  "+1-555-0136",
+  "+1-555-0137"
+];
+
 /**
  * Generate random integer between min and max (inclusive)
  */
@@ -125,6 +144,7 @@ const otpSchema = new mongoose.Schema({
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, trim: true },
+  phone_number: { type: String, required: true, trim: true },
   password: { type: String, required: true },
   profile_image: { type: String, required: true },
   age: { type: Number, required: true, min: 0, max: 150 },
@@ -162,7 +182,10 @@ async function migrateUsers() {
         { location: { $exists: false } },
         { profile_image: { $exists: false } },
         { profile_image: "" },
-        { profile_image: null }
+        { profile_image: null },
+        { phone_number: { $exists: false } },
+        { phone_number: "" },
+        { phone_number: null }
       ]
     });
 
@@ -186,6 +209,7 @@ async function migrateUsers() {
         const DOB = generateDOBFromAge(age);
         const about = randomChoice(SAMPLE_ABOUT_DESCRIPTIONS);
         const address = randomChoice(SAMPLE_ADDRESSES);
+        const phone_number = randomChoice(SAMPLE_PHONE_NUMBERS);
         const profile_image = user.profile_image && user.profile_image.trim() !== "" 
           ? user.profile_image 
           : randomChoice(DEFAULT_PROFILE_IMAGES);
@@ -196,6 +220,7 @@ async function migrateUsers() {
           gender: user.gender || gender,
           DOB: user.DOB || DOB,
           about: user.about || about,
+          phone_number: user.phone_number || phone_number,
           profile_image: profile_image,
           location: user.location || {
             address: address,
@@ -248,7 +273,8 @@ async function verifyMigration() {
       DOB: { $exists: true, $ne: null },
       about: { $exists: true, $ne: null },
       location: { $exists: true, $ne: null },
-      profile_image: { $exists: true, $ne: null, $ne: "" }
+      profile_image: { $exists: true, $ne: null, $ne: "" },
+      phone_number: { $exists: true, $ne: null, $ne: "" }
     });
 
     console.log(`📊 Total users: ${totalUsers}`);
