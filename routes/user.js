@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/user');
 const appSettingsController = require('../controllers/appSettingsController');
+const verificationController = require('../controllers/verificationController');
 const { userMiddleware } = require("../middleWares/user");
 
 // ---------------------- Public Routes ----------------------
@@ -27,6 +28,9 @@ router.post('/reset_password', userController.resetPassword);
 // Get public app settings (URLs, share message, etc.)
 router.get('/app-settings', appSettingsController.getPublicAppSettings);
 
+// Stripe Identity Verification Webhook (must be public for Stripe to call)
+router.post('/verification/webhook', express.raw({ type: 'application/json' }), verificationController.handleVerificationWebhook);
+
 // ---------------------- Protected User Routes ----------------------
 
 // Apply user middleware to user routes
@@ -37,7 +41,11 @@ router.get('/profile', userController.getprofile);
 // Update user profile
 router.put('/update', userController.updateUser);
 
-// Resend ID card selfie for verification
+// Stripe Identity Verification Routes
+router.post('/verification/initiate', verificationController.initiateVerification);
+router.get('/verification/status', verificationController.getVerificationStatus);
+
+// Resend ID card selfie for verification (DEPRECATED - will be removed)
 router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
 
 // Request account reactivation for blocked users

@@ -144,7 +144,12 @@ exports.login = async (req, res) => {
       isUserVerified: user.isUserVerified, 
       rejectionReason: user.rejection_reason,
       isBlocked: user.is_blocked,
-      blockedReason: user.block_reason
+      blockedReason: user.block_reason,
+      stripe_verification: {
+        status: user.stripe_verification?.status || 'not_verified',
+        verified_at: user.stripe_verification?.verified_at || '',
+        fee_paid: user.stripe_verification?.verification_fee_paid || false
+      }
     });
   } catch (error) {
     res.status(500).json({ message: 'Error in login', error });
@@ -332,7 +337,13 @@ exports.getprofile = async (req, res) => {
         isUserVerified: user.isUserVerified,
         is_blocked: user.is_blocked,
         block_reason: user.block_reason,
-        fcm_token: user.fcm_token
+        fcm_token: user.fcm_token,
+        stripe_verification: {
+          status: user.stripe_verification?.status || 'not_verified',
+          verified_at: user.stripe_verification?.verified_at || '',
+          fee_paid: user.stripe_verification?.verification_fee_paid || false,
+          attempts_count: user.stripe_verification?.attempts?.length || 0
+        }
       } 
     });
   } catch (error) {
@@ -749,6 +760,7 @@ exports.getAllUsers = async (req, res) => {
       
       // Return only required fields
       return {
+        _id: user._id,
         name: user.name,
         email: user.email,
         phone_number: user.phone_number || "",
@@ -760,7 +772,17 @@ exports.getAllUsers = async (req, res) => {
         isUserVerified: user.isUserVerified,
         is_blocked: user.is_blocked,
         block_reason: user.block_reason,
-        fcm_token: user.fcm_token || ""
+        fcm_token: user.fcm_token || "",
+        equipment_count: equipmentCount,
+        total_rentals: totalRentals,
+        wallet_amount: walletAmount,
+        stripe_verification: {
+          status: user.stripe_verification?.status || 'not_verified',
+          verified_at: user.stripe_verification?.verified_at || '',
+          attempts_count: user.stripe_verification?.attempts?.length || 0,
+          last_attempt_at: user.stripe_verification?.last_attempt_at || ''
+        },
+        createdAt: user.createdAt
       };
     }));
 

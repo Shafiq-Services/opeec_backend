@@ -42,6 +42,9 @@ exports.getAppSettings = async (req, res) => {
         share_message: settings.share_message,
         stripe_public_key: stripeKey.publishableKey,
         stripe_secret_key: stripeKey.secretKey,
+        verification_fee: settings.verification_fee || 2.00,
+        verification_title: settings.verification_title || 'Identity Verification Required',
+        verification_description: settings.verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.',
         created_at: settings.createdAt,
         updated_at: settings.updatedAt
       }
@@ -66,7 +69,10 @@ exports.updateAppSettings = async (req, res) => {
       ios_store_url,
       share_message,
       stripe_public_key,
-      stripe_secret_key
+      stripe_secret_key,
+      verification_fee,
+      verification_title,
+      verification_description
     } = req.body;
 
     // Validate required fields
@@ -140,6 +146,12 @@ exports.updateAppSettings = async (req, res) => {
       settings.android_store_url = android_store_url;
       settings.ios_store_url = ios_store_url;
       settings.share_message = share_message;
+      
+      // Update verification settings if provided
+      if (verification_fee !== undefined) settings.verification_fee = verification_fee;
+      if (verification_title !== undefined) settings.verification_title = verification_title;
+      if (verification_description !== undefined) settings.verification_description = verification_description;
+      
       await settings.save();
     } else {
       // Create new settings
@@ -148,7 +160,10 @@ exports.updateAppSettings = async (req, res) => {
         terms_conditions_link,
         android_store_url,
         ios_store_url,
-        share_message
+        share_message,
+        verification_fee: verification_fee || 2.00,
+        verification_title: verification_title || 'Identity Verification Required',
+        verification_description: verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.'
       });
       await settings.save();
     }
@@ -222,6 +237,11 @@ exports.getPublicAppSettings = async (req, res) => {
         android_store_url: settings.android_store_url,
         ios_store_url: settings.ios_store_url,
         share_message: settings.share_message,
+        verification_info: {
+          fee: settings.verification_fee || 2.00,
+          title: settings.verification_title || 'Identity Verification Required',
+          description: settings.verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.'
+        },
         created_at: settings.createdAt,
         updated_at: settings.updatedAt
       }

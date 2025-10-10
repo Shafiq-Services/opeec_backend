@@ -14,6 +14,28 @@ const otpSchema = new mongoose.Schema({
   isOtpVerified: { type: Boolean, default: false }
 }, { _id: false });
 
+// Stripe Verification Schema
+const stripeVerificationSchema = new mongoose.Schema({
+  status: { 
+    type: String, 
+    enum: ['not_verified', 'pending', 'verified', 'failed'],
+    default: 'not_verified'
+  },
+  session_id: { type: String, default: "" },
+  verification_reference: { type: String, default: "" },
+  attempts: [{
+    session_id: { type: String },
+    status: { type: String },
+    created_at: { type: Date },
+    completed_at: { type: Date },
+    failure_reason: { type: String }
+  }],
+  verified_at: { type: Date, default: "" },
+  last_attempt_at: { type: Date, default: "" },
+  verification_fee_paid: { type: Boolean, default: false },
+  payment_intent_id: { type: String, default: "" }
+}, { _id: false });
+
 // User Schema
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -32,7 +54,8 @@ const userSchema = new mongoose.Schema({
   is_blocked: { type: Boolean, default: false },
   block_reason: { type: String, default: "" },
   fcm_token: { type: String, default: "" },
-  favorite_equipments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Equipment' }]
+  favorite_equipments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Equipment' }],
+  stripe_verification: { type: stripeVerificationSchema, default: () => ({}) }
 }, { 
   timestamps: true // Replaces created_at with createdAt/updatedAt
 });

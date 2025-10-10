@@ -25,6 +25,22 @@ const appSettingsSchema = new mongoose.Schema({
     type: String,
     default: '🎉 Check out OPEEC - The ultimate equipment rental app!\\n\\n📱 Download now: {store_url}\\n\\n#OPEEC #EquipmentRental #RentAnything',
     trim: true
+  },
+  // Stripe Identity Verification Settings
+  verification_fee: {
+    type: Number,
+    default: 2.00, // $2.00 in dollars
+    min: 0
+  },
+  verification_title: {
+    type: String,
+    default: 'Identity Verification Required',
+    trim: true
+  },
+  verification_description: {
+    type: String,
+    default: 'To ensure a safe and secure rental experience, we need to verify your identity. This is a one-time process.',
+    trim: true
   }
 }, { 
   timestamps: true // Using automatic timestamps instead of manual handling

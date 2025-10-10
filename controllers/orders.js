@@ -120,6 +120,22 @@ exports.addOrder = async (req, res) => {
     const equipment = await Equipment.findById(equipmentId);
     if (!equipment) return res.status(404).json({ message: 'Equipment not found.' });
 
+    // CHECK STRIPE IDENTITY VERIFICATION - Required to rent equipment
+    const user = await User.findById(userId).select('stripe_verification');
+    const verificationStatus = user?.stripe_verification?.status || 'not_verified';
+    
+    if (verificationStatus !== 'verified') {
+      console.log(`❌ User ${userId} attempted to rent without verification. Status: ${verificationStatus}`);
+      
+      return res.status(403).json({ 
+        message: 'Identity verification required to rent equipment',
+        error_code: 'verification_required',
+        verification_status: verificationStatus,
+        require_verification: true,
+        verification_url: '/user/verification/initiate'
+      });
+    }
+
     // Backend validation: Verify pricing calculations match expected values
     try {
       const { calculateOrderFees } = require('../utils/feeCalculations');
@@ -179,19 +195,19 @@ exports.addOrder = async (req, res) => {
     const savedOrder = await newOrder.save();
 
     // Get user and equipment details for notification
-    const user = await User.findById(userId).select('name email');
+    const userDetails = await User.findById(userId).select('name email');
     
     // Send admin notification for new rental booking
     await createAdminNotification(
       'rental_booking',
-      `New rental booking for "${equipment.name}" by ${user.name}`,
+      `New rental booking for "${equipment.name}" by ${userDetails.name}`,
       {
         userId: userId,
         equipmentId: equipmentId,
         orderId: savedOrder._id,
         data: {
-          userName: user.name,
-          userEmail: user.email,
+          userName: userDetails.name,
+          userEmail: userDetails.email,
           equipmentName: equipment.name,
           equipmentOwner: equipment.ownerId,
           startDate: start_date,

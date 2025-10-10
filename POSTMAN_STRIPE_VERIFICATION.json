@@ -1,0 +1,284 @@
+{
+  "info": {
+    "name": "OPEEC - Stripe Identity Verification",
+    "description": "Complete API collection for Stripe Identity verification testing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "url",
+      "value": "http://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "user_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "User Verification",
+      "item": [
+        {
+          "name": "Initiate Verification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"return_url\": \"myapp://verification-complete\",\n  \"payment_method_id\": \"pm_card_visa\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/verification/initiate",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verification", "initiate"]
+            },
+            "description": "**When to use:**\n- User clicks 'Verify Identity' button\n- First rental attempt triggers verification\n- Retry after failed verification\n\n**What it does:**\n- Charges $2 verification fee automatically\n- Creates Stripe Identity session\n- Returns session URL for frontend\n\n**Response fields:**\n- `session_url`: Open this in WebView/browser\n- `session_id`: Track this session\n- `verification_info`: Display fee, title, description to user"
+          }
+        },
+        {
+          "name": "Get Verification Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user/verification/status",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verification", "status"]
+            },
+            "description": "**When to use:**\n- After returning from Stripe verification\n- Profile screen to show status\n- Check verification before showing rental options\n\n**Response:**\n- `verification_status`: not_verified, pending, verified, failed\n- `verified_at`: When verification completed\n- `attempts`: History of all attempts\n- `fee_paid`: Whether fee was paid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Modified APIs",
+      "item": [
+        {
+          "name": "Login (with verification status)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\",\n  \"fcm_token\": \"device_fcm_token_here\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/login",
+              "host": ["{{base_url}}"],
+              "path": ["user", "login"]
+            },
+            "description": "**Updated Response:**\nNow includes `stripe_verification` object:\n```json\n{\n  \"stripe_verification\": {\n    \"status\": \"not_verified\",\n    \"verified_at\": null,\n    \"fee_paid\": false\n  }\n}\n```\n\n**Use this to:**\n- Show verification banner if not verified\n- Hide rental features until verified"
+          }
+        },
+        {
+          "name": "Get Profile (with verification status)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user/profile",
+              "host": ["{{base_url}}"],
+              "path": ["user", "profile"]
+            },
+            "description": "**Updated Response:**\nNow includes detailed `stripe_verification` object:\n```json\n{\n  \"stripe_verification\": {\n    \"status\": \"verified\",\n    \"verified_at\": \"2024-01-15T10:30:00Z\",\n    \"fee_paid\": true,\n    \"attempts_count\": 1\n  }\n}\n```\n\n**Use this for:**\n- Profile screen verification badge\n- Display verification status to user"
+          }
+        },
+        {
+          "name": "Create Order (verification check)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"equipmentId\": \"507f1f77bcf86cd799439011\",\n  \"start_date\": \"2024-01-20\",\n  \"end_date\": \"2024-01-25\",\n  \"address\": \"123 Main St\",\n  \"lat\": 40.7128,\n  \"lng\": -74.0060,\n  \"rental_fee\": 100,\n  \"platform_fee\": 10,\n  \"tax_amount\": 13,\n  \"insurance_amount\": 9,\n  \"deposit_amount\": 20,\n  \"total_amount\": 132,\n  \"subtotal\": 119,\n  \"is_insurance\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/order/add",
+              "host": ["{{base_url}}"],
+              "path": ["order", "add"]
+            },
+            "description": "**Modified Behavior:**\nNow checks verification status before creating order.\n\n**If not verified (403 response):**\n```json\n{\n  \"message\": \"Identity verification required to rent equipment\",\n  \"error_code\": \"verification_required\",\n  \"verification_status\": \"not_verified\",\n  \"require_verification\": true,\n  \"verification_url\": \"/user/verification/initiate\"\n}\n```\n\n**Frontend handling:**\n```javascript\ntry {\n  await createOrder(data);\n} catch (error) {\n  if (error.error_code === 'verification_required') {\n    // Show verification dialog\n    navigateToVerification();\n  }\n}\n```"
+          }
+        },
+        {
+          "name": "Get App Settings (with verification info)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/user/app-settings",
+              "host": ["{{base_url}}"],
+              "path": ["user", "app-settings"]
+            },
+            "description": "**Updated Response:**\nNow includes `verification_info`:\n```json\n{\n  \"verification_info\": {\n    \"fee\": 2.00,\n    \"title\": \"Identity Verification Required\",\n    \"description\": \"To ensure a safe and secure rental experience...\"\n  }\n}\n```\n\n**Use this to:**\n- Display verification fee to user\n- Show description in verification dialog"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Verification",
+      "item": [
+        {
+          "name": "Get Users by Verification Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/users/verification-filter?status=pending",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users", "verification-filter"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "description": "Options: not_verified, pending, verified, failed, all"
+                }
+              ]
+            },
+            "description": "**Filter Options:**\n- `not_verified`: Users who haven't started\n- `pending`: Currently in verification process\n- `verified`: Successfully verified\n- `failed`: Verification failed\n- `all`: All users\n\n**Use cases:**\n- Monitor pending verifications\n- Track completion rates\n- Identify failed verifications"
+          }
+        },
+        {
+          "name": "Get User Verification History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/users/{{user_id}}/verification-history",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users", "{{user_id}}", "verification-history"]
+            },
+            "description": "**Response includes:**\n- Complete verification history\n- All attempts with timestamps\n- Failure reasons if any\n- Payment information\n\n**Use for:**\n- Customer support\n- Investigating verification issues\n- Viewing user's verification journey"
+          }
+        },
+        {
+          "name": "Get All Users (with verification status)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/users/all?status=all",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users", "all"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all"
+                }
+              ]
+            },
+            "description": "**Updated Response:**\nEach user now includes:\n```json\n{\n  \"stripe_verification\": {\n    \"status\": \"verified\",\n    \"verified_at\": \"2024-01-15T10:30:00Z\",\n    \"attempts_count\": 1,\n    \"last_attempt_at\": \"2024-01-15T10:25:00Z\"\n  }\n}\n```"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Testing",
+      "item": [
+        {
+          "name": "Simulate Webhook (Test Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Stripe-Signature",
+                "value": "t=1234567890,v1=test_signature",
+                "type": "text",
+                "description": "In production, this comes from Stripe"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_test_123\",\n  \"object\": \"event\",\n  \"type\": \"identity.verification_session.verified\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"vs_1234567890\",\n      \"status\": \"verified\",\n      \"metadata\": {\n        \"userId\": \"{{user_id}}\"\n      }\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/user/verification/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["user", "verification", "webhook"]
+            },
+            "description": "**⚠️ FOR TESTING ONLY**\n\nIn production, only Stripe calls this endpoint.\n\nFor local testing, use Stripe CLI:\n```bash\nstripe listen --forward-to localhost:5001/user/verification/webhook\n```\n\n**Event Types:**\n- `identity.verification_session.verified` - Success\n- `identity.verification_session.requires_input` - More info needed\n- `identity.verification_session.canceled` - Failed/canceled"
+          }
+        }
+      ]
+    }
+  ]
+}
+
+
+
+
