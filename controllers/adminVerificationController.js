@@ -49,7 +49,7 @@ const getUsersByVerificationStatus = async (req, res) => {
   try {
     const { status } = req.query;
 
-    const validStatuses = ['not_verified', 'pending', 'verified', 'failed', 'all'];
+    const validStatuses = ['not_verified', 'pending', 'verified', 'failed', 'blocked', 'all'];
     
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({
@@ -60,7 +60,9 @@ const getUsersByVerificationStatus = async (req, res) => {
 
     // Build query
     let query = {};
-    if (status !== 'all') {
+    if (status === 'blocked') {
+      query['is_blocked'] = true;
+    } else if (status !== 'all') {
       query['stripe_verification.status'] = status;
     }
 
