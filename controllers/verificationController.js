@@ -21,15 +21,10 @@ const { sendEventToUser } = require('../utils/socketService');
 const initiateVerification = async (req, res) => {
   try {
     const userId = req.userId; // From JWT middleware
-    const { return_url, payment_method_id } = req.body;
+    // No body parameters needed - frontend handles payment, backend uses static return_url
 
-    // Validate payment method
-    if (!payment_method_id) {
-      return res.status(400).json({
-        message: 'Payment method is required for verification fee',
-        error_code: 'payment_method_missing'
-      });
-    }
+    // Note: Frontend handles $2 payment via Stripe bottom sheet
+    // Backend only creates verification session with hardcoded return_url
 
     // Get user
     const user = await User.findById(userId);
@@ -69,49 +64,30 @@ const initiateVerification = async (req, res) => {
     const verificationTitle = settings.verification_title || 'Identity Verification Required';
     const verificationDescription = settings.verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.';
 
-    console.log(`💳 Charging verification fee: $${verificationFee} for user: ${userId}`);
+    console.log(`💳 Frontend already handled verification fee: $${verificationFee} for user: ${userId}`);
 
-    // Step 1: Charge verification fee
-    let paymentIntent;
-    try {
-      paymentIntent = await chargeVerificationFee(verificationFee, userId, payment_method_id);
-      
-      if (paymentIntent.status !== 'succeeded') {
-        return res.status(400).json({
-          message: 'Payment failed for verification fee',
-          error: 'payment_failed',
-          payment_status: paymentIntent.status
-        });
-      }
-
-      console.log(`✅ Verification fee paid: ${paymentIntent.id}`);
-    } catch (paymentError) {
-      console.error('❌ Payment error:', paymentError);
-      return res.status(400).json({
-        message: 'Payment failed for verification fee',
-        error: paymentError.message,
-        error_code: 'payment_failed'
-      });
-    }
-
-    // Step 2: Create Stripe Identity verification session
+    // Step 1: Create Stripe Identity verification session (payment handled by frontend)
+    // Dynamic return URL - works for both local and production
+    const baseUrl = process.env.BASE_URL || process.env.BACKEND_URL || 'https://opeec.azurewebsites.net';
+    const staticReturnUrl = `${baseUrl}/verification-complete`;
+    
+    console.log(`🔗 Using return URL: ${staticReturnUrl}`);
+    
     let session;
     try {
-      session = await createVerificationSession(userId, return_url);
+      session = await createVerificationSession(userId, staticReturnUrl);
       console.log(`✅ Verification session created: ${session.id}`);
     } catch (sessionError) {
       console.error('❌ Session creation error:', sessionError);
       
-      // Payment was taken but session failed - we should refund or note this
       return res.status(500).json({
         message: 'Failed to create verification session',
         error: sessionError.message,
-        payment_intent_id: paymentIntent.id,
-        note: 'Payment was processed. Please contact support.'
+        error_code: 'session_creation_failed'
       });
     }
 
-    // Step 3: Update user verification status
+    // Step 2: Update user verification status
     if (!user.stripe_verification) {
       user.stripe_verification = {};
     }
@@ -119,8 +95,8 @@ const initiateVerification = async (req, res) => {
     user.stripe_verification.status = 'pending';
     user.stripe_verification.session_id = session.id;
     user.stripe_verification.last_attempt_at = new Date();
-    user.stripe_verification.verification_fee_paid = true;
-    user.stripe_verification.payment_intent_id = paymentIntent.id;
+    user.stripe_verification.verification_fee_paid = true; // Frontend handled payment
+    user.stripe_verification.payment_intent_id = ''; // No backend payment intent
 
     // Add to attempts array
     if (!user.stripe_verification.attempts) {
@@ -146,7 +122,7 @@ const initiateVerification = async (req, res) => {
       verification_fee: {
         amount: verificationFee,
         currency: 'usd',
-        payment_intent_id: paymentIntent.id
+        payment_intent_id: '' // Frontend handled payment
       },
       verification_info: {
         title: verificationTitle,
