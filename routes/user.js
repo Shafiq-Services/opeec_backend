@@ -44,6 +44,7 @@ router.put('/update', userController.updateUser);
 // Stripe Identity Verification Routes
 router.post('/verification/initiate', verificationController.initiateVerification);
 router.get('/verification/status', verificationController.getVerificationStatus);
+router.get('/verification/history', verificationController.getUserVerificationHistory);
 
 // Resend ID card selfie for verification (DEPRECATED - will be removed)
 router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);

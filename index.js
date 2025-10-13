@@ -25,6 +25,7 @@ const percentageSettings = require('./routes/percentageSettings');
 const walletRoutes = require('./routes/wallet.routes');
 const withdrawalRoutes = require('./routes/withdrawal.routes');
 const adminWithdrawalRoutes = require('./routes/admin.withdrawal.routes');
+const verificationRedirectController = require('./controllers/verificationRedirectController');
 const { initializeSocket, sendEventToUser, connectedUsers } = require("./utils/socketService");
 const { createAdminNotification } = require('./controllers/adminNotificationController');
 
@@ -87,6 +88,10 @@ app.use('/admin/withdrawals', adminWithdrawalRoutes);
 
 // Base route
 app.get('/', (req, res) => res.send('Hello from Node API server'));
+
+// ---------------------- Stripe Identity Verification Redirect (ROOT LEVEL) ----------------------
+// GET /verification-complete - Professional handler for all verification redirect scenarios
+app.get('/verification-complete', verificationRedirectController.handleVerificationRedirect);
 
 // Handle 404 errors
 app.use((req, res) => res.status(404).send('Route not found'));

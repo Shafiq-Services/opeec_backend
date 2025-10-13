@@ -42,7 +42,7 @@ const initiateVerification = async (req, res) => {
       });
     }
 
-    // Check if verification is pending
+    // Check if verification is pending (don't allow multiple concurrent sessions)
     if (user.stripe_verification?.status === 'pending') {
       return res.status(200).json({
         message: 'Verification is already in progress',
@@ -51,6 +51,10 @@ const initiateVerification = async (req, res) => {
         pending: true
       });
     }
+
+    // Allow new verification attempt if status is 'failed' or 'not_verified'
+    // This will reset status to 'pending' for new verification attempt
+    console.log(`🔄 Starting new verification attempt. Previous status: ${user.stripe_verification?.status || 'none'}`);
 
     // Get verification settings from AppSettings
     let settings = await AppSettings.findOne();
@@ -67,9 +71,9 @@ const initiateVerification = async (req, res) => {
     console.log(`💳 Frontend already handled verification fee: $${verificationFee} for user: ${userId}`);
 
     // Step 1: Create Stripe Identity verification session (payment handled by frontend)
-    // Dynamic return URL - works for both local and production
-    const baseUrl = process.env.BASE_URL || process.env.BACKEND_URL || 'https://opeec.azurewebsites.net';
-    const staticReturnUrl = `${baseUrl}/verification-complete`;
+    // Dynamic return URL - works for both local and production (ROOT LEVEL)
+    const baseUrl = process.env.BASE_URL || process.env.BACKEND_URL || 'http://localhost:5005';
+    const staticReturnUrl = `${baseUrl}/verification-complete`; // ROOT LEVEL - no /user prefix
     
     console.log(`🔗 Using return URL: ${staticReturnUrl}`);
     
@@ -363,9 +367,94 @@ const getVerificationStatus = async (req, res) => {
   }
 };
 
+/**
+ * Get User Verification History Timeline
+ * GET /user/verification/history
+ * 
+ * Returns complete verification history for the authenticated user
+ * Includes all attempts, statuses, timestamps in timeline format
+ */
+const getUserVerificationHistory = async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    console.log(`📋 Getting verification history for user: ${userId}`);
+    
+    const user = await User.findById(userId).select('stripe_verification isUserVerified rejection_reason');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const verification = user.stripe_verification || {};
+    const verificationAttempts = verification.attempts || [];
+    
+    // Get app settings for fee info
+    const settings = await AppSettings.findOne().select('verification_fee verification_title verification_description');
+    const verificationFee = settings?.verification_fee || 2.00;
+    
+    // Format attempts for timeline display (simplified)
+    const attempts = verificationAttempts.map((attempt, index) => ({
+      attempt_number: index + 1,
+      session_id: attempt.session_id || '',
+      status: attempt.status || 'pending',
+      started_at: attempt.started_at || attempt.created_at || ''
+    }));
+
+    // Sort attempts by most recent first
+    attempts.sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+
+    // Current status info
+    const currentStatus = verification.status || 'not_verified';
+    
+    // Status messages for UI
+    const statusMessages = {
+      'not_verified': 'Identity verification not started',
+      'pending': 'Verification in progress - please wait for review',
+      'verified': 'Identity successfully verified',
+      'failed': 'Verification failed - please try again',
+      'requires_input': 'Additional information required'
+    };
+
+    const response = {
+      current_status: currentStatus,
+      current_status_message: statusMessages[currentStatus] || 'Unknown status',
+      can_retry: ['failed', 'not_verified'].includes(currentStatus),
+      next_steps: getNextStepsMessage(currentStatus),
+      attempts
+    };
+
+    console.log(`✅ Verification history retrieved for user ${userId}: ${attempts.length} attempts`);
+    
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error('❌ Error getting verification history:', error);
+    res.status(500).json({ 
+      message: 'Error retrieving verification history', 
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Get next steps message based on current status
+ */
+function getNextStepsMessage(status) {
+  const nextSteps = {
+    'not_verified': 'Start your identity verification to rent equipment',
+    'pending': 'Your verification is being reviewed. You\'ll receive a notification once complete.',
+    'verified': 'You\'re all set! You can now rent equipment and access all features.',
+    'failed': 'Please retry verification with clearer documents or contact support for help.',
+    'requires_input': 'Please complete the verification process with additional information.'
+  };
+  
+  return nextSteps[status] || 'Check your verification status in the app.';
+}
+
 module.exports = {
   initiateVerification,
   handleVerificationWebhook,
-  getVerificationStatus
+  getVerificationStatus,
+  getUserVerificationHistory
 };
 

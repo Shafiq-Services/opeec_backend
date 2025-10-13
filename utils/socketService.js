@@ -156,6 +156,55 @@ const initializeSocket = (server) => {
       console.log(`User ${userId} left conversation ${conversationId}`);
     });
 
+    // ---------------------- VERIFICATION STATUS REQUESTS ----------------------
+    
+    /**
+     * Handle verification status request from app
+     * App can emit 'requestVerificationStatus' to get current status
+     */
+    socket.on("requestVerificationStatus", async () => {
+      try {
+        console.log(`📱 User ${userId} requested verification status via socket`);
+        
+        const User = require("../models/user");
+        const user = await User.findById(userId).select('stripe_verification isUserVerified');
+        
+        if (!user) {
+          socket.emit("verificationStatusResponse", {
+            error: "User not found",
+            status: "error"
+          });
+          return;
+        }
+
+        const verificationData = user.stripe_verification || {};
+        
+        // Prepare response with current verification status
+        const response = {
+          verification_status: verificationData.status || 'not_verified',
+          verified_at: verificationData.verified_at || '',
+          session_id: verificationData.session_id || '',
+          last_attempt_at: verificationData.last_attempt_at || '',
+          fee_paid: verificationData.verification_fee_paid || false,
+          attempts_count: verificationData.attempts ? verificationData.attempts.length : 0,
+          is_legacy_verified: user.isUserVerified || false, // Backward compatibility
+          timestamp: new Date().toISOString()
+        };
+
+        // Send current status back to app
+        socket.emit("verificationStatusResponse", response);
+        
+        console.log(`✅ Verification status sent to user ${userId}:`, response.verification_status);
+        
+      } catch (error) {
+        console.error(`❌ Error getting verification status for user ${userId}:`, error);
+        socket.emit("verificationStatusResponse", {
+          error: "Failed to get verification status",
+          status: "error"
+        });
+      }
+    });
+
     // Typing indicator events - only frontend involvement needed
     socket.on("startTyping", async ({ conversationId, receiverId }) => {
       if (!conversationId || !receiverId) return;
