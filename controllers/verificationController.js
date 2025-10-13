@@ -7,6 +7,7 @@ const {
   constructWebhookEvent
 } = require('../utils/stripeIdentity');
 const { sendEventToUser } = require('../utils/socketService');
+const { createTransaction } = require('../utils/walletService');
 
 /**
  * Initiate Identity Verification
@@ -114,7 +115,29 @@ const initiateVerification = async (req, res) => {
     });
 
     await user.save();
-
+    
+    // 💰 LOG VERIFICATION FEE IN WALLET TRANSACTION HISTORY
+    try {
+      await createTransaction({
+        sellerId: userId,
+        type: 'VERIFICATION_FEE',
+        amount: -verificationFee, // Negative because it's a charge/expense
+        description: `Identity Verification Fee - ${verificationTitle}`,
+        orderId: null,
+        withdrawalRequestId: null,
+        metadata: {
+          session_id: session.id,
+          verification_status: 'pending',
+          payment_method: 'stripe_frontend',
+          admin_notes: 'Stripe Identity verification fee charged'
+        }
+      });
+      console.log(`💰 Verification fee ($${verificationFee}) logged in wallet for user: ${userId}`);
+    } catch (walletError) {
+      console.error('⚠️ Failed to log verification fee in wallet (verification still proceeded):', walletError);
+      // Don't fail the verification process if wallet logging fails
+    }
+    
     console.log(`✅ User verification initiated: ${userId}`);
 
     // Return session details to frontend

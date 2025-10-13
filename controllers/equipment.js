@@ -134,6 +134,29 @@ const addEquipment = async (req, res) => {
   } = req.body;
 
   try {
+    const userId = req.userId; // JWT user ID
+    
+    // 🔒 VERIFICATION CHECK: Prevent non-verified users from adding equipment
+    const user = await User.findById(userId).select('stripe_verification name');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const verificationStatus = user.stripe_verification?.status || 'not_verified';
+    
+    if (verificationStatus !== 'verified') {
+      return res.status(403).json({ 
+        message: 'Identity verification required to list equipment',
+        error_code: 'verification_required_for_equipment',
+        verification_status: verificationStatus,
+        require_verification: true,
+        verification_url: '/user/verification/initiate',
+        user_guidance: 'Please complete identity verification before listing equipment for rent'
+      });
+    }
+
+    console.log(`✅ Verified user ${user.name} (${userId}) adding equipment: ${name}`);
+
     // Ensure delivery_by_owner is provided and is a valid boolean
     if (delivery_by_owner === undefined || delivery_by_owner === null) {
       return res.status(400).json({ message: 'delivery_by_owner is required.' });
