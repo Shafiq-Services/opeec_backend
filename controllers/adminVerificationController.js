@@ -58,12 +58,19 @@ const getUsersByVerificationStatus = async (req, res) => {
       });
     }
 
-    // Build query
+    // Build query - exclude blocked users from verification status filters
     let query = {};
     if (status === 'blocked') {
       query['is_blocked'] = true;
-    } else if (status !== 'all') {
-      query['stripe_verification.status'] = status;
+    } else if (status === 'all') {
+      // For 'all', show ALL users including blocked users
+      query = {};  // No filter - show everyone
+    } else {
+      // For verification status filters, exclude blocked users AND filter by verification status
+      query = {
+        'stripe_verification.status': status,
+        'is_blocked': { $ne: true }  // Exclude blocked users
+      };
     }
 
     const users = await User.find(query)
