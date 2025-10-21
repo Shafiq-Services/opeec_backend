@@ -15,9 +15,9 @@ exports.signup = async (req, res) => {
   try {
     const { name, email, password, profile_image, age, gender, DOB, address, about, phone_number } = req.body;
 
-    // Validate required fields
-    if (!name || !email || !password || !profile_image || !age || !gender || !DOB || !address || !about || !phone_number) {
-      return res.status(400).json({ message: 'All fields are required: name, email, password, profile_image, age, gender, DOB, address, about, phone_number' });
+    // Validate required fields (DOB and about are optional)
+    if (!name || !email || !password || !profile_image || !age || !gender || !address || !phone_number) {
+      return res.status(400).json({ message: 'Required fields: name, email, password, profile_image, age, gender, address, phone_number' });
     }
 
     // Validate age
@@ -32,10 +32,12 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ message: 'Gender must be male, female, or other' });
     }
 
-    // Validate DOB format
-    const dobDate = new Date(DOB);
-    if (isNaN(dobDate.getTime())) {
-      return res.status(400).json({ message: 'DOB must be a valid date' });
+    // Validate DOB format (only if provided)
+    if (DOB && DOB.trim() !== "") {
+      const dobDate = new Date(DOB);
+      if (isNaN(dobDate.getTime())) {
+        return res.status(400).json({ message: 'DOB must be a valid date' });
+      }
     }
 
     // Check if the email already exists
@@ -56,8 +58,8 @@ exports.signup = async (req, res) => {
       profile_image,
       age: ageNum,
       gender: gender.toLowerCase(),
-      DOB,
-      about,
+      DOB: DOB || "",  // Optional - empty string by default
+      about: about || "",  // Optional - empty string by default
       location: {
         address,
         lat: 0.0,
@@ -238,9 +240,9 @@ exports.updateUser = async (req, res) => {
     const userId = req.userId;    
     const { name, email, profile_image, age, gender, DOB, address, phone_number } = req.body;
 
-    // Validate required fields
-    if (!name || !email || !profile_image || !age || !gender || !DOB || !address || !phone_number) {
-      return res.status(400).json({ message: 'All fields are required: name, email, profile_image, age, gender, DOB, address, phone_number' });
+    // Validate required fields (DOB is optional)
+    if (!name || !email || !profile_image || !age || !gender || !address || !phone_number) {
+      return res.status(400).json({ message: 'Required fields: name, email, profile_image, age, gender, address, phone_number' });
     }
 
     // Validate age
@@ -255,10 +257,12 @@ exports.updateUser = async (req, res) => {
       return res.status(400).json({ message: 'Gender must be male, female, or other' });
     }
 
-    // Validate DOB format
-    const dobDate = new Date(DOB);
-    if (isNaN(dobDate.getTime())) {
-      return res.status(400).json({ message: 'DOB must be a valid date' });
+    // Validate DOB format (only if provided)
+    if (DOB && DOB.trim() !== "") {
+      const dobDate = new Date(DOB);
+      if (isNaN(dobDate.getTime())) {
+        return res.status(400).json({ message: 'DOB must be a valid date' });
+      }
     }
 
     // Check if email is being changed and if it's already taken by another user
@@ -279,7 +283,7 @@ exports.updateUser = async (req, res) => {
         profile_image,
         age: ageNum,
         gender: gender.toLowerCase(),
-        DOB,
+        DOB: DOB || "",  // Optional - empty string by default
         location: {
           address,
           lat: 0.0,
@@ -634,9 +638,7 @@ exports.updateUserProfileByAdmin = async (req, res) => {
     if (!gender) {
       return res.status(400).json({ message: 'Gender is required' });
     }
-    if (!DOB) {
-      return res.status(400).json({ message: 'Date of Birth (DOB) is required' });
-    }
+    // DOB is optional - no validation required
     if (!address) {
       return res.status(400).json({ message: 'Address is required' });
     }
@@ -659,10 +661,12 @@ exports.updateUserProfileByAdmin = async (req, res) => {
       return res.status(400).json({ message: 'Gender must be male, female, or other' });
     }
 
-    // Validate DOB format (YYYY-MM-DD)
-    const dobDate = new Date(DOB);
-    if (isNaN(dobDate.getTime())) {
-      return res.status(400).json({ message: 'DOB must be a valid date in YYYY-MM-DD format' });
+    // Validate DOB format (only if provided)
+    if (DOB && DOB.trim() !== "") {
+      const dobDate = new Date(DOB);
+      if (isNaN(dobDate.getTime())) {
+        return res.status(400).json({ message: 'DOB must be a valid date in YYYY-MM-DD format' });
+      }
     }
 
     // Validate latitude and longitude
@@ -684,7 +688,7 @@ exports.updateUserProfileByAdmin = async (req, res) => {
     // Update user profile
     user.age = ageNum;
     user.gender = gender.toLowerCase();
-    user.DOB = DOB;
+    user.DOB = DOB || "";  // Optional - empty string by default
     user.location = {
       address: address,
       lat: latNum,

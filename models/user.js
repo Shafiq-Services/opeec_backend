@@ -45,8 +45,8 @@ const userSchema = new mongoose.Schema({
   profile_image: { type: String, required: true },
   age: { type: Number, required: true, min: 0, max: 150 },
   gender: { type: String, required: true, enum: ['male', 'female', 'other'] },
-  DOB: { type: String, required: true },
-  about: { type: String, required: true, trim: true },
+  DOB: { type: String, default: "", trim: true }, // Optional - empty string by default
+  about: { type: String, default: "", trim: true }, // Optional - empty string by default
   location: { type: locationSchema, required: true },
   otpDetails: otpSchema,
   isUserVerified: { type: Boolean, default: true },
