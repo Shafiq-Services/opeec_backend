@@ -8,7 +8,7 @@ const getUserVerificationHistory = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const user = await User.findById(userId).select('name email stripe_verification');
+    const user = await User.findById(userId).select('name email phone_number age gender DOB location stripe_verification');
     
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -21,7 +21,12 @@ const getUserVerificationHistory = async (req, res) => {
       user: {
         _id: user._id,
         name: user.name,
-        email: user.email
+        email: user.email,
+        phone_number: user.phone_number || "",
+        age: user.age || "",
+        gender: user.gender || "",
+        DOB: user.DOB || "",
+        address: user.location?.address || ""
       },
       verification_history: verification.attempts || [],
       current_status: verification.status || 'not_verified',
@@ -74,7 +79,7 @@ const getUsersByVerificationStatus = async (req, res) => {
     }
 
     const users = await User.find(query)
-      .select('name email phone_number profile_image isUserVerified is_blocked stripe_verification createdAt')
+      .select('name email phone_number profile_image age gender DOB location isUserVerified is_blocked stripe_verification createdAt')
       .sort({ createdAt: -1 });
 
     const formattedUsers = users.map(user => ({
@@ -83,6 +88,10 @@ const getUsersByVerificationStatus = async (req, res) => {
       email: user.email,
       phone_number: user.phone_number,
       profile_image: user.profile_image,
+      age: user.age || "",
+      gender: user.gender || "",
+      DOB: user.DOB || "",
+      address: user.location?.address || "",
       isUserVerified: user.isUserVerified,
       is_blocked: user.is_blocked,
       stripe_verification: {
