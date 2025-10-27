@@ -72,7 +72,7 @@ exports.createConnectAccount = async (req, res) => {
       country: req.body.country || 'US', // Default to US, can be changed
       email: user.email,
       capabilities: {
-        card_payments: { requested: false }, // Owner doesn't accept payments
+        card_payments: { requested: true }, // Owner doesn't accept payments
         transfers: { requested: true }        // Owner receives transfers
       },
       business_type: 'individual',
