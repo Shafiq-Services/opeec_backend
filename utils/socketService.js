@@ -156,6 +156,53 @@ const initializeSocket = (server) => {
       console.log(`User ${userId} left conversation ${conversationId}`);
     });
 
+    // ---------------------- STRIPE CONNECT STATUS REQUEST ----------------------
+    
+    /**
+     * Handle Stripe Connect status request from app
+     * App can emit 'requestStripeConnectStatus' to get status + admin settings
+     */
+    socket.on("requestStripeConnectStatus", async () => {
+      try {
+        console.log(`💳 User ${userId} requested Stripe Connect status via socket`);
+        
+        const User = require("../models/user");
+        const AppSettings = require("../models/appSettings");
+        
+        // Get user's Stripe Connect status
+        const user = await User.findById(userId).select('stripe_connect');
+        if (!user) {
+          socket.emit("stripeConnectStatusResponse", {
+            error: "User not found",
+            status: "error"
+          });
+          return;
+        }
+
+        // Get admin settings for title and description
+        const settings = await AppSettings.findOne();
+        
+        // Prepare simple response with just 3 fields as requested
+        const response = {
+          status: user.stripe_connect?.account_status || 'not_connected',
+          title: settings?.stripe_connect_title || 'Connect Your Bank Account',
+          description: settings?.stripe_connect_description || 'Connect your bank account to receive automatic payouts after each rental.'
+        };
+
+        // Send response back to app
+        socket.emit("stripeConnectStatusResponse", response);
+        
+        console.log(`✅ Stripe Connect status sent to user ${userId}:`, response.status);
+        
+      } catch (error) {
+        console.error(`❌ Error getting Stripe Connect status for user ${userId}:`, error);
+        socket.emit("stripeConnectStatusResponse", {
+          error: "Failed to get Stripe Connect status",
+          status: "error"
+        });
+      }
+    });
+
     // ---------------------- VERIFICATION STATUS REQUESTS ----------------------
     
     /**

@@ -550,4 +550,53 @@ Order Status = "Finished"
 
 ---
 
+### [10] Socket Event for Stripe Connect Status
+**Type:** Feature Addition  
+**Description:** Added simple socket event for mobile app to request user's Stripe Connect status with admin panel settings
+
+**Socket Event Added:**
+- **Client Emits:** `requestStripeConnectStatus` (no payload required, uses JWT token)
+- **Server Responds:** `stripeConnectStatusResponse` with 3 simple fields
+
+**Response Format:**
+```javascript
+{
+  status: "not_connected" | "pending" | "active" | "disabled",
+  title: "Connect Your Bank Account", // From admin settings
+  description: "Connect your bank account to receive automatic payouts..." // From admin settings
+}
+```
+
+**Implementation Details:**
+- Added event handler in `utils/socketService.js` 
+- Uses JWT token authentication (existing socket auth)
+- Fetches user's `stripe_connect.account_status` from User model
+- Fetches `stripe_connect_title` and `stripe_connect_description` from AppSettings model
+- Simple 3-field response as requested - no complexity
+- Proper error handling for missing users
+- Console logging for debugging
+
+**Usage Example (Mobile App):**
+```javascript
+// Request Stripe Connect status
+socket.emit('requestStripeConnectStatus');
+
+// Listen for response
+socket.on('stripeConnectStatusResponse', (data) => {
+  console.log('Status:', data.status);
+  console.log('Title:', data.title);
+  console.log('Description:', data.description);
+});
+```
+
+**Status Values:**
+- `not_connected` - User hasn't created Stripe account yet
+- `pending` - Account created but onboarding incomplete
+- `active` - Account active and can receive payouts
+- `disabled` - Account disabled by Stripe
+
+**File Modified:** `utils/socketService.js`
+
+---
+
 *This log will serve as the complete reference for all Stripe Connect integration work performed during this session.*
