@@ -90,7 +90,10 @@ exports.getWithdrawalsForFinanceDashboard = async (req, res) => {
     }
 
     // Build status filter for Stripe transfers ONLY
-    const stripeFilter = { 'stripe_payout.transfer_id': { $ne: "" } };
+    const stripeFilter = { 
+      'stripe_payout': { $exists: true, $ne: null },
+      'stripe_payout.transfer_id': { $ne: "", $exists: true }
+    };
     if (status && status !== 'all') {
       const validStatuses = ['Pending', 'Approved', 'Paid', 'Rejected'];
       if (!validStatuses.includes(status)) {
@@ -126,10 +129,10 @@ exports.getWithdrawalsForFinanceDashboard = async (req, res) => {
         .select('name email profile_image')
         .lean();
 
-      if (owner) {
+      if (owner && order.stripe_payout) {
         // Calculate time remaining for pending/processing transfers
         const timeRemaining = calculateTimeRemaining(
-          order.stripe_payout.transfer_status, 
+          order.stripe_payout.transfer_status || 'pending', 
           order.stripe_payout.transfer_triggered_at
         );
 
@@ -137,17 +140,17 @@ exports.getWithdrawalsForFinanceDashboard = async (req, res) => {
         allWithdrawals.push({
           _id: order._id,
           sellerId: owner,
-          amount: order.stripe_payout.transfer_amount,
-          status: mapStripeStatusToAdmin(order.stripe_payout.transfer_status),
+          amount: order.stripe_payout.transfer_amount || 0,
+          status: mapStripeStatusToAdmin(order.stripe_payout.transfer_status || 'pending'),
           createdAt: order.stripe_payout.transfer_triggered_at || order.createdAt,
           type: 'stripe',
           withdrawal_type: 'Stripe Payout',
-          stripe_transfer_id: order.stripe_payout.transfer_id,
+          stripe_transfer_id: order.stripe_payout.transfer_id || '',
           order_id: order._id,
-          equipment_title: order.equipmentId.title,
+          equipment_title: order.equipmentId?.title || 'Unknown Equipment',
           time_remaining: timeRemaining.display,
           estimated_completion: timeRemaining.estimated_date,
-          raw_transfer_status: order.stripe_payout.transfer_status,
+          raw_transfer_status: order.stripe_payout.transfer_status || 'pending',
           sort_date: order.stripe_payout.transfer_triggered_at || order.createdAt
         });
       }
