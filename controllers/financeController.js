@@ -20,6 +20,56 @@ function mapStripeStatusToAdmin(stripeStatus) {
 }
 
 /**
+ * Calculate time remaining for Stripe transfers
+ */
+function calculateTimeRemaining(transferStatus, triggeredAt) {
+  if (!triggeredAt) {
+    return { display: '-', estimated_date: null };
+  }
+
+  const now = new Date();
+  const triggered = new Date(triggeredAt);
+  const daysPassed = Math.floor((now - triggered) / (1000 * 60 * 60 * 24));
+
+  switch (transferStatus) {
+    case 'pending':
+      const remainingDays = Math.max(0, 7 - daysPassed);
+      if (remainingDays > 1) {
+        const estimatedDate = new Date(triggered);
+        estimatedDate.setDate(estimatedDate.getDate() + 7);
+        return {
+          display: `${remainingDays} business days`,
+          estimated_date: estimatedDate.toISOString()
+        };
+      } else {
+        return { display: '1-2 business days', estimated_date: null };
+      }
+
+    case 'processing':
+      const processingRemaining = Math.max(0, 3 - daysPassed);
+      if (processingRemaining > 0) {
+        const estimatedDate = new Date(triggered);
+        estimatedDate.setDate(estimatedDate.getDate() + 3);
+        return {
+          display: `${processingRemaining} business days`,
+          estimated_date: estimatedDate.toISOString()
+        };
+      } else {
+        return { display: 'Soon', estimated_date: null };
+      }
+
+    case 'completed':
+      return { display: 'Completed', estimated_date: null };
+
+    case 'failed':
+      return { display: 'Failed - needs attention', estimated_date: null };
+
+    default:
+      return { display: '-', estimated_date: null };
+  }
+}
+
+/**
  * Get withdrawals for admin finance dashboard with all details included
  * GET /admin/finance/withdrawals
  */
@@ -28,10 +78,10 @@ exports.getWithdrawalsForFinanceDashboard = async (req, res) => {
     const { page = 1, limit = 10, status, type = 'all' } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    console.log(`💰 Admin fetching withdrawals for finance dashboard - Status: ${status || 'all'}, Type: ${type}`);
+    console.log(`💰 Admin fetching Stripe transfers for finance dashboard - Status: ${status || 'all'}`);
 
-    // Validate type filter
-    const validTypes = ['all', 'manual', 'stripe'];
+    // Validate type filter (only stripe supported now, but kept 'all' for compatibility)
+    const validTypes = ['all', 'stripe'];
     if (!validTypes.includes(type)) {
       return res.status(400).json({ 
         message: 'Invalid type filter',
@@ -39,9 +89,9 @@ exports.getWithdrawalsForFinanceDashboard = async (req, res) => {
       });
     }
 
-    // Build status filter for manual withdrawals
-    const manualFilter = {};
-    if (status) {
+    // Build status filter for Stripe transfers ONLY
+    const stripeFilter = { 'stripe_payout.transfer_id': { $ne: "" } };
+    if (status && status !== 'all') {
       const validStatuses = ['Pending', 'Approved', 'Paid', 'Rejected'];
       if (!validStatuses.includes(status)) {
         return res.status(400).json({ 
@@ -49,12 +99,7 @@ exports.getWithdrawalsForFinanceDashboard = async (req, res) => {
           valid_statuses: validStatuses
         });
       }
-      manualFilter.status = status;
-    }
 
-    // Build status filter for Stripe transfers
-    const stripeFilter = { 'stripe_payout.transfer_id': { $ne: "" } };
-    if (status) {
       // Map admin status to Stripe transfer status
       const statusMap = {
         'Pending': 'pending',
@@ -67,66 +112,52 @@ exports.getWithdrawalsForFinanceDashboard = async (req, res) => {
       }
     }
 
-    // Get data based on type filter
+    // Get Stripe transfers ONLY (all withdrawals are now through Stripe)
+    const stripeTransfers = await Order.find(stripeFilter)
+      .populate('equipmentId', 'ownerId title')
+      .sort({ 'stripe_payout.transfer_triggered_at': -1 })
+      .lean();
+
     let allWithdrawals = [];
-    let totalCount = 0;
 
-    // Get manual withdrawals
-    if (type === 'all' || type === 'manual') {
-      const manualWithdrawals = await WithdrawalRequest.find(manualFilter)
-        .populate('sellerId', 'name email profile_image')
-        .populate('reviewed_by_admin_id', 'name email')
-        .sort({ createdAt: -1 })
+    // Get owner details for each transfer and format
+    for (const order of stripeTransfers) {
+      const owner = await User.findById(order.equipmentId.ownerId)
+        .select('name email profile_image')
         .lean();
 
-      // Format manual withdrawals
-      manualWithdrawals.forEach(request => {
+      if (owner) {
+        // Calculate time remaining for pending/processing transfers
+        const timeRemaining = calculateTimeRemaining(
+          order.stripe_payout.transfer_status, 
+          order.stripe_payout.transfer_triggered_at
+        );
+
+        // Format Stripe transfer
         allWithdrawals.push({
-          ...request,
-          type: 'manual',
-          withdrawal_type: 'Manual Request',
-          sort_date: request.createdAt
+          _id: order._id,
+          sellerId: owner,
+          amount: order.stripe_payout.transfer_amount,
+          status: mapStripeStatusToAdmin(order.stripe_payout.transfer_status),
+          createdAt: order.stripe_payout.transfer_triggered_at || order.createdAt,
+          type: 'stripe',
+          withdrawal_type: 'Stripe Payout',
+          stripe_transfer_id: order.stripe_payout.transfer_id,
+          order_id: order._id,
+          equipment_title: order.equipmentId.title,
+          time_remaining: timeRemaining.display,
+          estimated_completion: timeRemaining.estimated_date,
+          raw_transfer_status: order.stripe_payout.transfer_status,
+          sort_date: order.stripe_payout.transfer_triggered_at || order.createdAt
         });
-      });
-    }
-
-    // Get Stripe transfers
-    if (type === 'all' || type === 'stripe') {
-      const stripeTransfers = await Order.find(stripeFilter)
-        .populate('equipmentId', 'ownerId title')
-        .sort({ 'stripe_payout.transfer_triggered_at': -1 })
-        .lean();
-
-      // Get owner details for each transfer
-      for (const order of stripeTransfers) {
-        const owner = await User.findById(order.equipmentId.ownerId)
-          .select('name email profile_image')
-          .lean();
-
-        if (owner) {
-          // Format Stripe transfer as withdrawal
-          allWithdrawals.push({
-            _id: order._id,
-            sellerId: owner,
-            amount: order.stripe_payout.transfer_amount,
-            status: mapStripeStatusToAdmin(order.stripe_payout.transfer_status),
-            createdAt: order.stripe_payout.transfer_triggered_at || order.createdAt,
-            type: 'stripe',
-            withdrawal_type: 'Stripe Payout',
-            stripe_transfer_id: order.stripe_payout.transfer_id,
-            order_id: order._id,
-            equipment_title: order.equipmentId.title,
-            sort_date: order.stripe_payout.transfer_triggered_at || order.createdAt
-          });
-        }
       }
     }
 
-    // Sort all withdrawals by date
+    // Sort by date (newest first)
     allWithdrawals.sort((a, b) => new Date(b.sort_date) - new Date(a.sort_date));
 
     // Apply pagination
-    totalCount = allWithdrawals.length;
+    const totalCount = allWithdrawals.length;
     const paginatedWithdrawals = allWithdrawals.slice(skip, skip + parseInt(limit));
 
     // Helper functions for date formatting (no null values)
@@ -148,118 +179,67 @@ exports.getWithdrawalsForFinanceDashboard = async (req, res) => {
       });
     };
 
-    // Format withdrawal list with all details for both table and sidebar (no null values)
-    const formattedWithdrawals = paginatedWithdrawals.map(request => {
-      const baseData = {
-        _id: request._id,
-        // Table data
-        name: request.sellerId?.name || '',
-        email: request.sellerId?.email || '',
-        profile_image: request.sellerId?.profile_image || '',
-        amount: request.amount || 0,
-        status: request.status || '',
-        type: request.type || 'manual',
-        withdrawal_type: request.withdrawal_type || 'Manual Request',
-        requested_time: formatDate(request.createdAt) + ' ' + formatTime(request.createdAt),
-        
-        // Sidebar data - all possible fields (no null values)
-        seller: {
-          _id: request.sellerId?._id || '',
-          name: request.sellerId?.name || '',
-          email: request.sellerId?.email || '',
-          profile_image: request.sellerId?.profile_image || ''
-        },
-        requested_date: formatDate(request.createdAt),
-        requested_time_formatted: formatTime(request.createdAt),
-        
-        createdAt: request.createdAt || new Date()
-      };
-
-      // Add type-specific fields
-      if (request.type === 'manual') {
-        // Manual withdrawal specific fields
-        return {
-          ...baseData,
-          // Status-specific fields (empty strings instead of null)
-          approval_date: formatDate(request.approved_at),
-          approval_time: formatTime(request.approved_at),
-          rejection_date: formatDate(request.rejected_at),
-          rejection_time: formatTime(request.rejected_at),
-          
-          // Transaction details (for approved/paid status)
-          transaction_id: request.external_reference?.transaction_id || '',
-          screenshot_url: request.external_reference?.screenshot_url || '',
-          payment_notes: request.external_reference?.notes || '',
-          
-          // Rejection details
-          rejection_reason: request.rejection_reason || '',
-          
-          // Admin who reviewed (empty object instead of null)
-          reviewed_by: request.reviewed_by_admin_id ? {
-            name: request.reviewed_by_admin_id.name || '',
-            email: request.reviewed_by_admin_id.email || ''
-          } : {
-            name: '',
-            email: ''
-          },
-          
-          // Action buttons for manual withdrawals
-          actions: request.status === 'Pending' ? ['approve', 'reject'] : ['view_details']
-        };
-      } else {
-        // Stripe transfer specific fields
-        return {
-          ...baseData,
-          // Stripe-specific fields
-          stripe_transfer_id: request.stripe_transfer_id || '',
-          order_id: request.order_id || '',
-          equipment_title: request.equipment_title || '',
-          
-          // Action buttons for Stripe transfers
-          actions: ['view_details'],
-          
-          // Empty fields for consistency
-          approval_date: '',
-          approval_time: '',
-          rejection_date: '',
-          rejection_time: '',
-          transaction_id: request.stripe_transfer_id || '',
-          screenshot_url: '',
-          payment_notes: '',
-          rejection_reason: '',
-          reviewed_by: { name: 'Automated', email: 'system@opeec.com' }
-        };
-      }
-    });
+    // Format Stripe transfers for admin view (matches documentation exactly)
+    const formattedWithdrawals = paginatedWithdrawals.map(transfer => ({
+      _id: transfer._id,
+      name: transfer.sellerId?.name || '',
+      email: transfer.sellerId?.email || '',
+      profile_image: transfer.sellerId?.profile_image || '',
+      amount: transfer.amount || 0,
+      status: transfer.status || '',
+      withdrawal_type: 'Stripe Payout',
+      requested_time: formatDate(transfer.createdAt) + ' ' + formatTime(transfer.createdAt),
+      
+      // Stripe-specific fields (as documented)
+      stripe_transfer_id: transfer.stripe_transfer_id || '',
+      equipment_title: transfer.equipment_title || '',
+      order_id: transfer.order_id || '',
+      time_remaining: transfer.time_remaining || '-',
+      estimated_completion: transfer.estimated_completion,
+      
+      // Actions for Stripe transfers (VIEW ONLY - no approvals)
+      actions: ['view_details'],
+      
+      // Additional fields for completeness
+      seller: {
+        _id: transfer.sellerId?._id || '',
+        name: transfer.sellerId?.name || '',
+        email: transfer.sellerId?.email || '',
+        profile_image: transfer.sellerId?.profile_image || ''
+      },
+      requested_date: formatDate(transfer.createdAt),
+      requested_time_formatted: formatTime(transfer.createdAt),
+      createdAt: transfer.createdAt || new Date()
+    }));
 
     const totalPages = Math.ceil(totalCount / parseInt(limit));
 
-    console.log(`✅ Retrieved ${formattedWithdrawals.length} withdrawals for finance dashboard (${type} type, ${status || 'all'} status)`);
+    console.log(`✅ Retrieved ${formattedWithdrawals.length} Stripe transfers for monitoring dashboard (${status || 'all'} status)`);
 
     res.status(200).json({
-      message: 'Withdrawals retrieved successfully for finance dashboard',
+      message: 'Stripe transfers retrieved successfully for monitoring dashboard',
       withdrawals: formattedWithdrawals || [],
       pagination: {
         current_page: parseInt(page) || 1,
         total_pages: totalPages || 0,
         total_count: totalCount || 0,
         showing_text: totalCount > 0 
-          ? `Showing ${Math.min(skip + 1, totalCount)} to ${Math.min(skip + parseInt(limit), totalCount)} of ${totalCount} products`
-          : 'No products found'
+          ? `Showing ${Math.min(skip + 1, totalCount)} to ${Math.min(skip + parseInt(limit), totalCount)} of ${totalCount} transfers`
+          : 'No transfers found'
       }
     });
 
   } catch (error) {
-    console.error('❌ Error getting withdrawals for finance dashboard:', error);
+    console.error('❌ Error getting Stripe transfers for monitoring dashboard:', error);
     res.status(500).json({ 
-      message: 'Error retrieving withdrawals for finance dashboard', 
+      message: 'Error retrieving Stripe transfers for monitoring dashboard', 
       error: error?.message || 'Unknown error occurred',
       withdrawals: [],
       pagination: {
         current_page: 1,
         total_pages: 0,
         total_count: 0,
-        showing_text: 'No products found'
+        showing_text: 'No transfers found'
       }
     });
   }
@@ -362,6 +342,10 @@ exports.getStripeTransferDetails = async (req, res) => {
 /**
  * Approve a withdrawal request from finance dashboard
  * POST /admin/finance/withdrawals/approve?id=withdrawal_id
+ * 
+ * ⚠️ DEPRECATED: Manual withdrawal approvals are deprecated.
+ * All withdrawals now go through Stripe Connect automatically.
+ * This function is kept for backward compatibility only.
  */
 exports.approveWithdrawal = async (req, res) => {
   try {
@@ -461,6 +445,10 @@ exports.approveWithdrawal = async (req, res) => {
 /**
  * Reject a withdrawal request from finance dashboard
  * POST /admin/finance/withdrawals/reject?id=withdrawal_id
+ * 
+ * ⚠️ DEPRECATED: Manual withdrawal approvals/rejections are deprecated.
+ * All withdrawals now go through Stripe Connect automatically.
+ * This function is kept for backward compatibility only.
  */
 exports.rejectWithdrawal = async (req, res) => {
   try {

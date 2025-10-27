@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const walletController = require('../controllers/walletController');
-const { userMiddleware } = require('../middlewares/user');
+const { userMiddleware } = require('../middleWares/user');
 
 // Apply user middleware to all wallet routes
 router.use(userMiddleware);

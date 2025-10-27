@@ -65,6 +65,27 @@ exports.getDashboardData = async (req, res) => {
     });
     const totalUsersCount = await User.countDocuments();
 
+    // Stripe Connect counts
+    console.log("💳 Calculating Stripe Connect data...");
+    
+    const currentStripePayoutsCount = await Order.countDocuments({
+      'stripe_payout.transfer_id': { $ne: "" },
+      'stripe_payout.transfer_triggered_at': { $gte: currentMonth, $lt: now }
+    });
+    const previousStripePayoutsCount = await Order.countDocuments({
+      'stripe_payout.transfer_id': { $ne: "" },
+      'stripe_payout.transfer_triggered_at': { $gte: previousMonth, $lt: previousMonthEnd }
+    });
+    const totalStripePayouts = await Order.countDocuments({
+      'stripe_payout.transfer_id': { $ne: "" }
+    });
+    const failedStripePayouts = await Order.countDocuments({
+      'stripe_payout.transfer_status': 'failed'
+    });
+
+    console.log("💳 Total Stripe Payouts:", totalStripePayouts);
+    console.log("❌ Failed Stripe Payouts:", failedStripePayouts);
+
     // 2. REVENUE DATA
     console.log("💰 Calculating revenue data...");
     
@@ -190,6 +211,23 @@ exports.getDashboardData = async (req, res) => {
           change: calculatePercentageChange(currentUsersCount, previousUsersCount),
           change_direction: getChangeDirection(currentUsersCount, previousUsersCount),
           icon: "users"
+        },
+        {
+          title: "Stripe Payouts",
+          count: totalStripePayouts,
+          period: formatMonth(currentMonth),
+          change: calculatePercentageChange(currentStripePayoutsCount, previousStripePayoutsCount),
+          change_direction: getChangeDirection(currentStripePayoutsCount, previousStripePayoutsCount),
+          icon: "stripe_payouts"
+        },
+        {
+          title: "Failed Transfers",
+          count: failedStripePayouts,
+          period: formatMonth(currentMonth),
+          change: "0", // Failed transfers don't have monthly comparison
+          change_direction: failedStripePayouts > 0 ? "up" : "flat",
+          icon: "failed_transfers",
+          alert: failedStripePayouts > 0 // Special flag for failed transfers
         }
       ],
       

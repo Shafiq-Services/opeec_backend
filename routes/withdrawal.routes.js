@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const withdrawalController = require('../controllers/withdrawalController');
-const { userMiddleware } = require('../middlewares/user');
+const { userMiddleware } = require('../middleWares/user');
 
 // Apply user middleware to all withdrawal routes
 router.use(userMiddleware);

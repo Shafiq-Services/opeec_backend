@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const financeController = require('../controllers/financeController');
-const { adminMiddleware } = require('../middlewares/adminMiddleWare');
+const { adminMiddleware } = require('../middleWares/adminMiddleWare');
 
 // Apply admin middleware to all finance routes
 router.use(adminMiddleware);

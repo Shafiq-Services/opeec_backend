@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const adminWithdrawalController = require('../controllers/adminWithdrawalController');
-const { adminMiddleware } = require('../middlewares/adminMiddleWare');
+const { adminMiddleware } = require('../middleWares/adminMiddleWare');
 
 // Apply admin middleware to all routes
 router.use(adminMiddleware);
