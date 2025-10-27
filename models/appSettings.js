@@ -41,6 +41,17 @@ const appSettingsSchema = new mongoose.Schema({
     type: String,
     default: 'To ensure a safe and secure rental experience, we need to verify your identity. This is a one-time process.',
     trim: true
+  },
+  // Stripe Connect Settings
+  stripe_connect_title: {
+    type: String,
+    default: 'Connect Your Bank Account',
+    trim: true
+  },
+  stripe_connect_description: {
+    type: String,
+    default: 'Connect your bank account to receive automatic payouts after each rental. Money will be transferred directly to your bank account 2-7 business days after the rental is completed.',
+    trim: true
   }
 }, { 
   timestamps: true // Using automatic timestamps instead of manual handling

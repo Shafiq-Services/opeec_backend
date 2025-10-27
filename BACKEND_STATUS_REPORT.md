@@ -254,7 +254,7 @@ All backend work is done:
 
 ### **Immediate:**
 1. ✅ Run migration script: `node scripts/migrateStripeVerification.js`
-2. ✅ Add `STRIPE_WEBHOOK_SECRET` to `.env`
+2. ✅ Add `STRIPE_CONNECT_WEBHOOK_SECRET` to `.env`
 3. ✅ Configure Stripe webhook endpoint
 4. ✅ Test with Stripe CLI locally
 

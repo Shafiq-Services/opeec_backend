@@ -179,10 +179,10 @@ const initiateVerification = async (req, res) => {
 const handleVerificationWebhook = async (req, res) => {
   try {
     const signature = req.headers['stripe-signature'];
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const webhookSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
 
     if (!webhookSecret) {
-      console.error('❌ STRIPE_WEBHOOK_SECRET not configured');
+      console.error('❌ STRIPE_CONNECT_WEBHOOK_SECRET not configured');
       return res.status(500).json({ message: 'Webhook secret not configured' });
     }
 

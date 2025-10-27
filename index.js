@@ -25,6 +25,9 @@ const percentageSettings = require('./routes/percentageSettings');
 const walletRoutes = require('./routes/wallet.routes');
 const withdrawalRoutes = require('./routes/withdrawal.routes');
 const adminWithdrawalRoutes = require('./routes/admin.withdrawal.routes');
+const stripeConnectRoutes = require('./routes/stripeConnect.routes');
+const stripeWebhookRoutes = require('./routes/stripeWebhook.routes');
+const adminStripeMonitoringRoutes = require('./routes/adminStripeMonitoring.routes');
 const verificationRedirectController = require('./controllers/verificationRedirectController');
 const { initializeSocket, sendEventToUser, connectedUsers } = require("./utils/socketService");
 const { createAdminNotification } = require('./controllers/adminNotificationController');
@@ -56,6 +59,10 @@ app.use(cors(corsOptions));
 // Handle preflight requests for all routes
 app.options('*', cors(corsOptions));
 
+// ⚠️ IMPORTANT: Stripe webhook must be registered BEFORE express.json() 
+// to preserve raw body for signature verification
+app.use('/webhooks/stripe-connect', express.raw({type: 'application/json'}), stripeWebhookRoutes);
+
 // Middleware
 app.use(express.json());
 
@@ -85,6 +92,8 @@ app.use('/perrcentageSettings', percentageSettings);
 app.use('/wallet', walletRoutes);
 app.use('/withdrawals', withdrawalRoutes);
 app.use('/admin/withdrawals', adminWithdrawalRoutes);
+app.use('/stripe-connect', stripeConnectRoutes);
+app.use('/admin/stripe-connect', adminStripeMonitoringRoutes);
 
 // Base route
 app.get('/', (req, res) => res.send('Hello from Node API server'));

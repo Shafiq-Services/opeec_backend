@@ -7,6 +7,7 @@ const moment = require('moment');
 const { calculateOrderFees } = require('../utils/feeCalculations');
 const { createAdminNotification } = require('./adminNotificationController');
 const User = require('../models/user');
+const { triggerAutomaticPayout } = require('./stripeConnectController');
 
 // Helper function to create subcategory lookup pipeline for embedded subcategories
 function createSubcategoryLookupPipeline() {
@@ -638,6 +639,20 @@ exports.finishOrder = async (req, res) => {
       // Continue with order completion even if settlement fails
     }
 
+    // Trigger automatic Stripe payout to equipment owner
+    try {
+      const payoutResult = await triggerAutomaticPayout(order._id);
+      if (payoutResult.success) {
+        console.log(`💸 Stripe payout triggered: $${payoutResult.transfer_amount} to ${payoutResult.owner_name}`);
+      } else {
+        console.log(`⚠️ Stripe payout skipped: ${payoutResult.message}`);
+      }
+    } catch (payoutError) {
+      console.error(`❌ Stripe payout error for order ${order._id}:`, payoutError.message);
+      // Continue with order completion even if Stripe payout fails
+      // Admin will be notified via webhook/notification system
+    }
+
     return res.status(200).json({ message: "Order status updated to 'Finished'.", status: true });
   } catch (err) {
     return res.status(500).json({ message: "Server error.", error: err.message });
@@ -946,6 +961,16 @@ const processOrders = async () => {
         } catch (settlementError) {
           console.error(`❌ Auto-settlement error for order ${order._id}:`, settlementError);
           // Continue with order processing even if settlement fails
+        }
+
+        // Trigger automatic Stripe payout
+        try {
+          const payoutResult = await triggerAutomaticPayout(order._id);
+          if (payoutResult.success) {
+            console.log(`💸 Auto Stripe payout: $${payoutResult.transfer_amount} to ${payoutResult.owner_name}`);
+          }
+        } catch (payoutError) {
+          console.error(`❌ Auto Stripe payout error for order ${order._id}:`, payoutError.message);
         }
       }
     }

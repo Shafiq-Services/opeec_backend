@@ -60,6 +60,22 @@ const orderSchema = new mongoose.Schema({
   buyer_review: {
     comment: { type: String },
     rating: { type: Number, min: 0, max: 5, default: 0 }
+  },
+
+  // Stripe Connect - Automated payout tracking
+  stripe_payout: {
+    payment_intent_id: { type: String, default: "" },
+    transfer_id: { type: String, default: "" },
+    transfer_status: { 
+      type: String, 
+      enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'],
+      default: null
+    },
+    transfer_amount: { type: Number, default: 0 }, // Amount transferred to owner
+    transfer_triggered_at: { type: Date, default: null },
+    transfer_completed_at: { type: Date, default: null },
+    transfer_failure_reason: { type: String, default: "" },
+    destination_account_id: { type: String, default: "" } // Owner's Stripe Connect account
   }
 }, { 
   timestamps: true // Replaces created_at/updated_at with createdAt/updatedAt

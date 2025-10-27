@@ -55,7 +55,23 @@ const userSchema = new mongoose.Schema({
   block_reason: { type: String, default: "" },
   fcm_token: { type: String, default: "" },
   favorite_equipments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Equipment' }],
-  stripe_verification: { type: stripeVerificationSchema, default: () => ({}) }
+  stripe_verification: { type: stripeVerificationSchema, default: () => ({}) },
+  
+  // Stripe Connect - For equipment owners to receive automated payouts
+  stripe_connect: {
+    account_id: { type: String, default: "" },
+    account_status: { 
+      type: String, 
+      enum: ['not_connected', 'pending', 'active', 'disabled'],
+      default: 'not_connected'
+    },
+    onboarding_completed: { type: Boolean, default: false },
+    charges_enabled: { type: Boolean, default: false },
+    payouts_enabled: { type: Boolean, default: false },
+    details_submitted: { type: Boolean, default: false },
+    onboarding_url: { type: String, default: "" },
+    last_updated: { type: Date, default: null }
+  }
 }, { 
   timestamps: true // Replaces created_at with createdAt/updatedAt
 });

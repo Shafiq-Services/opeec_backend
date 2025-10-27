@@ -53,7 +53,7 @@ JWT_SECRET=your_jwt_secret
 # Stripe Configuration
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_PUBLISHABLE_KEY=pk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_CONNECT_WEBHOOK_SECRET=whsec_...
 
 # Email Configuration (existing)
 EMAIL=your@email.com
@@ -258,7 +258,7 @@ This will:
   - `identity.verification_session.verified`
   - `identity.verification_session.requires_input`
   - `identity.verification_session.canceled`
-- Copy webhook secret → Add to `.env` as `STRIPE_WEBHOOK_SECRET`
+- Copy webhook secret → Add to `.env` as `STRIPE_CONNECT_WEBHOOK_SECRET`
 
 ### 3. Test Mode:
 - Use Stripe test keys during development

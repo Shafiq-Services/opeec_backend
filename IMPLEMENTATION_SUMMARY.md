@@ -48,7 +48,7 @@ The Stripe Identity verification system has been **fully implemented** and is re
 
 Add to `.env` file:
 ```env
-STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
+STRIPE_CONNECT_WEBHOOK_SECRET=whsec_your_webhook_secret_here
 ```
 
 ### **2. Run Migration**
@@ -237,7 +237,7 @@ controllers/appSettingsController.js
 
 1. **Migration Required:** Run migration script before deployment
 2. **Webhook Setup:** Must configure Stripe webhook endpoint
-3. **Environment Variables:** Add `STRIPE_WEBHOOK_SECRET` to .env
+3. **Environment Variables:** Add `STRIPE_CONNECT_WEBHOOK_SECRET` to .env
 4. **Test Mode:** Use Stripe test keys during development
 5. **Deep Links:** Mobile app must handle `myapp://verification-complete`
 
@@ -260,7 +260,7 @@ controllers/appSettingsController.js
 ## ✅ DEPLOYMENT CHECKLIST
 
 ### Before Deployment:
-- [ ] Add `STRIPE_WEBHOOK_SECRET` to production .env
+- [ ] Add `STRIPE_CONNECT_WEBHOOK_SECRET` to production .env
 - [ ] Run migration script on production database
 - [ ] Configure Stripe webhook endpoint (production URL)
 - [ ] Test webhook delivery in Stripe dashboard

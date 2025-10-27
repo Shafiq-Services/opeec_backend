@@ -45,6 +45,8 @@ exports.getAppSettings = async (req, res) => {
         verification_fee: settings.verification_fee || 2.00,
         verification_title: settings.verification_title || 'Identity Verification Required',
         verification_description: settings.verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.',
+        stripe_connect_title: settings.stripe_connect_title || 'Connect Your Bank Account',
+        stripe_connect_description: settings.stripe_connect_description || 'Connect your bank account to receive automatic payouts after each rental.',
         created_at: settings.createdAt,
         updated_at: settings.updatedAt
       }
@@ -72,7 +74,9 @@ exports.updateAppSettings = async (req, res) => {
       stripe_secret_key,
       verification_fee,
       verification_title,
-      verification_description
+      verification_description,
+      stripe_connect_title,
+      stripe_connect_description
     } = req.body;
 
     // Validate required fields
@@ -152,6 +156,10 @@ exports.updateAppSettings = async (req, res) => {
       if (verification_title !== undefined) settings.verification_title = verification_title;
       if (verification_description !== undefined) settings.verification_description = verification_description;
       
+      // Update Stripe Connect settings if provided
+      if (stripe_connect_title !== undefined) settings.stripe_connect_title = stripe_connect_title;
+      if (stripe_connect_description !== undefined) settings.stripe_connect_description = stripe_connect_description;
+      
       await settings.save();
     } else {
       // Create new settings
@@ -163,7 +171,9 @@ exports.updateAppSettings = async (req, res) => {
         share_message,
         verification_fee: verification_fee || 2.00,
         verification_title: verification_title || 'Identity Verification Required',
-        verification_description: verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.'
+        verification_description: verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.',
+        stripe_connect_title: stripe_connect_title || 'Connect Your Bank Account',
+        stripe_connect_description: stripe_connect_description || 'Connect your bank account to receive automatic payouts after each rental.'
       });
       await settings.save();
     }
@@ -196,6 +206,11 @@ exports.updateAppSettings = async (req, res) => {
         share_message: settings.share_message,
         stripe_public_key: stripeKey.publishableKey,
         stripe_secret_key: stripeKey.secretKey,
+        verification_fee: settings.verification_fee,
+        verification_title: settings.verification_title,
+        verification_description: settings.verification_description,
+        stripe_connect_title: settings.stripe_connect_title,
+        stripe_connect_description: settings.stripe_connect_description,
         created_at: settings.createdAt,
         updated_at: settings.updatedAt
       }
@@ -241,6 +256,10 @@ exports.getPublicAppSettings = async (req, res) => {
           fee: settings.verification_fee || 2.00,
           title: settings.verification_title || 'Identity Verification Required',
           description: settings.verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.'
+        },
+        stripe_connect_info: {
+          title: settings.stripe_connect_title || 'Connect Your Bank Account',
+          description: settings.stripe_connect_description || 'Connect your bank account to receive automatic payouts after each rental.'
         },
         created_at: settings.createdAt,
         updated_at: settings.updatedAt
