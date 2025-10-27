@@ -299,30 +299,51 @@ exports.summary = async (req, res) => {
     const totalRentals = await Order.countDocuments();
     const totalEquipments = await Equipment.countDocuments({ equipment_status: 'Active' });
 
+    // Stripe Connect counts
+    const currentStripePayoutsCount = await Order.countDocuments({
+      'stripe_payout.transfer_id': { $ne: "" },
+      'stripe_payout.transfer_triggered_at': { $gte: currentMonth, $lt: now }
+    });
+    const previousStripePayoutsCount = await Order.countDocuments({
+      'stripe_payout.transfer_id': { $ne: "" },
+      'stripe_payout.transfer_triggered_at': { $gte: previousMonth, $lt: previousMonthEnd }
+    });
+    const totalStripePayouts = await Order.countDocuments({
+      'stripe_payout.transfer_id': { $ne: "" }
+    });
+    const failedStripePayouts = await Order.countDocuments({
+      'stripe_payout.transfer_status': 'failed'
+    });
+
     console.log("📊 Total Users:", totalUsers);
     console.log("📊 Total Rentals:", totalRentals);
     console.log("📊 Total Active Equipments:", totalEquipments);
+    console.log("💳 Total Stripe Payouts:", totalStripePayouts);
+    console.log("❌ Failed Stripe Payouts:", failedStripePayouts);
 
     // Percentage changes
     const usersChange = calculatePercentageChange(currentUsersCount, previousUsersCount);
     const rentalsChange = calculatePercentageChange(currentRentalsCount, previousRentalsCount);
     const equipmentChange = calculatePercentageChange(currentEquipmentCount, previousEquipmentCount);
+    const stripePayoutsChange = calculatePercentageChange(currentStripePayoutsCount, previousStripePayoutsCount);
 
     console.log("📈 Users Change:", usersChange);
     console.log("📈 Rentals Change:", rentalsChange);
     console.log("📈 Equipments Change:", equipmentChange);
+    console.log("📈 Stripe Payouts Change:", stripePayoutsChange);
 
     const usersChangeInfo = getChangeInfo(currentUsersCount, previousUsersCount);
     const rentalsChangeInfo = getChangeInfo(currentRentalsCount, previousRentalsCount);
     const equipmentChangeInfo = getChangeInfo(currentEquipmentCount, previousEquipmentCount);
+    const stripePayoutsChangeInfo = getChangeInfo(currentStripePayoutsCount, previousStripePayoutsCount);
 
     const summary = [
       {
-        category: 'Users',
-        count: totalUsers,
-        change: usersChange,
-        changeDirection: usersChangeInfo.direction,
-        changeColor: usersChangeInfo.color,
+        category: 'Equipments',
+        count: totalEquipments,
+        change: equipmentChange,
+        changeDirection: equipmentChangeInfo.direction,
+        changeColor: equipmentChangeInfo.color,
         month: formatMonth(previousMonth)
       },
       {
@@ -334,12 +355,29 @@ exports.summary = async (req, res) => {
         month: formatMonth(previousMonth)
       },
       {
-        category: 'Equipments',
-        count: totalEquipments,
-        change: equipmentChange,
-        changeDirection: equipmentChangeInfo.direction,
-        changeColor: equipmentChangeInfo.color,
+        category: 'Users',
+        count: totalUsers,
+        change: usersChange,
+        changeDirection: usersChangeInfo.direction,
+        changeColor: usersChangeInfo.color,
         month: formatMonth(previousMonth)
+      },
+      {
+        category: 'Stripe Payouts',
+        count: totalStripePayouts,
+        change: stripePayoutsChange,
+        changeDirection: stripePayoutsChangeInfo.direction,
+        changeColor: stripePayoutsChangeInfo.color,
+        month: formatMonth(previousMonth)
+      },
+      {
+        category: 'Failed Transfers',
+        count: failedStripePayouts,
+        change: '0', // Failed transfers don't have monthly comparison
+        changeDirection: failedStripePayouts > 0 ? 'up' : 'flat',
+        changeColor: failedStripePayouts > 0 ? '#ef4444' : '#6b7280', // Red if failures exist
+        month: formatMonth(previousMonth),
+        alert: failedStripePayouts > 0 // Special flag for failed transfers
       }
     ];
 

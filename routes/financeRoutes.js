@@ -19,6 +19,12 @@ router.use(adminMiddleware);
 router.get('/withdrawals', financeController.getWithdrawalsForFinanceDashboard);
 
 /**
+ * Get Stripe transfer details for admin view
+ * GET /admin/finance/stripe-transfer-details/:orderId
+ */
+router.get('/stripe-transfer-details/:orderId', financeController.getStripeTransferDetails);
+
+/**
  * Approve withdrawal request from finance dashboard
  * POST /admin/finance/withdrawals/approve
  * Query params: { id: string }

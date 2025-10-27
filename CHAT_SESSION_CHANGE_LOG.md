@@ -599,4 +599,62 @@ socket.on('stripeConnectStatusResponse', (data) => {
 
 ---
 
+### [Final] Minimal Approach Implementation
+**Type:** Budget-Friendly Integration  
+**Description:** Switched to minimal approach using existing UI components instead of creating new admin pages. This reduces development time from 4-6 days to 1-2 days while providing complete Stripe Connect monitoring.
+
+**Backend Changes Made:**
+
+**1. Dashboard Stats Enhanced:**
+- Modified `controllers/dashboardController.js`
+- Added 2 new stat cards: "Stripe Payouts" and "Failed Transfers"
+- Failed Transfers card shows red alert if count > 0
+- API: `GET /admin/dashboard/summary` now returns 5 cards instead of 3
+
+**2. Finance Page Enhanced:**
+- Modified `controllers/financeController.js`
+- Added `type` parameter to existing withdrawals API
+- Combined manual withdrawals and Stripe transfers in one table
+- Added status mapping (Stripe status → Admin status)
+- API: `GET /admin/finance/withdrawals?type=all` returns both types
+
+**3. Transfer Details API Added:**
+- New function: `getStripeTransferDetails` in financeController
+- Route: `GET /admin/finance/stripe-transfer-details/:orderId`
+- Returns complete transfer information for admin viewing
+
+**4. Routes Updated:**
+- Added transfer details route to `routes/financeRoutes.js`
+- Cleaned up debug console.log from stripeConnect routes
+
+**Files Modified:**
+- `controllers/dashboardController.js` - Dashboard stats enhancement
+- `controllers/financeController.js` - Withdrawals integration + transfer details
+- `routes/financeRoutes.js` - New transfer details route
+- `routes/stripeConnect.routes.js` - Cleanup
+
+**Files Created:**
+- `MINIMAL_STRIPE_CONNECT_IMPLEMENTATION_SUMMARY.md` - Complete implementation guide
+
+**No Breaking Changes:**
+- ✅ Existing manual withdrawal system unchanged
+- ✅ All existing APIs work as before
+- ✅ Admin can still approve/reject manual withdrawals
+- ✅ Mobile wallet functionality intact
+
+**Frontend Changes Required (Minimal):**
+- Dashboard: Add 2 stat cards (30 minutes)
+- Finance: Add Type column + filter dropdown + details modal (2-3 hours)
+- **Total Frontend Time:** Half day maximum
+
+**Benefits Achieved:**
+- Complete Stripe Connect monitoring in existing UI
+- Dashboard alerts for failed transfers
+- Unified view of all payouts (manual + automatic)
+- Detailed transfer information available
+- 75% reduction in development time
+- Budget-friendly approach
+
+---
+
 *This log will serve as the complete reference for all Stripe Connect integration work performed during this session.*

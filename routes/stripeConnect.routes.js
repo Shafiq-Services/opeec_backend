@@ -3,9 +3,6 @@ const router = express.Router();
 const stripeConnectController = require('../controllers/stripeConnectController');
 const { userMiddleware } = require('../middleWares/user');
 
-// Debug: Check if functions are properly imported
-console.log('Stripe Connect Controller functions:', Object.keys(stripeConnectController));
-
 /**
  * Stripe Connect Routes - Equipment owner payout onboarding
  * All routes require user authentication
