@@ -28,6 +28,8 @@ const adminWithdrawalRoutes = require('./routes/admin.withdrawal.routes');
 const stripeConnectRoutes = require('./routes/stripeConnect.routes');
 const stripeWebhookRoutes = require('./routes/stripeWebhook.routes');
 const adminStripeMonitoringRoutes = require('./routes/adminStripeMonitoring.routes');
+const stripeConnectPagesRoutes = require('./routes/stripeConnectPages.routes');
+const stripeConnectTestRoutes = require('./routes/stripeConnectTest.routes');
 const verificationRedirectController = require('./controllers/verificationRedirectController');
 const { initializeSocket, sendEventToUser, connectedUsers } = require("./utils/socketService");
 const { createAdminNotification } = require('./controllers/adminNotificationController');
@@ -93,6 +95,8 @@ app.use('/wallet', walletRoutes);
 app.use('/withdrawals', withdrawalRoutes);
 app.use('/admin/withdrawals', adminWithdrawalRoutes);
 app.use('/stripe-connect', stripeConnectRoutes);
+app.use('/stripe-connect', stripeConnectPagesRoutes);
+app.use('/stripe-connect/test', stripeConnectTestRoutes);
 app.use('/admin/stripe-connect', adminStripeMonitoringRoutes);
 
 // Base route

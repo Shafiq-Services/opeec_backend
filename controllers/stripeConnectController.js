@@ -39,8 +39,8 @@ exports.createConnectAccount = async (req, res) => {
         const stripe = await getStripeInstance();
         const accountLink = await stripe.accountLinks.create({
           account: user.stripe_connect.account_id,
-          refresh_url: `${process.env.FRONTEND_URL || 'https://opeec.com'}/stripe-connect/refresh`,
-          return_url: `${process.env.FRONTEND_URL || 'https://opeec.com'}/stripe-connect/success`,
+          refresh_url: `${process.env.FRONTEND_URL || 'https://opeec.azurewebsites.net'}/stripe-connect/refresh`,
+          return_url: `${process.env.FRONTEND_URL || 'https://opeec.azurewebsites.net'}/stripe-connect/success`,
           type: 'account_onboarding'
         });
 
@@ -86,8 +86,8 @@ exports.createConnectAccount = async (req, res) => {
     // Create onboarding link
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
-      refresh_url: `${process.env.FRONTEND_URL || 'https://opeec.com'}/stripe-connect/refresh`,
-      return_url: `${process.env.FRONTEND_URL || 'https://opeec.com'}/stripe-connect/success`,
+      refresh_url: `${process.env.FRONTEND_URL || 'https://opeec.azurewebsites.net'}/stripe-connect/refresh`,
+      return_url: `${process.env.FRONTEND_URL || 'https://opeec.azurewebsites.net'}/stripe-connect/success`,
       type: 'account_onboarding'
     });
 
@@ -232,8 +232,8 @@ exports.refreshOnboardingLink = async (req, res) => {
     const stripe = await getStripeInstance();
     const accountLink = await stripe.accountLinks.create({
       account: user.stripe_connect.account_id,
-      refresh_url: `${process.env.FRONTEND_URL || 'https://opeec.com'}/stripe-connect/refresh`,
-      return_url: `${process.env.FRONTEND_URL || 'https://opeec.com'}/stripe-connect/success`,
+      refresh_url: `${process.env.FRONTEND_URL || 'https://opeec.azurewebsites.net'}/stripe-connect/refresh`,
+      return_url: `${process.env.FRONTEND_URL || 'https://opeec.azurewebsites.net'}/stripe-connect/success`,
       type: 'account_onboarding'
     });
 

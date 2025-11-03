@@ -33,7 +33,7 @@ async function createVerificationSession(userId, returnUrl) {
           require_matching_selfie: true,
         }
       },
-      return_url: returnUrl || 'https://opeec.com/verification-complete'
+      return_url: returnUrl || 'https://opeec.azurewebsites.net/verification-complete'
     });
 
     return session;
