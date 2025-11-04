@@ -86,8 +86,8 @@ exports.createConnectAccount = async (req, res) => {
     // Create onboarding link
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
-      refresh_url: `${process.env.FRONTEND_URL || 'http://localhost:5005'}/stripe-connect/refresh`,
-      return_url: `${process.env.FRONTEND_URL || 'http://localhost:5005'}/stripe-connect/success`,
+      refresh_url: `${process.env.FRONTEND_URL || 'https://opeec.azurewebsites.net'}/stripe-connect/refresh`,
+      return_url: `${process.env.FRONTEND_URL || 'https://opeec.azurewebsites.net'}/stripe-connect/success`,
       type: 'account_onboarding'
     });
 
