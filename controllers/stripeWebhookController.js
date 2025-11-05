@@ -113,6 +113,20 @@ async function handleAccountUpdated(account) {
 
     console.log(`✅ User ${user._id} Stripe status updated: ${user.stripe_connect.account_status}`);
 
+    // Send real-time socket notification to user
+    const { sendEventToUser } = require('../utils/socketService');
+    sendEventToUser(user._id.toString(), 'stripeConnectStatusResponse', {
+      connected: !!user.stripe_connect.account_id,
+      account_id: user.stripe_connect.account_id,
+      account_status: user.stripe_connect.account_status,
+      onboarding_completed: user.stripe_connect.onboarding_completed,
+      payouts_enabled: user.stripe_connect.payouts_enabled,
+      charges_enabled: user.stripe_connect.charges_enabled,
+      details_submitted: user.stripe_connect.details_submitted,
+      last_updated: user.stripe_connect.last_updated,
+      timestamp: new Date().toISOString()
+    });
+
     // Send admin notification if onboarding completed
     if (user.stripe_connect.onboarding_completed) {
       await createAdminNotification({

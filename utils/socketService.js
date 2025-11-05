@@ -252,6 +252,57 @@ const initializeSocket = (server) => {
       }
     });
 
+    // ---------------------- STRIPE CONNECT STATUS REQUESTS ----------------------
+    
+    /**
+     * Handle Stripe Connect status request from app
+     * App can emit 'requestStripeConnectStatus' to get current status
+     */
+    socket.on("requestStripeConnectStatus", async () => {
+      try {
+        console.log(`💳 User ${userId} requested Stripe Connect status via socket`);
+        
+        const User = require("../models/user");
+        const user = await User.findById(userId).select('stripe_connect');
+        
+        if (!user) {
+          socket.emit("stripeConnectStatusResponse", {
+            error: "User not found",
+            status: "error"
+          });
+          return;
+        }
+
+        const stripeConnectData = user.stripe_connect || {};
+        
+        // Prepare response with current Stripe Connect status
+        const response = {
+          connected: !!stripeConnectData.account_id,
+          account_id: stripeConnectData.account_id || '',
+          account_status: stripeConnectData.account_status || 'not_connected',
+          onboarding_completed: stripeConnectData.onboarding_completed || false,
+          payouts_enabled: stripeConnectData.payouts_enabled || false,
+          charges_enabled: stripeConnectData.charges_enabled || false,
+          details_submitted: stripeConnectData.details_submitted || false,
+          onboarding_url: stripeConnectData.onboarding_url || '',
+          last_updated: stripeConnectData.last_updated || '',
+          timestamp: new Date().toISOString()
+        };
+
+        // Send current status back to app
+        socket.emit("stripeConnectStatusResponse", response);
+        
+        console.log(`✅ Stripe Connect status sent to user ${userId}:`, response.account_status);
+        
+      } catch (error) {
+        console.error(`❌ Error getting Stripe Connect status for user ${userId}:`, error);
+        socket.emit("stripeConnectStatusResponse", {
+          error: "Failed to get Stripe Connect status",
+          status: "error"
+        });
+      }
+    });
+
     // Typing indicator events - only frontend involvement needed
     socket.on("startTyping", async ({ conversationId, receiverId }) => {
       if (!conversationId || !receiverId) return;
