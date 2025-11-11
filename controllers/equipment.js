@@ -378,12 +378,9 @@ async function getAllEquipments(req, res) {
   try {
     const { lat, lng, distance, name, categoryId, delivery_by_owner } = req.query;
 
-    // ✅ Validate required parameters
-    if (!lat || !lng) {
-      return res.status(400).json({ message: "Latitude and longitude are required." });
-    }
-
-    let query = {};
+    let query = {
+      equipment_status: "Active"  // Always filter only active equipment
+    };
 
     // ✅ Exclude equipment owned by the logged-in user if token is provided
     if (req.user && req.user._id) {
@@ -406,37 +403,36 @@ async function getAllEquipments(req, res) {
       query.subCategoryId = { $in: subCategoryIds };
     }
 
-    // ✅ Geospatial filtering
+    // ✅ Geospatial filtering logic:
+    // - If lat/lng not provided or are 0.0: fetch all equipment (no distance filtering)
+    // - If lat/lng provided and not 0.0: apply distance filtering
+    //   - Default distance: 50km (if distance param not provided)
+    //   - Custom distance: use provided distance value in km
     let geoPipeline = [];
-    if (parseFloat(lat) !== 0.0 || parseFloat(lng) !== 0.0) {
+    const parsedLat = lat ? parseFloat(lat) : 0.0;
+    const parsedLng = lng ? parseFloat(lng) : 0.0;
+    
+    // Only apply geospatial filtering if valid coordinates are provided
+    if (parsedLat !== 0.0 && parsedLng !== 0.0) {
       const maxDistanceKm = distance ? parseFloat(distance) : 50; // Default to 50km
 
       geoPipeline.push({
         $geoNear: {
-          near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+          near: { type: "Point", coordinates: [parsedLng, parsedLat] },
           distanceField: "distance",
           maxDistance: maxDistanceKm * 1000, // Convert km to meters
           spherical: true,
+          key: "location.coordinates", // Use the GeoJSON coordinates field
+          query: query // Apply other filters within $geoNear
         },
       });
+    } else {
+      // No geospatial filtering - just apply regular filters
+      geoPipeline.push({ $match: query });
     }
 
-    geoPipeline.push({ $match: query });
-
-    geoPipeline.push({
-      $addFields: {
-        tempLocation: {
-          type: "Point",
-          coordinates: ["$location.lng", "$location.lat"],
-        },
-      },
-    });
-
     // ✅ Fetch filtered equipment
-    const equipments = await Equipment.aggregate([
-      { $match: { equipment_status: "Active" } },  // Filter only active equipment
-      ...geoPipeline  // Spread the existing pipeline
-    ]);
+    const equipments = await Equipment.aggregate(geoPipeline);
     
 
     // ✅ Fetch subcategories and categories using helper function

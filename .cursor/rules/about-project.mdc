@@ -387,5 +387,6 @@ Triggered for all admin events with professional templates:
 - **Unified Wallet API:** Single endpoint returns all wallet data matching mobile UI requirements  
 - **Dummy Data:** Added test data for emailadress208@gmail.com with $23.0 balance and withdrawal history
 - **Withdrawal Status Flow:** Pending → Approved (transaction_id + screenshot) OR Rejected (transaction_id + reason)
+- **Geospatial Index Fix:** Fixed $geoNear errors by adding proper 2dsphere index to Equipment model location.coordinates field with automatic lat/lng→GeoJSON conversion
 
 This comprehensive overview ensures Cursor understands the complete OPEEC project structure, business logic, and current implementation without needing to search through individual files.

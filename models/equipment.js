@@ -1,11 +1,23 @@
 const mongoose = require('mongoose');
 
-// Flexible Location Schema - handles migrated data
+// Flexible Location Schema - handles migrated data and GeoJSON
 const locationSchema = new mongoose.Schema({
   address: { type: String },
   lat: { type: Number },
   lng: { type: Number },
-  range: { type: Number }
+  range: { type: Number },
+  // GeoJSON Point for geospatial queries
+  coordinates: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      index: '2dsphere'
+    }
+  }
 }, { _id: false, strict: false });
 
 // Flexible Duration Schema - handles both old and new format
@@ -51,7 +63,33 @@ const equipmentSchema = new mongoose.Schema({
   collection: 'equipments' // Explicitly specify collection name
 });
 
-// Adding compound index for location queries
+// Adding compound index for location queries (backward compatibility)
 equipmentSchema.index({ "location.lat": 1, "location.lng": 1 });
+
+// Adding 2dsphere index for GeoJSON coordinates (required for $geoNear)
+equipmentSchema.index({ "location.coordinates": "2dsphere" });
+
+// Pre-save middleware to populate GeoJSON coordinates from lat/lng
+equipmentSchema.pre('save', function(next) {
+  if (this.location && this.location.lat != null && this.location.lng != null) {
+    this.location.coordinates = {
+      type: 'Point',
+      coordinates: [this.location.lng, this.location.lat] // [longitude, latitude]
+    };
+  }
+  next();
+});
+
+// Pre-update middleware for findOneAndUpdate operations
+equipmentSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function(next) {
+  const update = this.getUpdate();
+  if (update.location && update.location.lat != null && update.location.lng != null) {
+    update.location.coordinates = {
+      type: 'Point',
+      coordinates: [update.location.lng, update.location.lat] // [longitude, latitude]
+    };
+  }
+  next();
+});
 
 module.exports = mongoose.model('Equipment', equipmentSchema);
