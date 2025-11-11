@@ -408,6 +408,9 @@ async function getAllEquipments(req, res) {
     // - If lat/lng provided and not 0.0: apply distance filtering
     //   - Default distance: 50km (if distance param not provided)
     //   - Custom distance: use provided distance value in km
+    // - Equipment range consideration:
+    //   - If delivery_by_owner = true (owner will deliver): Check both user's distance AND equipment's service range
+    //   - If delivery_by_owner = false (user will pickup): Only check user's search distance
     let geoPipeline = [];
     const parsedLat = lat ? parseFloat(lat) : 0.0;
     const parsedLng = lng ? parseFloat(lng) : 0.0;
@@ -425,6 +428,29 @@ async function getAllEquipments(req, res) {
           key: "location.coordinates", // Use the GeoJSON coordinates field
           query: query // Apply other filters within $geoNear
         },
+      });
+
+      // ✅ Add equipment range filtering logic
+      // If owner delivers (delivery_by_owner = true), check if user is within equipment's service range
+      geoPipeline.push({
+        $addFields: {
+          distanceInKm: { $divide: ["$distance", 1000] }, // Convert meters to km
+          equipmentRangeKm: { $ifNull: ["$location.range", 50] } // Default to 50km if not set
+        }
+      });
+
+      geoPipeline.push({
+        $match: {
+          $or: [
+            { delivery_by_owner: false }, // User pickup - no range check needed
+            { 
+              $and: [
+                { delivery_by_owner: true }, // Owner delivers
+                { $expr: { $lte: ["$distanceInKm", "$equipmentRangeKm"] } } // User within equipment's service range
+              ]
+            }
+          ]
+        }
       });
     } else {
       // No geospatial filtering - just apply regular filters
