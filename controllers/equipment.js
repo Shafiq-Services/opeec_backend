@@ -93,9 +93,15 @@ async function getReservationText(equipmentId) {
       return ''; // Not reserved
     }
     
-    // Format the date as "Reserved till HH:MM - DD/MM/YY"
     const endDate = new Date(activeOrder.rental_schedule.end_date);
+    const currentDate = new Date();
     
+    // ✅ Only show reservation text if the end date is in the FUTURE
+    if (endDate <= currentDate) {
+      return ''; // Reservation has ended (past date), don't show text
+    }
+    
+    // Format the date as "Reserved till HH:MM - DD/MM/YY"
     // Extract time components
     const hours = String(endDate.getHours()).padStart(2, '0');
     const minutes = String(endDate.getMinutes()).padStart(2, '0');
