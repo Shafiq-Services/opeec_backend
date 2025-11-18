@@ -43,6 +43,7 @@ router.put('/update', userController.updateUser);
 
 // Stripe Identity Verification Routes
 router.post('/verification/initiate', verificationController.initiateVerification);
+router.get('/verification/can-retry', verificationController.canRetryVerification);
 router.get('/verification/status', verificationController.getVerificationStatus);
 router.get('/verification/history', verificationController.getUserVerificationHistory);
 

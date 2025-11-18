@@ -19,6 +19,7 @@ router.put('/update-profile', userController.updateUserProfileByAdmin);
 
 // Stripe Verification Admin Routes
 router.get('/verification-filter', adminVerificationController.getUsersByVerificationStatus);
+router.get('/sync-verification-statuses', require('../controllers/verificationController').syncVerificationStatuses);
 router.get('/:userId/verification-history', adminVerificationController.getUserVerificationHistory);
 
 module.exports = router; 

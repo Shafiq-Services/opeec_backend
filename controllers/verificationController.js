@@ -10,6 +10,27 @@ const { sendEventToUser } = require('../utils/socketService');
 const { createTransaction } = require('../utils/walletService');
 
 /**
+ * Helper: Send verification status update via socket (both old and new events)
+ * Maintains compatibility with existing mobile app
+ */
+function emitVerificationStatusUpdate(userId, status, message, additionalData = {}) {
+  // New event format
+  sendEventToUser(userId, 'verificationStatusChanged', {
+    status,
+    message,
+    ...additionalData
+  });
+  
+  // Legacy event format for existing mobile app
+  sendEventToUser(userId, 'isVerified', {
+    _id: userId,
+    isVerified: status === 'verified',
+    verification_status: status,
+    rejection_reason: status === 'failed' ? message : ''
+  });
+}
+
+/**
  * Initiate Identity Verification
  * POST /user/verification/initiate
  * 
@@ -43,14 +64,55 @@ const initiateVerification = async (req, res) => {
       });
     }
 
-    // Check if verification is pending (don't allow multiple concurrent sessions)
+    // Check if verification is pending - with smart retry logic
     if (user.stripe_verification?.status === 'pending') {
-      return res.status(200).json({
-        message: 'Verification is already in progress',
-        verification_status: 'pending',
-        session_id: user.stripe_verification.session_id || '',
-        pending: true
-      });
+      const lastAttempt = user.stripe_verification.last_attempt_at;
+      const hoursSinceLastAttempt = lastAttempt ? 
+        (new Date() - new Date(lastAttempt)) / (1000 * 60 * 60) : 0;
+      
+      // Allow retry if session is likely expired (>24 hours) or requires input
+      if (hoursSinceLastAttempt > 24) {
+        console.log(`⏰ Pending session expired (${hoursSinceLastAttempt.toFixed(1)}h ago), allowing retry`);
+      } else {
+        // Check current session status from Stripe to see if it changed
+        try {
+          const currentSession = await retrieveVerificationSession(user.stripe_verification.session_id);
+          
+          if (currentSession.status === 'requires_input') {
+            console.log(`⚠️ Session requires input, allowing retry`);
+            // Allow retry - fall through to create new session
+          } else if (currentSession.status === 'verified') {
+            // Update database and return verified status
+            user.stripe_verification.status = 'verified';
+            user.stripe_verification.verified_at = new Date();
+            await user.save();
+            
+            return res.status(200).json({
+              message: 'User is already verified',
+              verification_status: 'verified',
+              verified_at: user.stripe_verification.verified_at,
+              already_verified: true
+            });
+          } else if (currentSession.status === 'canceled' || currentSession.status === 'failed') {
+            console.log(`❌ Session ${currentSession.status}, allowing retry`);
+            // Allow retry - fall through to create new session
+          } else {
+            // Still genuinely pending
+            return res.status(200).json({
+              message: 'Verification is still in progress. Please wait for completion.',
+              verification_status: 'pending',
+              session_id: user.stripe_verification.session_id,
+              hours_since_started: hoursSinceLastAttempt.toFixed(1),
+              estimated_completion: '24-48 hours',
+              pending: true,
+              can_retry_after: lastAttempt ? new Date(new Date(lastAttempt).getTime() + 24 * 60 * 60 * 1000) : null
+            });
+          }
+        } catch (stripeError) {
+          console.log(`⚠️ Could not fetch session status, allowing retry: ${stripeError.message}`);
+          // If we can't check Stripe status, allow retry (session might be expired)
+        }
+      }
     }
 
     // Allow new verification attempt if status is 'failed' or 'not_verified'
@@ -257,12 +319,11 @@ async function handleVerificationVerified(session) {
 
   await user.save();
 
-  // Send real-time notification to user
-  sendEventToUser(userId, 'verificationStatusChanged', {
-    status: 'verified',
-    message: 'Your identity has been verified successfully! You can now rent equipment.',
-    verified_at: new Date()
-  });
+  // Send real-time notification to user (both events for compatibility)
+  emitVerificationStatusUpdate(userId, 'verified', 
+    'Your identity has been verified successfully! You can now rent equipment.',
+    { verified_at: new Date() }
+  );
 
   console.log(`✅ User verification completed: ${userId}`);
 }
@@ -296,11 +357,10 @@ async function handleVerificationRequiresInput(session) {
 
   await user.save();
 
-  // Send real-time notification
-  sendEventToUser(userId, 'verificationStatusChanged', {
-    status: 'requires_input',
-    message: 'Additional information is required for verification. Please complete the verification process.'
-  });
+  // Send real-time notification (both events for compatibility)
+  emitVerificationStatusUpdate(userId, 'requires_input',
+    'Additional information is required for verification. Please complete the verification process.'
+  );
 }
 
 /**
@@ -333,15 +393,232 @@ async function handleVerificationCanceled(session) {
 
   await user.save();
 
-  // Send real-time notification
-  sendEventToUser(userId, 'verificationStatusChanged', {
-    status: 'failed',
-    message: 'Identity verification failed. Please try again.',
-    can_retry: true
-  });
+  // Send real-time notification (both events for compatibility)
+  emitVerificationStatusUpdate(userId, 'failed',
+    'Identity verification failed. Please try again.',
+    { can_retry: true }
+  );
 
   console.log(`❌ User verification failed: ${userId}`);
 }
+
+/**
+ * Sync verification statuses with Stripe (Background Job - Admin only)
+ * GET /admin/users/sync-verification-statuses
+ * 
+ * Checks all pending verifications and updates database with current Stripe status
+ * Prevents stale "pending" statuses
+ */
+const syncVerificationStatuses = async (req, res) => {
+  try {
+    console.log('🔄 Starting verification status sync...');
+    
+    const User = require('../models/user');
+    
+    // Find all users with pending verification older than 1 hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const pendingUsers = await User.find({
+      'stripe_verification.status': 'pending',
+      'stripe_verification.last_attempt_at': { $lt: oneHourAgo }
+    }).select('_id stripe_verification');
+
+    const results = {
+      checked: 0,
+      updated: 0,
+      failed: 0,
+      details: []
+    };
+
+    for (const user of pendingUsers) {
+      results.checked++;
+      
+      try {
+        const sessionId = user.stripe_verification.session_id;
+        if (!sessionId) {
+          results.failed++;
+          continue;
+        }
+
+        // Check current status from Stripe
+        const currentSession = await retrieveVerificationSession(sessionId);
+        const currentStatus = currentSession.status;
+        const dbStatus = user.stripe_verification.status;
+
+        // Update if status changed
+        if (currentStatus !== dbStatus) {
+          user.stripe_verification.status = currentStatus;
+          
+          if (currentStatus === 'verified') {
+            user.stripe_verification.verified_at = new Date();
+            user.isUserVerified = true;
+          }
+          
+          await user.save();
+          results.updated++;
+          
+          // Send socket notification
+          emitVerificationStatusUpdate(user._id.toString(), currentStatus,
+            `Verification status updated to: ${currentStatus}`
+          );
+          
+          results.details.push({
+            user_id: user._id,
+            old_status: dbStatus,
+            new_status: currentStatus
+          });
+          
+          console.log(`✅ Synced user ${user._id}: ${dbStatus} → ${currentStatus}`);
+        }
+      } catch (error) {
+        results.failed++;
+        console.error(`❌ Failed to sync user ${user._id}:`, error.message);
+      }
+    }
+
+    console.log(`✅ Sync complete: ${results.updated}/${results.checked} updated, ${results.failed} failed`);
+
+    res.status(200).json({
+      message: 'Verification status sync completed',
+      checked: results.checked,
+      updated: results.updated,
+      failed: results.failed,
+      details: results.details
+    });
+
+  } catch (error) {
+    console.error('❌ Error syncing verification statuses:', error);
+    res.status(500).json({
+      message: 'Error syncing verification statuses',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Check if verification retry is allowed
+ * GET /user/verification/can-retry
+ * 
+ * Returns whether user can retry verification and why/when
+ */
+const canRetryVerification = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const user = await User.findById(userId).select('stripe_verification');
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const verification = user.stripe_verification || {};
+    const status = verification.status || 'not_verified';
+    
+    // Already verified - no retry needed
+    if (status === 'verified') {
+      return res.status(200).json({
+        can_retry: false,
+        reason: 'already_verified',
+        message: 'User is already verified',
+        verification_status: 'verified'
+      });
+    }
+
+    // Failed or not verified - can always retry
+    if (status === 'failed' || status === 'not_verified') {
+      return res.status(200).json({
+        can_retry: true,
+        reason: 'failed_or_new',
+        message: 'Retry allowed',
+        verification_status: status
+      });
+    }
+
+    // Pending - check smart retry conditions
+    if (status === 'pending') {
+      const lastAttempt = verification.last_attempt_at;
+      const hoursSinceLastAttempt = lastAttempt ? 
+        (new Date() - new Date(lastAttempt)) / (1000 * 60 * 60) : 0;
+      
+      // Session likely expired
+      if (hoursSinceLastAttempt > 24) {
+        return res.status(200).json({
+          can_retry: true,
+          reason: 'session_expired',
+          message: 'Session expired, retry allowed',
+          hours_since_started: hoursSinceLastAttempt.toFixed(1),
+          verification_status: status
+        });
+      }
+
+      // Check Stripe session status
+      try {
+        const currentSession = await retrieveVerificationSession(verification.session_id);
+        
+        if (currentSession.status === 'requires_input') {
+          return res.status(200).json({
+            can_retry: true,
+            reason: 'requires_input',
+            message: 'Additional documents needed, retry allowed',
+            verification_status: status
+          });
+        }
+        
+        if (currentSession.status === 'verified') {
+          return res.status(200).json({
+            can_retry: false,
+            reason: 'verified',
+            message: 'Verification completed successfully',
+            verification_status: 'verified'
+          });
+        }
+        
+        if (currentSession.status === 'canceled' || currentSession.status === 'failed') {
+          return res.status(200).json({
+            can_retry: true,
+            reason: 'session_failed',
+            message: 'Previous session failed, retry allowed',
+            verification_status: 'failed'
+          });
+        }
+        
+        // Still genuinely pending
+        const retryAfter = lastAttempt ? new Date(new Date(lastAttempt).getTime() + 24 * 60 * 60 * 1000) : null;
+        return res.status(200).json({
+          can_retry: false,
+          reason: 'still_pending',
+          message: 'Verification is still being processed',
+          hours_since_started: hoursSinceLastAttempt.toFixed(1),
+          estimated_completion: '24-48 hours',
+          can_retry_after: retryAfter,
+          verification_status: status
+        });
+        
+      } catch (stripeError) {
+        // If can't check Stripe, assume retry is allowed
+        return res.status(200).json({
+          can_retry: true,
+          reason: 'stripe_check_failed',
+          message: 'Session status unclear, retry allowed',
+          verification_status: status
+        });
+      }
+    }
+
+    // Default case
+    return res.status(200).json({
+      can_retry: false,
+      reason: 'unknown_status',
+      message: 'Cannot determine retry eligibility',
+      verification_status: status
+    });
+
+  } catch (error) {
+    console.error('❌ Error checking retry eligibility:', error);
+    res.status(500).json({
+      message: 'Error checking retry eligibility',
+      error: error.message
+    });
+  }
+};
 
 /**
  * Get Verification Status
@@ -476,6 +753,8 @@ function getNextStepsMessage(status) {
 
 module.exports = {
   initiateVerification,
+  canRetryVerification,
+  syncVerificationStatuses,
   handleVerificationWebhook,
   getVerificationStatus,
   getUserVerificationHistory

@@ -238,8 +238,16 @@ const initializeSocket = (server) => {
           timestamp: new Date().toISOString()
         };
 
-        // Send current status back to app
+        // Send current status back to app (both events for compatibility)
         socket.emit("verificationStatusResponse", response);
+        
+        // ALSO emit legacy event name for existing mobile app compatibility
+        socket.emit("isVerified", {
+          _id: userId,
+          isVerified: response.verification_status === 'verified',
+          verification_status: response.verification_status,
+          rejection_reason: response.verification_status === 'failed' ? 'Verification failed' : ''
+        });
         
         console.log(`✅ Verification status sent to user ${userId}:`, response.verification_status);
         
