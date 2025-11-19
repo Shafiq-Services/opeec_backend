@@ -46,6 +46,7 @@ router.post('/verification/initiate', verificationController.initiateVerificatio
 router.get('/verification/can-retry', verificationController.canRetryVerification);
 router.get('/verification/status', verificationController.getVerificationStatus);
 router.get('/verification/history', verificationController.getUserVerificationHistory);
+router.get('/verification/recover', verificationController.recoverOrphanedVerification);
 
 // Resend ID card selfie for verification (DEPRECATED - will be removed)
 router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);

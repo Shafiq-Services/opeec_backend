@@ -67,29 +67,74 @@ exports.createConnectAccount = async (req, res) => {
 
     // Create new Stripe Express Connect account
     const stripe = await getStripeInstance();
-    const account = await stripe.accounts.create({
-      type: 'express',
-      country: req.body.country || 'US', // Default to US, can be changed
-      email: user.email,
-      capabilities: {
-        card_payments: { requested: true }, // Owner doesn't accept payments
-        transfers: { requested: true }        // Owner receives transfers
-      },
-      business_type: 'individual',
-      metadata: {
-        user_id: userId.toString(),
-        user_name: user.name,
-        user_email: user.email
-      }
-    });
+    let account;
+    let accountLink;
+    
+    try {
+      account = await stripe.accounts.create({
+        type: 'express',
+        country: req.body.country || 'US', // Default to US, can be changed
+        email: user.email,
+        capabilities: {
+          card_payments: { requested: true }, // Owner doesn't accept payments
+          transfers: { requested: true }        // Owner receives transfers
+        },
+        business_type: 'individual',
+        metadata: {
+          user_id: userId.toString(),
+          user_name: user.name,
+          user_email: user.email
+        }
+      });
+      console.log(`✅ Stripe Connect account created: ${account.id}`);
+    } catch (accountError) {
+      console.error('❌ Failed to create Stripe Connect account:', accountError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create Stripe Connect account',
+        error: accountError.message,
+        error_code: 'stripe_account_creation_failed'
+      });
+    }
 
-    // Create onboarding link
-    const accountLink = await stripe.accountLinks.create({
-      account: account.id,
-      refresh_url: `https://opeec.azurewebsites.net/stripe-connect/refresh`,
-      return_url: `https://opeec.azurewebsites.net/stripe-connect/success`,
-      type: 'account_onboarding'
-    });
+    // Create onboarding link with error handling
+    try {
+      accountLink = await stripe.accountLinks.create({
+        account: account.id,
+        refresh_url: `https://opeec.azurewebsites.net/stripe-connect/refresh`,
+        return_url: `https://opeec.azurewebsites.net/stripe-connect/success`,
+        type: 'account_onboarding'
+      });
+      console.log(`✅ Onboarding link created for account: ${account.id}`);
+    } catch (linkError) {
+      console.error('❌ Failed to create onboarding link:', linkError);
+      
+      // CRITICAL: Rollback - Delete the Stripe account if link creation fails
+      try {
+        await stripe.accounts.del(account.id);
+        console.log(`🔄 Rolled back Stripe account ${account.id} due to link creation failure`);
+      } catch (rollbackError) {
+        console.error('❌ Failed to rollback Stripe account:', rollbackError);
+        // Log for admin intervention - account is orphaned
+        await createAdminNotification({
+          type: 'STRIPE_CONNECT_ORPHANED',
+          message: `⚠️ CRITICAL: Orphaned Stripe Connect account ${account.id} for user ${userId} - Link creation failed`,
+          metadata: {
+            user_id: userId.toString(),
+            account_id: account.id,
+            error: linkError.message
+          }
+        });
+      }
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create onboarding link',
+        error: linkError.message,
+        error_code: 'onboarding_link_creation_failed',
+        account_rolled_back: true
+      });
+    }
 
     // Update user with Stripe Connect information
     user.stripe_connect = {
@@ -103,7 +148,39 @@ exports.createConnectAccount = async (req, res) => {
       last_updated: new Date()
     };
 
-    await user.save();
+    // Save to database with error handling and rollback
+    try {
+      await user.save();
+      console.log(`✅ Stripe Connect account saved to database: ${account.id}`);
+    } catch (dbError) {
+      console.error('❌ Database save failed after Stripe account creation:', dbError);
+      
+      // CRITICAL: Rollback - Delete the Stripe account if DB save fails
+      try {
+        await stripe.accounts.del(account.id);
+        console.log(`🔄 Rolled back Stripe account ${account.id} due to DB save failure`);
+      } catch (rollbackError) {
+        console.error('❌ Failed to rollback Stripe account:', rollbackError);
+        // Log for admin intervention - account is orphaned
+        await createAdminNotification({
+          type: 'STRIPE_CONNECT_ORPHANED',
+          message: `⚠️ CRITICAL: Orphaned Stripe Connect account ${account.id} for user ${userId} - DB save failed`,
+          metadata: {
+            user_id: userId.toString(),
+            account_id: account.id,
+            error: dbError.message
+          }
+        });
+      }
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to save Stripe Connect account',
+        error: dbError.message,
+        error_code: 'database_save_failed',
+        account_rolled_back: true
+      });
+    }
 
     console.log(`✅ Stripe Connect account created for user ${userId}: ${account.id}`);
 

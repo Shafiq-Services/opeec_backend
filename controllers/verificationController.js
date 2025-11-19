@@ -8,6 +8,7 @@ const {
 } = require('../utils/stripeIdentity');
 const { sendEventToUser } = require('../utils/socketService');
 const { createTransaction } = require('../utils/walletService');
+const { createAdminNotification } = require('./adminNotificationController');
 
 /**
  * Helper: Send verification status update via socket (both old and new events)
@@ -176,7 +177,39 @@ const initiateVerification = async (req, res) => {
       created_at: new Date()
     });
 
-    await user.save();
+    // Step 3: Save to database with error handling and rollback
+    try {
+      await user.save();
+      console.log(`✅ User verification status saved to database: ${userId}`);
+    } catch (dbError) {
+      console.error('❌ Database save failed after Stripe session creation:', dbError);
+      
+      // CRITICAL: Rollback - Cancel the Stripe session to prevent orphaned state
+      try {
+        const stripe = await getStripeInstance();
+        await stripe.identity.verificationSessions.cancel(session.id);
+        console.log(`🔄 Rolled back Stripe session ${session.id} due to DB save failure`);
+      } catch (rollbackError) {
+        console.error('❌ Failed to rollback Stripe session:', rollbackError);
+        // Log for admin intervention - session is orphaned
+        await createAdminNotification({
+          type: 'STRIPE_VERIFICATION_ORPHANED',
+          message: `⚠️ CRITICAL: Orphaned verification session ${session.id} for user ${userId} - DB save failed`,
+          metadata: {
+            user_id: userId.toString(),
+            session_id: session.id,
+            error: dbError.message
+          }
+        });
+      }
+      
+      return res.status(500).json({
+        message: 'Failed to save verification status',
+        error: dbError.message,
+        error_code: 'database_save_failed',
+        session_rolled_back: true
+      });
+    }
     
     // 💰 LOG VERIFICATION FEE IN WALLET TRANSACTION HISTORY
     try {
@@ -751,12 +784,103 @@ function getNextStepsMessage(status) {
   return nextSteps[status] || 'Check your verification status in the app.';
 }
 
+/**
+ * Recovery endpoint: Sync orphaned Stripe verification sessions
+ * GET /user/verification/recover
+ * 
+ * Checks if user has Stripe sessions that aren't in database and syncs them
+ * Prevents dead-end states from database save failures
+ */
+const recoverOrphanedVerification = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // If user has no session_id but might have orphaned sessions, check Stripe
+    if (!user.stripe_verification?.session_id) {
+      // No session to recover
+      return res.status(200).json({
+        message: 'No orphaned sessions found',
+        recovered: false
+      });
+    }
+
+    const sessionId = user.stripe_verification.session_id;
+    
+    try {
+      // Check current status from Stripe
+      const currentSession = await retrieveVerificationSession(sessionId);
+      const currentStatus = currentSession.status;
+      const dbStatus = user.stripe_verification.status;
+
+      // If statuses don't match, update database
+      if (currentStatus !== dbStatus) {
+        user.stripe_verification.status = currentStatus;
+        
+        if (currentStatus === 'verified') {
+          user.stripe_verification.verified_at = new Date();
+          user.isUserVerified = true;
+        }
+        
+        await user.save();
+        
+        // Send socket notification
+        emitVerificationStatusUpdate(userId, currentStatus,
+          `Verification status recovered: ${currentStatus}`
+        );
+        
+        return res.status(200).json({
+          message: 'Verification status recovered',
+          recovered: true,
+          old_status: dbStatus,
+          new_status: currentStatus
+        });
+      }
+      
+      return res.status(200).json({
+        message: 'Status already in sync',
+        recovered: false,
+        status: dbStatus
+      });
+      
+    } catch (stripeError) {
+      // Session might not exist in Stripe (expired/deleted)
+      if (stripeError.message.includes('No such')) {
+        // Reset to not_verified if session doesn't exist
+        user.stripe_verification.status = 'not_verified';
+        user.stripe_verification.session_id = '';
+        await user.save();
+        
+        return res.status(200).json({
+          message: 'Orphaned session cleaned up',
+          recovered: true,
+          action: 'reset_to_not_verified'
+        });
+      }
+      
+      throw stripeError;
+    }
+
+  } catch (error) {
+    console.error('❌ Error recovering verification:', error);
+    res.status(500).json({
+      message: 'Error recovering verification',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   initiateVerification,
   canRetryVerification,
   syncVerificationStatuses,
   handleVerificationWebhook,
   getVerificationStatus,
-  getUserVerificationHistory
+  getUserVerificationHistory,
+  recoverOrphanedVerification
 };
 
