@@ -70,6 +70,7 @@ const userSchema = new mongoose.Schema({
     payouts_enabled: { type: Boolean, default: false },
     details_submitted: { type: Boolean, default: false },
     onboarding_url: { type: String, default: "" },
+    onboarding_url_created_at: { type: Date, default: null }, // Track when link was created (links expire in 5 minutes)
     last_updated: { type: Date, default: null }
   }
 }, { 

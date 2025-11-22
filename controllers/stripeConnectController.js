@@ -34,9 +34,36 @@ exports.createConnectAccount = async (req, res) => {
 
     // Check if user already has a Stripe Connect account
     if (user.stripe_connect.account_id) {
-      // If account exists but onboarding not completed, regenerate onboarding link
+      // If account exists but onboarding not completed, check link validity before regenerating
       if (!user.stripe_connect.onboarding_completed) {
         const stripe = await getStripeInstance();
+        
+        // Check if existing link is still valid (Stripe links expire in 5 minutes)
+        // We reuse links that are less than 4 minutes old to avoid rate limits
+        const linkCreatedAt = user.stripe_connect.onboarding_url_created_at;
+        const now = new Date();
+        const fourMinutesAgo = new Date(now.getTime() - 4 * 60 * 1000);
+        
+        const hasValidLink = linkCreatedAt && 
+                            linkCreatedAt > fourMinutesAgo && 
+                            user.stripe_connect.onboarding_url;
+
+        if (hasValidLink) {
+          console.log(`♻️ Reusing valid onboarding link for user ${userId} (created ${Math.floor((now - linkCreatedAt) / 1000)}s ago)`);
+          
+          return res.status(200).json({
+            success: true,
+            message: 'Account exists, using existing onboarding link',
+            account_id: user.stripe_connect.account_id,
+            onboarding_url: user.stripe_connect.onboarding_url,
+            onboarding_completed: false,
+            link_reused: true
+          });
+        }
+
+        // Link expired or doesn't exist - create new one
+        console.log(`🔄 Creating new onboarding link for user ${userId} (previous link expired or missing)`);
+        
         const accountLink = await stripe.accountLinks.create({
           account: user.stripe_connect.account_id,
           refresh_url: `https://opeec.azurewebsites.net/stripe-connect/refresh`,
@@ -45,6 +72,7 @@ exports.createConnectAccount = async (req, res) => {
         });
 
         user.stripe_connect.onboarding_url = accountLink.url;
+        user.stripe_connect.onboarding_url_created_at = new Date(); // Track when link was created
         await user.save();
 
         return res.status(200).json({
@@ -52,7 +80,8 @@ exports.createConnectAccount = async (req, res) => {
           message: 'Account exists, onboarding link refreshed',
           account_id: user.stripe_connect.account_id,
           onboarding_url: accountLink.url,
-          onboarding_completed: false
+          onboarding_completed: false,
+          link_reused: false
         });
       }
 
@@ -109,6 +138,20 @@ exports.createConnectAccount = async (req, res) => {
     } catch (linkError) {
       console.error('❌ Failed to create onboarding link:', linkError);
       
+      // Check if it's a rate limit error (429)
+      if (linkError.statusCode === 429 || linkError.code === 'rate_limit') {
+        // Don't rollback the account - it's valid, just rate limited
+        return res.status(429).json({
+          success: false,
+          message: 'Stripe rate limit reached. Please wait a moment and try again.',
+          error: 'Rate limit exceeded',
+          error_code: 'stripe_rate_limit',
+          account_id: account.id, // Keep the account
+          retry_after: 60 // Suggest retry after 60 seconds
+        });
+      }
+      
+      // For other errors, rollback the account
       // CRITICAL: Rollback - Delete the Stripe account if link creation fails
       try {
         await stripe.accounts.del(account.id);
@@ -145,6 +188,7 @@ exports.createConnectAccount = async (req, res) => {
       payouts_enabled: false,
       details_submitted: false,
       onboarding_url: accountLink.url,
+      onboarding_url_created_at: new Date(), // Track when link was created
       last_updated: new Date()
     };
 
@@ -315,6 +359,7 @@ exports.refreshOnboardingLink = async (req, res) => {
     });
 
     user.stripe_connect.onboarding_url = accountLink.url;
+    user.stripe_connect.onboarding_url_created_at = new Date(); // Track when link was created
     await user.save();
 
     console.log(`🔄 Onboarding link refreshed for user ${userId}`);
