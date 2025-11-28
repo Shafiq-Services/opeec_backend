@@ -76,6 +76,30 @@ const orderSchema = new mongoose.Schema({
     transfer_completed_at: { type: Date, default: null },
     transfer_failure_reason: { type: String, default: "" },
     destination_account_id: { type: String, default: "" } // Owner's Stripe Connect account
+  },
+
+  // Stripe Payment - Customer payment collection and refund tracking
+  stripe_payment: {
+    payment_intent_id: { type: String, default: "" },
+    payment_method_id: { type: String, default: "" }, // For off-session late penalty charges
+    customer_id: { type: String, default: "" },
+    payment_status: { 
+      type: String, 
+      enum: ['pending', 'succeeded', 'failed', 'refunded', 'partially_refunded'],
+      default: 'pending'
+    },
+    amount_captured: { type: Number, default: 0 },
+    payment_captured_at: { type: Date, default: null },
+    refund_id: { type: String, default: "" },
+    refund_amount: { type: Number, default: 0 },
+    refund_status: { type: String, default: "" },
+    refund_processed_at: { type: Date, default: null },
+    late_penalty_charges: [{ 
+      charge_id: { type: String },
+      amount: { type: Number },
+      charged_at: { type: Date },
+      status: { type: String }
+    }]
   }
 }, { 
   timestamps: true // Replaces created_at/updated_at with createdAt/updatedAt

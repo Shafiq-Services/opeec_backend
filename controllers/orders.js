@@ -8,6 +8,7 @@ const { calculateOrderFees } = require('../utils/feeCalculations');
 const { createAdminNotification } = require('./adminNotificationController');
 const User = require('../models/user');
 const { triggerAutomaticPayout } = require('./stripeConnectController');
+const { getStripeInstance } = require('../utils/stripeIdentity');
 
 // Helper function to create subcategory lookup pipeline for embedded subcategories
 function createSubcategoryLookupPipeline() {
@@ -92,7 +93,8 @@ exports.addOrder = async (req, res) => {
       deposit_amount,
       total_amount,
       subtotal,
-      is_insurance
+      is_insurance,
+      payment_intent_id  // New field for Stripe payment
     } = req.body;
 
     // Validation: Required fields
@@ -135,6 +137,61 @@ exports.addOrder = async (req, res) => {
         require_verification: true,
         verification_url: '/user/verification/initiate'
       });
+    }
+
+    // PAYMENT VERIFICATION - Verify Stripe payment completed
+    let paymentDetails = null;
+    if (payment_intent_id) {
+      try {
+        const stripe = await getStripeInstance();
+        const paymentIntent = await stripe.paymentIntents.retrieve(payment_intent_id);
+        
+        if (paymentIntent.status !== 'succeeded') {
+          console.log(`❌ Payment not completed for order. Payment Intent: ${payment_intent_id}, Status: ${paymentIntent.status}`);
+          
+          return res.status(400).json({ 
+            message: 'Payment not completed. Please complete payment before creating order.',
+            error_code: 'payment_not_completed',
+            payment_status: paymentIntent.status
+          });
+        }
+
+        // Verify payment amount matches order total (with small tolerance for currency conversion)
+        const paidAmount = paymentIntent.amount / 100; // Convert cents to dollars
+        const amountDifference = Math.abs(paidAmount - total_amount);
+        
+        if (amountDifference > 0.50) { // Allow 50 cent difference for rounding
+          console.log(`⚠️ Payment amount mismatch. Paid: $${paidAmount}, Order Total: $${total_amount}`);
+          
+          return res.status(400).json({ 
+            message: `Payment amount mismatch. Paid: $${paidAmount}, Required: $${total_amount}`,
+            error_code: 'payment_amount_mismatch'
+          });
+        }
+
+        paymentDetails = {
+          payment_intent_id: paymentIntent.id,
+          payment_method_id: paymentIntent.payment_method,
+          customer_id: paymentIntent.customer,
+          payment_status: 'succeeded',
+          amount_captured: paidAmount,
+          payment_captured_at: new Date()
+        };
+
+        console.log(`✅ Payment verified: ${payment_intent_id} - $${paidAmount}`);
+      } catch (paymentError) {
+        console.error('Error verifying payment:', paymentError);
+        
+        return res.status(400).json({ 
+          message: 'Failed to verify payment. Please try again.',
+          error_code: 'payment_verification_failed',
+          error: paymentError.message
+        });
+      }
+    } else {
+      // ⚠️ BACKWARD COMPATIBILITY: Allow orders without payment for now
+      // TODO: Make payment_intent_id required after Flutter app update is deployed
+      console.log(`⚠️ Order created without payment verification - User ${userId}, Equipment ${equipmentId}`);
     }
 
     // Backend validation: Verify pricing calculations match expected values
@@ -190,7 +247,9 @@ exports.addOrder = async (req, res) => {
       subtotal,
       security_option: {
         insurance: is_insurance
-      }
+      },
+      // Add payment details if payment was made
+      ...(paymentDetails && { stripe_payment: paymentDetails })
     });
 
     const savedOrder = await newOrder.save();
@@ -446,14 +505,60 @@ exports.cancelOrder = async (req, res) => {
     order.rental_status = "Cancelled";
     await order.save();
 
+    let refundProcessed = false;
+    let refundAmount = 0;
+
     // Process settlement for cancelled order
     try {
       const currentTime = new Date();
       const startDate = new Date(order.rental_schedule.start_date);
       const isBeforeCutoff = currentTime < startDate;
       
-      await processOrderCancellation(order._id, isBeforeCutoff);
+      const settlementResult = await processOrderCancellation(order._id, isBeforeCutoff);
       console.log(`💰 Settlement processed for cancelled order: ${order._id}`);
+      
+      // Extract refund amount from settlement result
+      // Settlement returns wallet transactions - find the refund to customer
+      if (settlementResult && settlementResult.transactions) {
+        const customerRefund = settlementResult.transactions.find(t => 
+          t.type === 'RENTAL_REFUND' && String(t.user_id) === String(order.userId)
+        );
+        if (customerRefund) {
+          refundAmount = Math.abs(customerRefund.amount);
+        }
+      } else {
+        // Fallback: full refund if before cutoff
+        refundAmount = isBeforeCutoff ? order.total_amount : 0;
+      }
+
+      // Process Stripe refund if payment was made
+      if (refundAmount > 0 && order.stripe_payment && order.stripe_payment.payment_intent_id) {
+        try {
+          const { processRefund } = require('./paymentController');
+          await processRefund(order._id, refundAmount, 'requested_by_customer');
+          refundProcessed = true;
+          console.log(`✅ Stripe refund of $${refundAmount} processed for order ${order._id}`);
+        } catch (refundError) {
+          console.error(`❌ Stripe refund error for order ${order._id}:`, refundError);
+          // Create admin notification for manual refund
+          await createAdminNotification(
+            'refund_failed',
+            `Automatic refund failed for cancelled order ${order._id} - requires manual processing`,
+            {
+              orderId: order._id,
+              userId: order.userId,
+              equipmentId: order.equipmentId,
+              data: {
+                refundAmount: refundAmount,
+                error: refundError.message
+              }
+            }
+          );
+        }
+      } else if (refundAmount > 0) {
+        console.log(`ℹ️ No payment found for order ${order._id} - skipping Stripe refund`);
+      }
+
     } catch (settlementError) {
       console.error(`❌ Settlement error for cancelled order ${order._id}:`, settlementError);
       // Continue with order cancellation even if settlement fails
@@ -464,6 +569,8 @@ exports.cancelOrder = async (req, res) => {
       status: true,
       order_id: order._id,
       rental_status: order.rental_status,
+      refund_processed: refundProcessed,
+      refund_amount: refundAmount
     });
   } catch (err) {
     console.error("Error canceling order:", err);
@@ -853,8 +960,50 @@ const applyLatePenalty = async (order) => {
   const expectedPenalty = (daysLate + 1) * DAILY_PENALTY;
 
   if (order.penalty_amount !== expectedPenalty) {
+    const penaltyIncrease = expectedPenalty - order.penalty_amount;
+    
+    // Update penalty amount in database
     await updateOrder(order, { penalty_amount: expectedPenalty });
-    console.log(`💰 Penalty updated: $${expectedPenalty}`);
+    console.log(`💰 Penalty updated: $${expectedPenalty} (increase: $${penaltyIncrease})`);
+
+    // Attempt to charge the penalty increase to customer's card
+    if (penaltyIncrease > 0 && order.stripe_payment && order.stripe_payment.payment_method_id) {
+      try {
+        const { chargeLatePenalty } = require('./paymentController');
+        const chargeResult = await chargeLatePenalty(order._id, penaltyIncrease, daysLate);
+        
+        if (chargeResult.success) {
+          console.log(`✅ Late penalty of $${penaltyIncrease} charged successfully`);
+        } else {
+          console.log(`⚠️ Late penalty charge failed - ${chargeResult.message}`);
+        }
+      } catch (chargeError) {
+        console.error(`❌ Error charging late penalty for order ${order._id}:`, chargeError);
+        
+        // Payment failed - admin notification already sent by chargeLatePenalty
+        // Order penalty amount is still tracked for manual collection
+      }
+    } else if (penaltyIncrease > 0) {
+      console.log(`ℹ️ No saved payment method for order ${order._id} - penalty tracked but not charged`);
+      
+      // Notify admin for manual collection (only once when penalty first applied)
+      if (order.penalty_amount === DAILY_PENALTY) {
+        await createAdminNotification(
+          'late_penalty_manual_collection',
+          `Late penalty requires manual collection for order ${order._id}`,
+          {
+            orderId: order._id,
+            userId: order.userId,
+            equipmentId: order.equipmentId,
+            data: {
+              penaltyAmount: expectedPenalty,
+              daysLate: daysLate,
+              reason: 'No saved payment method'
+            }
+          }
+        );
+      }
+    }
   }
 };
 

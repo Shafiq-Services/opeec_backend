@@ -57,6 +57,9 @@ const userSchema = new mongoose.Schema({
   favorite_equipments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Equipment' }],
   stripe_verification: { type: stripeVerificationSchema, default: () => ({}) },
   
+  // Stripe Customer ID - For payment collection (renters)
+  stripe_customer_id: { type: String, default: "" },
+  
   // Stripe Connect - For equipment owners to receive automated payouts
   stripe_connect: {
     account_id: { type: String, default: "" },

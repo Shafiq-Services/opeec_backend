@@ -135,6 +135,11 @@ Order (orderId)
 - `POST /send-support-message` - User-to-admin support tickets
 - `POST /admin-reply-support` - Admin responses to support
 
+### **Payment APIs (`/payment/`):**
+- `POST /create-intent` - Create Stripe PaymentIntent with Connect integration
+- `POST /confirm` - Confirm payment success (optional validation)
+- `POST /webhook` - Handle Stripe payment events (refunds, failures)
+
 ---
 
 ## ⚡ **REAL-TIME SOCKET EVENTS:**
@@ -211,10 +216,21 @@ Triggered for all admin events with professional templates:
 4. Approved equipment appears in marketplace
 
 ### **Rental Flow:**
-1. User books equipment → Rental notification + email
-2. Status progression: Booked → Delivered → Ongoing → Returned
-3. Automated late detection → Late return alerts
-4. Penalty disputes → Admin notification system
+1. User views equipment → Adds to checkout
+2. User completes Stripe payment → `payment_intent_id` created
+3. Order created with payment verification → Rental notification + email
+4. Status progression: Booked → Delivered → Ongoing → Returned
+5. Order completion → Automatic payout to owner via Stripe Connect
+6. Automated late detection → Late return alerts + automatic penalty charging
+7. Penalty disputes → Admin notification system
+
+### **Payment & Refund Flow:**
+1. **Payment Collection:** User pays via Stripe at booking time
+2. **Fund Holding:** Platform holds funds until rental completes
+3. **Cancellation Refunds:** Automatic refunds based on timing (before/after start date)
+4. **Late Penalties:** Automatic charges for overdue returns ($50/day default)
+5. **Owner Payouts:** Automatic transfer to owner after "Finished" status
+6. **Failed Payments:** Admin notifications for manual collection
 
 ### **Support Flow:**
 1. User sends support message → Admin socket + email alert
@@ -276,7 +292,17 @@ Triggered for all admin events with professional templates:
 
 ## 🚨 **RECENT MAJOR UPDATES:**
 
-### **User Registration & Profile System Overhaul (Latest):**
+### **Stripe Payment Integration (Latest):**
+- **Payment Collection:** Backend now collects payments via Stripe before order creation
+- **Payment Intent Creation:** New `/payment/create-intent` endpoint creates Stripe PaymentIntent with Connect
+- **Payment Verification:** Orders require valid `payment_intent_id` before creation
+- **Automatic Refunds:** Cancellations trigger automatic Stripe refunds based on timing
+- **Late Penalty Charging:** System automatically charges late penalties to saved payment methods
+- **Payment Tracking:** Orders now store complete payment details (`stripe_payment` field)
+- **Stripe Customer IDs:** Users get Stripe customer IDs for payment method reuse
+- **Webhook Integration:** `/payment/webhook` handles Stripe payment events
+
+### **User Registration & Profile System Overhaul:**
 - **New User Verification:** Users are now verified by default (`isUserVerified: true`)
 - **Enhanced Signup Fields:** Added required fields - `age`, `gender`, `DOB`, `address`, `about`
 - **Profile Image Required:** `profile_image` is now mandatory, removed `id_card_selfie` requirement
