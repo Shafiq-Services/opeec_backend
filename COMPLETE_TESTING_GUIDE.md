@@ -15,8 +15,8 @@ User ID:   6929fd79243979ce15e1cb08
 Token:     eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTI5ZmQ3OTI0Mzk3OWNlMTVlMWNiMDgiLCJpYXQiOjE3NjQzNTk1NDV9.vFcxwh0jjj0q61qAJsah8pmdBvtL3kuYGVeXmFN8__k
 
 Equipment Owned:
-  • Caterpillar 320 Excavator ($150/day)
-  • Bobcat S570 Skid Steer ($100/day)
+  • CAT 320D Hydraulic Excavator ($150/day, Min: 1 day, Max: 30 days)
+  • John Deere 850K Bulldozer ($200/day, Min: 2 days, Max: 60 days)
 ```
 
 #### **Android Phone 2 - BUYER**
@@ -60,8 +60,8 @@ Expected: ✅ 200 OK, token returned
 ```
 Run: "5. Equipment Management" → "Get All Equipment"
 Expected: ✅ 200 OK, 2 equipment items visible
-  • Caterpillar 320 Excavator
-  • Bobcat S570 Skid Steer
+  • CAT 320D Hydraulic Excavator
+  • John Deere 850K Bulldozer
 ```
 
 #### **Step 4: Test Payment Flow (NEW)**
@@ -169,11 +169,16 @@ Expected: ✅ Login successful, redirect to home
 ```
 1. Tap "My Equipment" or "Seller Dashboard"
 2. Verify equipment visible:
-   ✅ Caterpillar 320 Excavator ($150/day)
-   ✅ Bobcat S570 Skid Steer ($100/day)
+   ✅ CAT 320D Hydraulic Excavator ($150/day)
+      - Min Trip: 1 day, Max Trip: 30 days
+      - Notice Period: 24 hours
+   ✅ John Deere 850K Bulldozer ($200/day)
+      - Min Trip: 2 days, Max Trip: 60 days
+      - Notice Period: 48 hours
 3. Tap on Excavator → View details
-   ✅ All details visible
+   ✅ All details visible (description, pricing, trip duration)
    ✅ Status: Active/Available
+   ✅ Owner delivery available
 ```
 
 **Screen 4: Wait for Order**
@@ -203,20 +208,26 @@ Expected: ✅ Login successful, redirect to home
 ```
 1. On home screen, see equipment list
    OR tap "Browse" / "Search"
-2. Find: "Caterpillar 320 Excavator"
+2. Find: "CAT 320D Hydraulic Excavator"
    (May need to scroll or search)
 3. Tap on the equipment card
 Expected: ✅ Equipment details screen opens
+   ✅ Complete equipment information displayed
 ```
 
 **Screen 3: Equipment Details**
 ```
 View:
 ✅ Equipment photos
-✅ Name: Caterpillar 320 Excavator
+✅ Name: CAT 320D Hydraulic Excavator
 ✅ Price: $150/day
+✅ Equipment Value: $125,000
 ✅ Owner: John Seller
-✅ Location
+✅ Location: San Francisco, CA
+✅ Trip Duration: Min 1 day, Max 30 days
+✅ Notice Period: 24 hours
+✅ Description: Heavy-duty excavator details
+✅ Owner delivery available
 ✅ Description
 ✅ "Book Now" or "Rent" button visible
 ```
@@ -248,7 +259,7 @@ View:
 **Screen 6: Payment Review**
 ```
 Review screen shows:
-✅ Equipment: Caterpillar 320 Excavator
+✅ Equipment: CAT 320D Hydraulic Excavator
 ✅ Dates: [Selected dates]
 ✅ Delivery Address: [Your address]
 ✅ Pricing Breakdown:
@@ -310,10 +321,11 @@ If payment fails or Stripe sheet doesn't appear:
 2. Go to "Orders" / "Seller Dashboard"
 3. See new order in "Booked" tab
 Expected: ✅ New order visible
-   Equipment: Caterpillar 320 Excavator
+   Equipment: CAT 320D Hydraulic Excavator
    Customer: Sarah Buyer
    Dates: [Selected dates]
    Status: Booked
+   Payment: Completed
 ```
 
 **Screen 2: View Order Details**
