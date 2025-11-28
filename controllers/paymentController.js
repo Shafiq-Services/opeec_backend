@@ -102,22 +102,23 @@ exports.createPaymentIntent = async (req, res) => {
     const amountInCents = Math.round(total_amount * 100);
     const applicationFeeInCents = Math.round(platform_fee * 100);
 
-    // Create PaymentIntent with Stripe Connect
-    const paymentIntent = await stripe.paymentIntents.create({
+    // Check if owner's account is fully onboarded
+    const isOwnerFullyOnboarded = owner.stripe_connect.payouts_enabled && 
+                                   owner.stripe_connect.details_submitted;
+
+    // Create PaymentIntent (with or without Stripe Connect based on onboarding status)
+    const paymentIntentParams = {
       amount: amountInCents,
       currency: 'usd',
       customer: customerId,
-      application_fee_amount: applicationFeeInCents,
-      transfer_data: {
-        destination: owner.stripe_connect.account_id,
-      },
       metadata: {
         user_id: userId,
         equipment_id: equipment_id,
         owner_id: owner_id,
         rental_fee: rental_fee.toString(),
         platform_fee: platform_fee.toString(),
-        platform: 'OPEEC'
+        platform: 'OPEEC',
+        test_mode: isOwnerFullyOnboarded ? 'false' : 'true' // Flag for testing
       },
       // Enable automatic payment methods (card, etc.)
       automatic_payment_methods: {
@@ -126,7 +127,21 @@ exports.createPaymentIntent = async (req, res) => {
       // Save payment method for future off-session charges (late penalties)
       setup_future_usage: 'off_session',
       description: `Rental: ${equipment.name}`
-    });
+    };
+
+    // Only add Stripe Connect transfer if owner is fully onboarded
+    if (isOwnerFullyOnboarded) {
+      paymentIntentParams.application_fee_amount = applicationFeeInCents;
+      paymentIntentParams.transfer_data = {
+        destination: owner.stripe_connect.account_id,
+      };
+      console.log(`💰 Creating payment with Stripe Connect transfer to ${owner.stripe_connect.account_id}`);
+    } else {
+      console.log(`⚠️  Creating payment WITHOUT transfer (owner not fully onboarded - test mode)`);
+      console.log(`   Owner will be credited via wallet after testing`);
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
 
     console.log(`💳 Payment intent created: ${paymentIntent.id} for $${total_amount}`);
 
