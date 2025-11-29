@@ -12,6 +12,15 @@ const User = require('../models/user');
  */
 exports.handleOnboardingSuccess = async (req, res) => {
   try {
+    console.log('━'.repeat(80));
+    console.log('✅ STRIPE CONNECT ONBOARDING SUCCESS REDIRECT');
+    console.log('━'.repeat(80));
+    console.log(`   Time: ${new Date().toISOString()}`);
+    console.log(`   URL: ${req.originalUrl}`);
+    console.log(`   Query Params: ${JSON.stringify(req.query)}`);
+    console.log(`   Headers: ${JSON.stringify(req.headers)}`);
+    console.log('━'.repeat(80));
+    
     // In a real app, you might want to extract user info from query params or session
     // For now, we'll show a generic success page
     
@@ -224,6 +233,15 @@ exports.handleOnboardingSuccess = async (req, res) => {
  */
 exports.handleOnboardingRefresh = async (req, res) => {
   try {
+    console.log('━'.repeat(80));
+    console.log('🔄 STRIPE CONNECT ONBOARDING REFRESH/RETRY REDIRECT');
+    console.log('━'.repeat(80));
+    console.log(`   Time: ${new Date().toISOString()}`);
+    console.log(`   URL: ${req.originalUrl}`);
+    console.log(`   Query Params: ${JSON.stringify(req.query)}`);
+    console.log(`   Headers: ${JSON.stringify(req.headers)}`);
+    console.log('━'.repeat(80));
+    
     console.log('🔄 User needs to refresh Stripe Connect onboarding');
     
     const refreshHtml = `

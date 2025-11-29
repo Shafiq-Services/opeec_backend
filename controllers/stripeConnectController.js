@@ -25,7 +25,18 @@ exports.createConnectAccount = async (req, res) => {
     const userId = req.userId; // From JWT middleware
     const user = await User.findById(userId);
 
+    console.log('━'.repeat(80));
+    console.log('🔵 CREATE STRIPE CONNECT ACCOUNT REQUEST');
+    console.log('━'.repeat(80));
+    console.log(`📋 User ID: ${userId}`);
+    console.log(`📋 Email: ${user?.email}`);
+    console.log(`📋 Current Account ID: ${user?.stripe_connect?.account_id || 'NONE'}`);
+    console.log(`📋 Current Status: ${user?.stripe_connect?.account_status || 'NONE'}`);
+    console.log(`📋 Onboarding Completed: ${user?.stripe_connect?.onboarding_completed || false}`);
+    console.log('━'.repeat(80));
+
     if (!user) {
+      console.log('❌ User not found');
       return res.status(404).json({ 
         success: false,
         message: 'User not found' 
@@ -115,7 +126,15 @@ exports.createConnectAccount = async (req, res) => {
           user_email: user.email
         }
       });
-      console.log(`✅ Stripe Connect account created: ${account.id}`);
+      console.log('━'.repeat(80));
+      console.log('✅ STRIPE ACCOUNT CREATED');
+      console.log('━'.repeat(80));
+      console.log(`   Account ID: ${account.id}`);
+      console.log(`   Type: ${account.type}`);
+      console.log(`   Country: ${account.country}`);
+      console.log(`   Email: ${account.email}`);
+      console.log(`   Capabilities: ${JSON.stringify(account.capabilities)}`);
+      console.log('━'.repeat(80));
     } catch (accountError) {
       console.error('❌ Failed to create Stripe Connect account:', accountError);
       return res.status(500).json({
@@ -134,7 +153,15 @@ exports.createConnectAccount = async (req, res) => {
         return_url: `https://opeec.azurewebsites.net/stripe-connect/success`,
         type: 'account_onboarding'
       });
-      console.log(`✅ Onboarding link created for account: ${account.id}`);
+      console.log('━'.repeat(80));
+      console.log('✅ ONBOARDING LINK CREATED');
+      console.log('━'.repeat(80));
+      console.log(`   URL: ${accountLink.url}`);
+      console.log(`   Created: ${new Date().toISOString()}`);
+      console.log(`   Expires: ${new Date(Date.now() + 5 * 60 * 1000).toISOString()} (5 min)`);
+      console.log(`   Refresh URL: https://opeec.azurewebsites.net/stripe-connect/refresh`);
+      console.log(`   Return URL: https://opeec.azurewebsites.net/stripe-connect/success`);
+      console.log('━'.repeat(80));
     } catch (linkError) {
       console.error('❌ Failed to create onboarding link:', linkError);
       

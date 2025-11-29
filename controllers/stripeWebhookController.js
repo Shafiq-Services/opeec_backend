@@ -34,7 +34,15 @@ exports.handleStripeConnectWebhook = async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  console.log(`📨 Stripe webhook received: ${event.type}`);
+  console.log('━'.repeat(80));
+  console.log(`📨 STRIPE WEBHOOK RECEIVED: ${event.type}`);
+  console.log('━'.repeat(80));
+  console.log(`   Event ID: ${event.id}`);
+  console.log(`   Created: ${new Date(event.created * 1000).toISOString()}`);
+  console.log(`   Livemode: ${event.livemode}`);
+  console.log(`   Type: ${event.type}`);
+  console.log(`   Object ID: ${event.data.object.id}`);
+  console.log('━'.repeat(80));
 
   // Handle the event
   try {
@@ -92,7 +100,15 @@ exports.handleStripeConnectWebhook = async (req, res) => {
  */
 async function handleAccountUpdated(account) {
   try {
-    console.log(`🔄 Account updated: ${account.id}`);
+    console.log('━'.repeat(80));
+    console.log('🔄 ACCOUNT.UPDATED EVENT HANDLER');
+    console.log('━'.repeat(80));
+    console.log(`   Account ID: ${account.id}`);
+    console.log(`   Charges Enabled: ${account.charges_enabled}`);
+    console.log(`   Payouts Enabled: ${account.payouts_enabled}`);
+    console.log(`   Details Submitted: ${account.details_submitted}`);
+    console.log(`   Requirements: ${JSON.stringify(account.requirements)}`);
+    console.log('━'.repeat(80));
 
     const user = await User.findOne({ 'stripe_connect.account_id': account.id });
     
