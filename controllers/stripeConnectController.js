@@ -113,12 +113,18 @@ exports.createConnectAccount = async (req, res) => {
     try {
       account = await stripe.accounts.create({
         type: 'express',
-        country: req.body.country || 'US', // Default to US, can be changed
+        country: req.body.country || 'US',
         email: user.email,
         capabilities: {
-          transfers: { requested: true }  // Owner ONLY receives transfers (no card payments)
+          card_payments: { requested: true },
+          transfers: { requested: true }
         },
         business_type: 'individual',
+        business_profile: {
+          mcc: '7523',  // Passenger Car Rental - Equipment rental MCC
+          product_description: 'Equipment rental marketplace',
+          url: 'https://opeec.azurewebsites.net'
+        },
         metadata: {
           user_id: userId.toString(),
           user_name: user.name,
