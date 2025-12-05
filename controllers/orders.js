@@ -471,7 +471,7 @@ exports.getHistoryRentals = async (req, res) => {
 //Cancel Order API
 exports.cancelOrder = async (req, res) => {
   try {
-    const sellerId = req.userId;
+    const userId = req.userId;
     const { order_id, reason } = req.query;
 
     if (!order_id || !mongoose.Types.ObjectId.isValid(order_id)) {
@@ -492,15 +492,33 @@ exports.cancelOrder = async (req, res) => {
       return res.status(400).json({ message: "Only 'Booked' orders can be canceled." });
     }
 
-    // ✅ Optional: Enforce that only the equipment owner can cancel
-    if (String(order.equipmentId.ownerId) !== sellerId) {
-      return res.status(403).json({ message: "Only the owner can cancel this order." });
+    const isOwner = String(order.equipmentId.ownerId) === userId;
+    const isBuyer = String(order.userId) === userId;
+    
+    // Check if delivery is overdue (scheduled start date has passed)
+    const now = new Date();
+    const startDate = new Date(order.rental_schedule.start_date);
+    const isDeliveryOverdue = now >= startDate;
+    
+    // Allow cancellation if:
+    // 1. User is the owner (seller)
+    // 2. User is the buyer AND delivery is overdue (seller didn't deliver on time)
+    if (!isOwner && !isBuyer) {
+      return res.status(403).json({ message: "You are not authorized to cancel this order." });
+    }
+    
+    if (isBuyer && !isDeliveryOverdue) {
+      return res.status(403).json({ 
+        message: "Buyers can only cancel orders when delivery is overdue. Please contact the seller or wait until the scheduled start date." 
+      });
     }
 
     order.cancellation = {
       is_cancelled: true,
       reason: reason.trim(),
       cancelled_at: new Date(),
+      cancelled_by: isOwner ? 'seller' : 'buyer',
+      is_overdue_cancellation: isBuyer && isDeliveryOverdue,
     };
     order.rental_status = "Cancelled";
     await order.save();
@@ -509,10 +527,9 @@ exports.cancelOrder = async (req, res) => {
     let refundAmount = 0;
 
     // Process settlement for cancelled order
+    // For buyer cancellations due to overdue delivery, always give full refund
     try {
-      const currentTime = new Date();
-      const startDate = new Date(order.rental_schedule.start_date);
-      const isBeforeCutoff = currentTime < startDate;
+      const isBeforeCutoff = !isDeliveryOverdue || (isBuyer && isDeliveryOverdue); // Full refund for overdue buyer cancellations
       
       const settlementResult = await processOrderCancellation(order._id, isBeforeCutoff);
       console.log(`💰 Settlement processed for cancelled order: ${order._id}`);
