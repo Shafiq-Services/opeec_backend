@@ -20,7 +20,8 @@ const transactionLogSchema = new mongoose.Schema({
       'DEPOSIT_REFUND',          // Negative: Deposit refund to renter
       'SELLER_PAYOUT',           // Negative: Money paid out to seller
       'WITHDRAW_REQUEST_HOLD',   // Negative: Funds held for withdrawal request
-      'WITHDRAW_REQUEST_RELEASE' // Positive: Funds released back from hold
+      'WITHDRAW_REQUEST_RELEASE', // Positive: Funds released back from hold
+      'VERIFICATION_FEE'         // Negative: Identity verification fee charged
     ],
     index: true
   },

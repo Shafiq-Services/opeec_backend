@@ -486,6 +486,21 @@ const syncVerificationStatuses = async (req, res) => {
             user.isUserVerified = true;
           }
           
+          // ✅ FIX: Also update the attempt in the attempts array
+          const attemptIndex = user.stripe_verification.attempts.findIndex(
+            a => a.session_id === sessionId
+          );
+          
+          if (attemptIndex !== -1) {
+            user.stripe_verification.attempts[attemptIndex].status = currentStatus;
+            user.stripe_verification.attempts[attemptIndex].completed_at = new Date();
+            
+            if (currentStatus === 'failed' || currentStatus === 'canceled') {
+              user.stripe_verification.attempts[attemptIndex].failure_reason = 
+                currentSession.last_error?.reason || 'canceled';
+            }
+          }
+          
           await user.save();
           results.updated++;
           
@@ -555,12 +570,32 @@ const canRetryVerification = async (req, res) => {
       });
     }
 
-    // Failed or not verified - can always retry
-    if (status === 'failed' || status === 'not_verified') {
+    // Not verified - user hasn't started yet, show "Verify Now" not "Retry"
+    if (status === 'not_verified') {
+      return res.status(200).json({
+        can_retry: false,
+        reason: 'not_started',
+        message: 'Verification not started yet',
+        verification_status: status
+      });
+    }
+
+    // Failed - can retry
+    if (status === 'failed') {
       return res.status(200).json({
         can_retry: true,
-        reason: 'failed_or_new',
+        reason: 'failed',
         message: 'Retry allowed',
+        verification_status: status
+      });
+    }
+
+    // Requires input - can retry
+    if (status === 'requires_input') {
+      return res.status(200).json({
+        can_retry: true,
+        reason: 'requires_input',
+        message: 'Additional information needed, retry allowed',
         verification_status: status
       });
     }
@@ -751,7 +786,9 @@ const getUserVerificationHistory = async (req, res) => {
     const response = {
       current_status: currentStatus,
       current_status_message: statusMessages[currentStatus] || 'Unknown status',
-      can_retry: ['failed', 'not_verified'].includes(currentStatus),
+      // Only show retry button for failed or requires_input status
+      // Hide for pending (still processing) and not_verified (hasn't started yet)
+      can_retry: ['failed', 'requires_input'].includes(currentStatus),
       next_steps: getNextStepsMessage(currentStatus),
       attempts
     };
@@ -824,6 +861,22 @@ const recoverOrphanedVerification = async (req, res) => {
         if (currentStatus === 'verified') {
           user.stripe_verification.verified_at = new Date();
           user.isUserVerified = true;
+        }
+        
+        // ✅ FIX: Also update the attempt in the attempts array
+        const attemptIndex = user.stripe_verification.attempts.findIndex(
+          a => a.session_id === sessionId
+        );
+        
+        if (attemptIndex !== -1) {
+          user.stripe_verification.attempts[attemptIndex].status = currentStatus;
+          user.stripe_verification.attempts[attemptIndex].completed_at = new Date();
+          
+          // Add failure reason if failed
+          if (currentStatus === 'failed' || currentStatus === 'canceled') {
+            user.stripe_verification.attempts[attemptIndex].failure_reason = 
+              currentSession.last_error?.reason || 'canceled';
+          }
         }
         
         await user.save();

@@ -50,13 +50,13 @@ exports.createConnectAccount = async (req, res) => {
         const stripe = await getStripeInstance();
         
         // Check if existing link is still valid (Stripe links expire in 5 minutes)
-        // We reuse links that are less than 4 minutes old to avoid rate limits
+        // We reuse links that are less than 2 minutes old to avoid expired links
         const linkCreatedAt = user.stripe_connect.onboarding_url_created_at;
         const now = new Date();
-        const fourMinutesAgo = new Date(now.getTime() - 4 * 60 * 1000);
+        const twoMinutesAgo = new Date(now.getTime() - 2 * 60 * 1000);
         
         const hasValidLink = linkCreatedAt && 
-                            linkCreatedAt > fourMinutesAgo && 
+                            linkCreatedAt > twoMinutesAgo && 
                             user.stripe_connect.onboarding_url;
 
         if (hasValidLink) {

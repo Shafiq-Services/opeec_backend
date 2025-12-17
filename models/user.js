@@ -18,7 +18,7 @@ const otpSchema = new mongoose.Schema({
 const stripeVerificationSchema = new mongoose.Schema({
   status: { 
     type: String, 
-    enum: ['not_verified', 'pending', 'verified', 'failed'],
+    enum: ['not_verified', 'pending', 'verified', 'failed', 'requires_input'],
     default: 'not_verified'
   },
   session_id: { type: String, default: "" },
