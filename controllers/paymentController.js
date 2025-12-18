@@ -135,6 +135,8 @@ exports.createPaymentIntent = async (req, res) => {
       paymentIntentParams.transfer_data = {
         destination: owner.stripe_connect.account_id,
       };
+      // on_behalf_of allows cross-border settlements (platform in one country, connected account in another)
+      paymentIntentParams.on_behalf_of = owner.stripe_connect.account_id;
       console.log(`💰 Creating payment with Stripe Connect transfer to ${owner.stripe_connect.account_id}`);
     } else {
       console.log(`⚠️  Creating payment WITHOUT transfer (owner not fully onboarded - test mode)`);
