@@ -106,6 +106,27 @@ exports.createPaymentIntent = async (req, res) => {
     const isOwnerFullyOnboarded = owner.stripe_connect.payouts_enabled && 
                                    owner.stripe_connect.details_submitted;
 
+    // Platform country (where OPEEC business is registered)
+    // Can be overridden via environment variable if needed
+    const PLATFORM_COUNTRY = process.env.STRIPE_PLATFORM_COUNTRY || 'CA'; // Default: Canada
+
+    // Check if cross-border payment is needed
+    let isCrossBorder = false;
+    let connectedAccountCountry = null;
+    
+    if (isOwnerFullyOnboarded) {
+      try {
+        // Fetch connected account details from Stripe to get country
+        const connectedAccount = await stripe.accounts.retrieve(owner.stripe_connect.account_id);
+        connectedAccountCountry = connectedAccount.country;
+        isCrossBorder = connectedAccountCountry !== PLATFORM_COUNTRY;
+        console.log(`🌍 Platform country: ${PLATFORM_COUNTRY}, Connected account country: ${connectedAccountCountry}, Cross-border: ${isCrossBorder}`);
+      } catch (err) {
+        console.log(`⚠️ Could not fetch connected account country, assuming cross-border for safety: ${err.message}`);
+        isCrossBorder = true; // Default to cross-border for safety
+      }
+    }
+
     // Create PaymentIntent (with or without Stripe Connect based on onboarding status)
     const paymentIntentParams = {
       amount: amountInCents,
@@ -118,7 +139,9 @@ exports.createPaymentIntent = async (req, res) => {
         rental_fee: rental_fee.toString(),
         platform_fee: platform_fee.toString(),
         platform: 'OPEEC',
-        test_mode: isOwnerFullyOnboarded ? 'false' : 'true' // Flag for testing
+        test_mode: isOwnerFullyOnboarded ? 'false' : 'true', // Flag for testing
+        cross_border: isCrossBorder ? 'true' : 'false',
+        connected_account_country: connectedAccountCountry || 'unknown'
       },
       // Enable automatic payment methods (card, etc.)
       automatic_payment_methods: {
@@ -135,9 +158,15 @@ exports.createPaymentIntent = async (req, res) => {
       paymentIntentParams.transfer_data = {
         destination: owner.stripe_connect.account_id,
       };
-      // on_behalf_of allows cross-border settlements (platform in one country, connected account in another)
-      paymentIntentParams.on_behalf_of = owner.stripe_connect.account_id;
-      console.log(`💰 Creating payment with Stripe Connect transfer to ${owner.stripe_connect.account_id}`);
+      
+      // Only add on_behalf_of for cross-border payments (different countries)
+      // This allows the charge to settle in the connected account's country
+      if (isCrossBorder) {
+        paymentIntentParams.on_behalf_of = owner.stripe_connect.account_id;
+        console.log(`💰 Creating CROSS-BORDER payment with on_behalf_of to ${owner.stripe_connect.account_id} (${connectedAccountCountry})`);
+      } else {
+        console.log(`💰 Creating SAME-REGION payment transfer to ${owner.stripe_connect.account_id} (${connectedAccountCountry})`);
+      }
     } else {
       console.log(`⚠️  Creating payment WITHOUT transfer (owner not fully onboarded - test mode)`);
       console.log(`   Owner will be credited via wallet after testing`);
