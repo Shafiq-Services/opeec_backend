@@ -116,9 +116,9 @@ exports.login = async (req, res) => {
 
     // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
-    // if (!isMatch) {
-    //   return res.status(400).json({ message: 'Invalid credentials' });
-    // }
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
 
     if (user.otpDetails?.isOtpVerified === false) {
       return res.status(400).json({ message: 'User is not verified' });
