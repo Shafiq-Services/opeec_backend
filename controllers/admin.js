@@ -114,40 +114,11 @@ exports.verifyLoginOtp = async (req, res) => {
   }
 };
 
-// Admin Login (Legacy - kept for compatibility but now redirects to OTP flow)
+// Admin Login (DEPRECATED - Use OTP flow instead)
 exports.login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    // Find admin by email
-    const admin = await Admin.findOne({ email });
-    if (!admin) {
-      return res.status(404).json({ message: 'Admin not found' });
-    }
-
-    // Compare password
-    const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-
-    // Generate JWT token
-    const token = jwt.sign({ adminId: admin._id }, config.JWT_SECRET);
-
-    res.status(200).json({
-      message: 'Admin login successful',
-      token,
-      admin: {
-        _id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        mobile: admin.mobile,
-        profile_picture: admin.profile_picture,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Error in admin login', error });
-  }
+  return res.status(410).json({ 
+    message: 'Direct login is no longer supported. Please use OTP verification flow: POST /admin/send-login-otp followed by POST /admin/verify-login-otp' 
+  });
 };
 
 // Get Admin Profile
