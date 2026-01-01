@@ -39,7 +39,82 @@ exports.signup = async (req, res) => {
   }
 };
 
-// Admin Login
+// Admin Login - Step 1: Validate credentials and send OTP
+exports.sendLoginOtp = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find admin by email
+    const admin = await Admin.findOne({ email });
+    if (!admin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+
+    // Compare password
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // Generate OTP and send to email
+    await sendOtp(email);
+
+    res.status(200).json({
+      message: 'OTP sent to your email',
+      email: admin.email,
+    });
+  } catch (error) {
+    console.error('Error in sendLoginOtp:', error);
+    res.status(500).json({ message: 'Error sending login OTP', error: error.message });
+  }
+};
+
+// Admin Login - Step 2: Verify OTP and complete login
+exports.verifyLoginOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    // Find admin by email
+    const admin = await Admin.findOne({ email });
+    if (!admin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+
+    // Check if OTP is valid
+    if (!admin.otpDetails?.otp || admin.otpDetails?.otpExpiry < Date.now()) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    if (admin.otpDetails.otp !== parseInt(otp)) {
+      return res.status(400).json({ message: 'Incorrect OTP' });
+    }
+
+    // OTP verified, clear OTP fields
+    admin.otpDetails.otp = null;
+    admin.otpDetails.otpExpiry = null;
+    await admin.save();
+
+    // Generate JWT token
+    const token = jwt.sign({ adminId: admin._id }, config.JWT_SECRET);
+
+    res.status(200).json({
+      message: 'Admin login successful',
+      token,
+      admin: {
+        _id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        mobile: admin.mobile,
+        profile_picture: admin.profile_picture,
+      },
+    });
+  } catch (error) {
+    console.error('Error in verifyLoginOtp:', error);
+    res.status(500).json({ message: 'Error verifying login OTP', error: error.message });
+  }
+};
+
+// Admin Login (Legacy - kept for compatibility but now redirects to OTP flow)
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;

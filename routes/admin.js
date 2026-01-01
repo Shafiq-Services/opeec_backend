@@ -3,7 +3,11 @@ const router = express.Router();
 const adminController = require('../controllers/admin');
 const { adminMiddleware } = require('../middleWares/adminMiddleWare');
 
-// Admin Login
+// Admin Login with OTP
+router.post('/send-login-otp', adminController.sendLoginOtp);
+router.post('/verify-login-otp', adminController.verifyLoginOtp);
+
+// Legacy Admin Login (kept for compatibility)
 router.post('/login', adminController.login);
 
 router.post('/forgot-password', adminController.sendOtpForPasswordReset);
