@@ -44,6 +44,17 @@ const NOTIFICATION_CONFIGS = {
     color: '#F97316', // Orange
     icon: 'alert-triangle',
     title: 'Penalty Dispute'
+  },
+  // Apple App Store Guideline 1.2 Compliance
+  content_report: {
+    color: '#DC2626', // Red
+    icon: 'flag',
+    title: 'Content Report'
+  },
+  user_blocked_by_user: {
+    color: '#7C3AED', // Violet
+    icon: 'user-x',
+    title: 'User Blocked'
   }
 };
 

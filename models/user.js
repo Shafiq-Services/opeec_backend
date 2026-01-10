@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 // Standardized Location Schema
 const locationSchema = new mongoose.Schema({
-  address: { type: String, required: true, trim: true },
+  address: { type: String, required: false, trim: true, default: '' }, // Optional - Apple App Store compliance
   lat: { type: Number, min: -90, max: 90, default: 0.0 },
   lng: { type: Number, min: -180, max: 180, default: 0.0 }
 }, { _id: false });
@@ -43,11 +43,11 @@ const userSchema = new mongoose.Schema({
   phone_number: { type: String, required: true, trim: true },
   password: { type: String, required: true },
   profile_image: { type: String, required: true },
-  age: { type: Number, required: true, min: 0, max: 150 },
-  gender: { type: String, required: true, enum: ['male', 'female', 'other'] },
+  age: { type: Number, required: false, min: 0, max: 150, default: null }, // Optional - Apple App Store compliance
+  gender: { type: String, required: false, enum: ['male', 'female', 'other', ''], default: '' }, // Optional - Apple App Store compliance
   DOB: { type: String, default: "", trim: true }, // Optional - empty string by default
   about: { type: String, default: "", trim: true }, // Optional - empty string by default
-  location: { type: locationSchema, required: true },
+  location: { type: locationSchema, required: false, default: { address: '', lat: 0.0, lng: 0.0 } }, // Optional - Apple App Store compliance
   otpDetails: otpSchema,
   isUserVerified: { type: Boolean, default: true },
   rejection_reason: { type: String, default: "" },
@@ -55,6 +55,7 @@ const userSchema = new mongoose.Schema({
   block_reason: { type: String, default: "" },
   fcm_token: { type: String, default: "" },
   favorite_equipments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Equipment' }],
+  blocked_users: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // Users blocked by this user (Apple App Store compliance)
   stripe_verification: { type: stripeVerificationSchema, default: () => ({}) },
   
   // Stripe Customer ID - For payment collection (renters)

@@ -15,21 +15,26 @@ exports.signup = async (req, res) => {
   try {
     const { name, email, password, profile_image, age, gender, DOB, address, about, phone_number } = req.body;
 
-    // Validate required fields (DOB and about are optional)
-    if (!name || !email || !password || !profile_image || !age || !gender || !address || !phone_number) {
-      return res.status(400).json({ message: 'Required fields: name, email, password, profile_image, age, gender, address, phone_number' });
+    // Validate required fields only - age, gender, address are now OPTIONAL (Apple App Store compliance)
+    if (!name || !email || !password || !profile_image || !phone_number) {
+      return res.status(400).json({ message: 'Required fields: name, email, password, profile_image, phone_number' });
     }
 
-    // Validate age
-    const ageNum = parseInt(age);
-    if (isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
-      return res.status(400).json({ message: 'Age must be a valid number between 0 and 150' });
+    // Validate age only if provided
+    let ageNum = null;
+    if (age !== undefined && age !== null && age !== '') {
+      ageNum = parseInt(age);
+      if (isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
+        return res.status(400).json({ message: 'Age must be a valid number between 0 and 150' });
+      }
     }
 
-    // Validate gender
-    const validGenders = ['male', 'female', 'other'];
-    if (!validGenders.includes(gender.toLowerCase())) {
-      return res.status(400).json({ message: 'Gender must be male, female, or other' });
+    // Validate gender only if provided
+    if (gender && gender.trim() !== '') {
+      const validGenders = ['male', 'female', 'other'];
+      if (!validGenders.includes(gender.toLowerCase())) {
+        return res.status(400).json({ message: 'Gender must be male, female, or other' });
+      }
     }
 
     // Validate DOB format (only if provided)
@@ -49,19 +54,19 @@ exports.signup = async (req, res) => {
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create new user
+    // Create new user with optional fields
     const user = new User({
       name,
       email,
       phone_number,
       password: hashedPassword,
       profile_image,
-      age: ageNum,
-      gender: gender.toLowerCase(),
+      age: ageNum,  // Optional - null by default
+      gender: gender ? gender.toLowerCase() : '',  // Optional - empty string by default
       DOB: DOB || "",  // Optional - empty string by default
       about: about || "",  // Optional - empty string by default
       location: {
-        address,
+        address: address || '',  // Optional - empty string by default
         lat: 0.0,
         lng: 0.0
       },
@@ -241,21 +246,26 @@ exports.updateUser = async (req, res) => {
     const userId = req.userId;    
     const { name, email, profile_image, age, gender, DOB, address, phone_number } = req.body;
 
-    // Validate required fields (DOB is optional)
-    if (!name || !email || !profile_image || !age || !gender || !address || !phone_number) {
-      return res.status(400).json({ message: 'Required fields: name, email, profile_image, age, gender, address, phone_number' });
+    // Validate required fields only - age, gender, address are now OPTIONAL (Apple App Store compliance)
+    if (!name || !email || !profile_image || !phone_number) {
+      return res.status(400).json({ message: 'Required fields: name, email, profile_image, phone_number' });
     }
 
-    // Validate age
-    const ageNum = parseInt(age);
-    if (isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
-      return res.status(400).json({ message: 'Age must be a valid number between 0 and 150' });
+    // Validate age only if provided
+    let ageNum = null;
+    if (age !== undefined && age !== null && age !== '') {
+      ageNum = parseInt(age);
+      if (isNaN(ageNum) || ageNum < 0 || ageNum > 150) {
+        return res.status(400).json({ message: 'Age must be a valid number between 0 and 150' });
+      }
     }
 
-    // Validate gender
-    const validGenders = ['male', 'female', 'other'];
-    if (!validGenders.includes(gender.toLowerCase())) {
-      return res.status(400).json({ message: 'Gender must be male, female, or other' });
+    // Validate gender only if provided
+    if (gender && gender.trim() !== '') {
+      const validGenders = ['male', 'female', 'other'];
+      if (!validGenders.includes(gender.toLowerCase())) {
+        return res.status(400).json({ message: 'Gender must be male, female, or other' });
+      }
     }
 
     // Validate DOB format (only if provided)
@@ -283,10 +293,10 @@ exports.updateUser = async (req, res) => {
         phone_number,
         profile_image,
         age: ageNum,
-        gender: gender.toLowerCase(),
+        gender: gender ? gender.toLowerCase() : '',
         DOB: DOB || "",  // Optional - empty string by default
         location: {
-          address,
+          address: address || '',
           lat: 0.0,
           lng: 0.0
         }
@@ -834,4 +844,252 @@ exports.searchUsers = async (req, res) => {
   }
 };
 
+// ===================== USER-TO-USER BLOCK/REPORT (Apple App Store Guideline 1.2) =====================
+
+const Report = require('../models/report');
+
+/**
+ * Block another user (user-to-user blocking)
+ * POST /user/block-user
+ * Apple App Store Compliance: Blocks user and removes their content from feed instantly
+ */
+exports.blockUserByUser = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { blocked_user_id, reason } = req.body;
+
+    if (!blocked_user_id) {
+      return res.status(400).json({ message: 'blocked_user_id is required' });
+    }
+
+    if (blocked_user_id === userId) {
+      return res.status(400).json({ message: 'You cannot block yourself' });
+    }
+
+    // Validate blocked user exists
+    const blockedUser = await User.findById(blocked_user_id);
+    if (!blockedUser) {
+      return res.status(404).json({ message: 'User to block not found' });
+    }
+
+    // Get current user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Initialize blocked_users array if not exists
+    if (!user.blocked_users) {
+      user.blocked_users = [];
+    }
+
+    // Check if already blocked
+    if (user.blocked_users.includes(blocked_user_id)) {
+      return res.status(400).json({ message: 'User is already blocked' });
+    }
+
+    // Add to blocked list
+    user.blocked_users.push(blocked_user_id);
+    await user.save();
+
+    // Send admin notification about the block
+    await createAdminNotification(
+      'user_blocked_by_user',
+      `${user.name} blocked ${blockedUser.name}`,
+      {
+        userId: blocked_user_id,
+        data: {
+          blockerName: user.name,
+          blockerEmail: user.email,
+          blockedName: blockedUser.name,
+          blockedEmail: blockedUser.email,
+          reason: reason || 'No reason provided',
+          blockDate: new Date()
+        }
+      }
+    );
+
+    console.log(`✅ User ${user.name} blocked ${blockedUser.name}`);
+
+    res.status(200).json({ 
+      message: 'User blocked successfully',
+      blocked_user_id: blocked_user_id
+    });
+  } catch (error) {
+    console.error('Error blocking user:', error);
+    res.status(500).json({ message: 'Error blocking user', error: error.message });
+  }
+};
+
+/**
+ * Unblock a user
+ * POST /user/unblock-user
+ */
+exports.unblockUserByUser = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { blocked_user_id } = req.body;
+
+    if (!blocked_user_id) {
+      return res.status(400).json({ message: 'blocked_user_id is required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (!user.blocked_users || !user.blocked_users.includes(blocked_user_id)) {
+      return res.status(400).json({ message: 'User is not blocked' });
+    }
+
+    // Remove from blocked list
+    user.blocked_users = user.blocked_users.filter(
+      id => id.toString() !== blocked_user_id
+    );
+    await user.save();
+
+    res.status(200).json({ 
+      message: 'User unblocked successfully',
+      unblocked_user_id: blocked_user_id
+    });
+  } catch (error) {
+    console.error('Error unblocking user:', error);
+    res.status(500).json({ message: 'Error unblocking user', error: error.message });
+  }
+};
+
+/**
+ * Get list of blocked users
+ * GET /user/blocked-users
+ */
+exports.getBlockedUsers = async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const user = await User.findById(userId)
+      .populate('blocked_users', 'name email profile_image');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.status(200).json({ 
+      message: 'Blocked users retrieved successfully',
+      blocked_users: user.blocked_users || []
+    });
+  } catch (error) {
+    console.error('Error getting blocked users:', error);
+    res.status(500).json({ message: 'Error getting blocked users', error: error.message });
+  }
+};
+
+/**
+ * Report content or user
+ * POST /user/report
+ * Apple App Store Compliance: Mechanism for users to flag objectionable content
+ */
+exports.reportContent = async (req, res) => {
+  try {
+    const reporterId = req.userId;
+    const { reported_user_id, equipment_id, reason, description, type } = req.body;
+
+    // Validate required fields
+    if (!reported_user_id) {
+      return res.status(400).json({ message: 'reported_user_id is required' });
+    }
+
+    if (!reason) {
+      return res.status(400).json({ message: 'reason is required' });
+    }
+
+    if (!type || !['equipment', 'user'].includes(type)) {
+      return res.status(400).json({ message: 'type must be "equipment" or "user"' });
+    }
+
+    // Validate reason enum
+    const validReasons = ['inappropriate_content', 'harassment', 'spam', 'fraud', 'offensive_language', 'other'];
+    if (!validReasons.includes(reason)) {
+      return res.status(400).json({ 
+        message: `reason must be one of: ${validReasons.join(', ')}` 
+      });
+    }
+
+    if (reported_user_id === reporterId) {
+      return res.status(400).json({ message: 'You cannot report yourself' });
+    }
+
+    // Validate reported user exists
+    const reportedUser = await User.findById(reported_user_id);
+    if (!reportedUser) {
+      return res.status(404).json({ message: 'Reported user not found' });
+    }
+
+    // Validate equipment if provided
+    if (equipment_id) {
+      const equipment = await Equipment.findById(equipment_id);
+      if (!equipment) {
+        return res.status(404).json({ message: 'Equipment not found' });
+      }
+    }
+
+    // Check for duplicate report (same reporter, same target)
+    const existingReport = await Report.findOne({
+      reporter: reporterId,
+      reported_user: reported_user_id,
+      equipment: equipment_id || null,
+      status: 'pending'
+    });
+
+    if (existingReport) {
+      return res.status(400).json({ message: 'You have already reported this content' });
+    }
+
+    // Create the report
+    const report = new Report({
+      reporter: reporterId,
+      reported_user: reported_user_id,
+      equipment: equipment_id || null,
+      reason: reason,
+      description: description || '',
+      type: type
+    });
+
+    await report.save();
+
+    // Get reporter details
+    const reporter = await User.findById(reporterId).select('name email');
+
+    // Send admin notification
+    await createAdminNotification(
+      'content_report',
+      `${reporter.name} reported ${type === 'equipment' ? 'equipment' : 'user'}: ${reason}`,
+      {
+        userId: reported_user_id,
+        equipmentId: equipment_id || null,
+        data: {
+          reportId: report._id,
+          reporterName: reporter.name,
+          reporterEmail: reporter.email,
+          reportedUserName: reportedUser.name,
+          reportedUserEmail: reportedUser.email,
+          reason: reason,
+          description: description || '',
+          type: type,
+          reportDate: new Date()
+        }
+      }
+    );
+
+    console.log(`✅ Report created: ${reporter.name} reported ${reportedUser.name} for ${reason}`);
+
+    res.status(201).json({ 
+      message: 'Report submitted successfully. Our team will review it within 24 hours.',
+      report_id: report._id
+    });
+  } catch (error) {
+    console.error('Error submitting report:', error);
+    res.status(500).json({ message: 'Error submitting report', error: error.message });
+  }
+};
 

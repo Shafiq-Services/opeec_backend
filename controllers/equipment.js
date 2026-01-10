@@ -393,6 +393,17 @@ async function getAllEquipments(req, res) {
       query.ownerId = { $ne: req.user._id };
     }
 
+    // ✅ Apple App Store Guideline 1.2: Filter out equipment from blocked users
+    if (userId) {
+      const currentUser = await User.findById(userId).select('blocked_users');
+      if (currentUser && currentUser.blocked_users && currentUser.blocked_users.length > 0) {
+        query.ownerId = { 
+          ...query.ownerId,
+          $nin: currentUser.blocked_users // Exclude equipment from blocked users
+        };
+      }
+    }
+
     // ✅ Optional filters
     if (name) {
       query.name = { $regex: name, $options: "i" }; // Case-insensitive search

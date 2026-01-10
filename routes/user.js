@@ -56,4 +56,18 @@ router.post('/request_account_reactivation', userController.requestAccountReacti
 
 router.get('/get_fcm', userController.getFCMToken);
 
+// ---------------------- User-to-User Block/Report (Apple App Store Guideline 1.2) ----------------------
+
+// Block another user (content removed from feed instantly)
+router.post('/block-user', userController.blockUserByUser);
+
+// Unblock a user
+router.post('/unblock-user', userController.unblockUserByUser);
+
+// Get list of blocked users
+router.get('/blocked-users', userController.getBlockedUsers);
+
+// Report content or user (mechanism for flagging objectionable content)
+router.post('/report', userController.reportContent);
+
 module.exports = router;
