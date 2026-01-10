@@ -15,7 +15,9 @@ const adminNotificationSchema = new mongoose.Schema({
       'equipment_resubmission',
       'rental_booking',
       'late_return_alert',
-      'penalty_dispute'
+      'penalty_dispute',
+      'content_report',
+      'user_blocked_by_user'
     ]
   },
   color: { type: String, required: true }, // Hex color code
