@@ -12,6 +12,27 @@ process.on('unhandledRejection', (reason, promise) => {
   // Log but don't exit - keep the process alive
 });
 
+// Catch Azure/system termination signals
+process.on('SIGTERM', () => {
+  console.log('⚠️ SIGTERM received - Azure is shutting down the app');
+});
+
+process.on('SIGINT', () => {
+  console.log('⚠️ SIGINT received - Process interrupted');
+});
+
+// Memory monitoring - log every 5 minutes
+setInterval(() => {
+  const used = process.memoryUsage();
+  console.log(`📊 Memory: RSS=${Math.round(used.rss / 1024 / 1024)}MB, Heap=${Math.round(used.heapUsed / 1024 / 1024)}/${Math.round(used.heapTotal / 1024 / 1024)}MB`);
+}, 5 * 60 * 1000);
+
+// Initial memory log
+setTimeout(() => {
+  const used = process.memoryUsage();
+  console.log(`📊 Initial Memory: RSS=${Math.round(used.rss / 1024 / 1024)}MB, Heap=${Math.round(used.heapUsed / 1024 / 1024)}/${Math.round(used.heapTotal / 1024 / 1024)}MB`);
+}, 10000);
+
 const http = require("http");
 const express = require('express');
 const cors = require('cors');
