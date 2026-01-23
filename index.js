@@ -107,6 +107,17 @@ app.use('/payment/webhook', express.raw({type: 'application/json'}), paymentRout
 // Middleware
 app.use(express.json());
 
+// HTTP Request logging for debugging
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.path}`);
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`📤 ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+  });
+  next();
+});
+
 // Connect to MongoDB
 connectDB();
 
