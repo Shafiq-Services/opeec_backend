@@ -21,17 +21,19 @@ process.on('SIGINT', () => {
   console.log('⚠️ SIGINT received - Process interrupted');
 });
 
-// Memory monitoring - log every 5 minutes
+// Heartbeat - log every 30 seconds to detect if event loop is frozen
+let heartbeatCount = 0;
 setInterval(() => {
+  heartbeatCount++;
   const used = process.memoryUsage();
-  console.log(`📊 Memory: RSS=${Math.round(used.rss / 1024 / 1024)}MB, Heap=${Math.round(used.heapUsed / 1024 / 1024)}/${Math.round(used.heapTotal / 1024 / 1024)}MB`);
-}, 5 * 60 * 1000);
+  console.log(`💓 Heartbeat #${heartbeatCount} - RSS=${Math.round(used.rss / 1024 / 1024)}MB, Heap=${Math.round(used.heapUsed / 1024 / 1024)}/${Math.round(used.heapTotal / 1024 / 1024)}MB`);
+}, 30 * 1000);
 
 // Initial memory log
 setTimeout(() => {
   const used = process.memoryUsage();
   console.log(`📊 Initial Memory: RSS=${Math.round(used.rss / 1024 / 1024)}MB, Heap=${Math.round(used.heapUsed / 1024 / 1024)}/${Math.round(used.heapTotal / 1024 / 1024)}MB`);
-}, 10000);
+}, 5000);
 
 const http = require("http");
 const express = require('express');
