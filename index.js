@@ -1,3 +1,17 @@
+// =====================================================
+// GLOBAL ERROR HANDLERS - Must be at the very top
+// Prevents silent crashes from unhandled errors
+// =====================================================
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught Exception:', error);
+  // Log but don't exit - keep the process alive
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+  // Log but don't exit - keep the process alive
+});
+
 const http = require("http");
 const express = require('express');
 const cors = require('cors');

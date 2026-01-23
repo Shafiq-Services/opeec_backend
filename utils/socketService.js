@@ -527,26 +527,30 @@ const initializeSocket = (server) => {
 
   // Clean up typing indicators that are older than 5 seconds
   setInterval(async () => {
-    const now = Date.now();
-    for (const [key, timestamp] of typingUsers.entries()) {
-      if (now - timestamp > 5000) { // 5 seconds timeout
-        typingUsers.delete(key);
-        
-        // Extract conversationId and userId from key
-        const [conversationId, userId] = key.split('_');
-        
-        // Get user details for timeout event
-        const typingUserDetails = await getUserDetails(userId);
-        
-        // Notify that user stopped typing (timeout)
-        io.to(`conversation_${conversationId}`).emit("userTyping", {
-          conversationId,
-          userId,
-          isTyping: false,
-          typingUser: typingUserDetails,
-          reason: 'timeout'
-        });
+    try {
+      const now = Date.now();
+      for (const [key, timestamp] of typingUsers.entries()) {
+        if (now - timestamp > 5000) { // 5 seconds timeout
+          typingUsers.delete(key);
+          
+          // Extract conversationId and userId from key
+          const [conversationId, typingUserId] = key.split('_');
+          
+          // Get user details for timeout event
+          const typingUserDetails = await getUserDetails(typingUserId);
+          
+          // Notify that user stopped typing (timeout)
+          io.to(`conversation_${conversationId}`).emit("userTyping", {
+            conversationId,
+            userId: typingUserId,
+            isTyping: false,
+            typingUser: typingUserDetails,
+            reason: 'timeout'
+          });
+        }
       }
+    } catch (error) {
+      console.error('Error in typing cleanup interval:', error);
     }
   }, 2000); // Check every 2 seconds
 
