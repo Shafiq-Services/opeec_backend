@@ -379,7 +379,18 @@ const addEquipment = async (req, res) => {
 };
 
 async function getAllEquipments(req, res) {
-  const userId = req.headers.authorization ? jwt.verify(req.headers.authorization.split(" ")[1], process.env.JWT_SECRET).userId : null;
+  // Safely extract userId from token - wrapped in try-catch to prevent crashes
+  let userId = null;
+  try {
+    if (req.headers.authorization) {
+      const token = req.headers.authorization.split(" ")[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      userId = decoded.userId;
+    }
+  } catch (tokenError) {
+    // Invalid token - continue without userId (public access)
+    console.warn('Invalid token in getAllEquipments, continuing without userId:', tokenError.message);
+  }
 
   try {
     const { lat, lng, distance, name, categoryId, delivery_by_owner } = req.query;
