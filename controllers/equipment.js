@@ -817,130 +817,69 @@ function queryMatches(equipment, query) {
 
   async function getRandomEquipmentImages(req, res) {
     try {
-      // Fetch all live equipment with populated owner details only
-      const equipments = await Equipment.find({ equipment_status: "Active" })
-        .populate({
-          path: 'ownerId',
-          model: User, // Reference to User model
-          select: '_id name email profile_image' // Selecting only necessary fields
-        });
+      // Fetch all active equipment that have images, with owner details
+      const equipments = await Equipment.find({ 
+        equipment_status: "Active",
+        images: { $exists: true, $ne: [], $type: 'array' }
+      }).populate({
+        path: 'ownerId',
+        model: User,
+        select: '_id name email profile_image'
+      });
+      
+      console.log(`📸 Random images: Found ${equipments?.length || 0} active equipment with images`);
   
       if (!equipments || equipments.length === 0) {
         return res.status(200).json({
+          images: [],
           message: 'No equipment found',
           status: false,
         });
       }
   
-      // Manually populate subcategory data for each equipment
-      const equipmentWithSubCategories = await Promise.all(
-        equipments.map(async (equipment) => {
-          const subCategoryData = await findSubCategoryById(equipment.subCategoryId);
-          return {
-            ...equipment.toObject(),
-            subCategoryData: subCategoryData
-          };
-        })
-      );
-  
-      const categoryMap = {};
-      const result = [];
-      const usedEquipmentIds = new Set();
-  
-      // Group equipment by categories
-      equipmentWithSubCategories.forEach((equipment) => {
-        if (equipment.subCategoryData && equipment.subCategoryData.categoryId) {
-          const categoryId = equipment.subCategoryData.categoryId.toString();
-          if (!categoryMap[categoryId]) {
-            categoryMap[categoryId] = [];
-          }
-          categoryMap[categoryId].push(equipment);
-        }
+      // Helper: Create image object from equipment (picks random image from equipment)
+      const createImageObject = (equipment) => ({
+        equipmentId: equipment._id,
+        image: equipment.images[Math.floor(Math.random() * equipment.images.length)],
+        owner: equipment.ownerId
+          ? {
+              _id: equipment.ownerId._id,
+              name: equipment.ownerId.name,
+              email: equipment.ownerId.email,
+              profile_image: equipment.ownerId.profile_image,
+            }
+          : null,
       });
   
-      // Flatten categories into an array
-      const categoryIds = Object.keys(categoryMap);
+      const result = [];
+      const TARGET_COUNT = 20;
+      const equipmentCount = equipments.length;
   
-      // Main logic to generate 20 unique images
-      while (result.length < 20) {
-        // Shuffle the category order
-        categoryIds.sort(() => Math.random() - 0.5);
-  
-        for (const categoryId of categoryIds) {
-          const categoryEquipments = categoryMap[categoryId];
-  
-          // Randomize equipment within the category
-          const availableEquipments = categoryEquipments.filter(
-            (equipment) => !usedEquipmentIds.has(equipment._id.toString())
-          );
-  
-          // Pick random equipment from this category
-          const equipment =
-            availableEquipments.length > 0
-              ? availableEquipments[
-                  Math.floor(Math.random() * availableEquipments.length)
-                ]
-              : categoryEquipments[
-                  Math.floor(Math.random() * categoryEquipments.length)
-                ];
-  
-          if (equipment.images && equipment.images.length > 0) {
-            // Pick a random image from this equipment
-            const randomImage =
-              equipment.images[
-                Math.floor(Math.random() * equipment.images.length)
-              ];
-  
-            result.push({
-              equipmentId: equipment._id,
-              image: randomImage,
-              owner: equipment.ownerId
-                ? {
-                    _id: equipment.ownerId._id,
-                    name: equipment.ownerId.name,
-                    email: equipment.ownerId.email,
-                    profile_image: equipment.ownerId.profile_image,
-                  }
-                : null,
-            });
-  
-            usedEquipmentIds.add(equipment._id.toString());
-          }
-  
-          if (result.length === 20) break;
+      if (equipmentCount >= TARGET_COUNT) {
+        // CASE 1: More than 20 equipment → Pick 20 random unique equipment (NO duplicates)
+        const shuffled = [...equipments].sort(() => Math.random() - 0.5);
+        for (let i = 0; i < TARGET_COUNT; i++) {
+          result.push(createImageObject(shuffled[i]));
         }
-  
-        // If all categories are exhausted, allow repeating equipment
-        if (result.length < 20 && usedEquipmentIds.size === equipmentWithSubCategories.length) {
-          break;
-        }
-      }
-  
-      // Fill up to 20 results if fewer than 20 images were added
-      while (result.length < 20) {
-        const randomEquipment =
-          equipmentWithSubCategories[Math.floor(Math.random() * equipmentWithSubCategories.length)];
+      } else {
+        // CASE 2: Less than 20 equipment → Use all, fill with duplicates
+        // Strategy: Interleave equipment in round-robin to maximize distance between duplicates
+        // Example: 3 equipment for 20 slots → A,B,C,A,B,C,A,B,C,A,B,C,A,B,C,A,B,C,A,B
         
-        if (randomEquipment.images && randomEquipment.images.length > 0) {
-          const randomImage =
-            randomEquipment.images[
-              Math.floor(Math.random() * randomEquipment.images.length)
-            ];
-          result.push({
-            equipmentId: randomEquipment._id,
-            image: randomImage,
-            owner: randomEquipment.ownerId
-              ? {
-                  _id: randomEquipment.ownerId._id,
-                  name: randomEquipment.ownerId.name,
-                  email: randomEquipment.ownerId.email,
-                  profile_image: randomEquipment.ownerId.profile_image,
-                }
-              : null,
-          });
+        // Shuffle the equipment for randomness
+        const shuffled = [...equipments].sort(() => Math.random() - 0.5);
+        
+        // Fill 20 slots using round-robin (interleaved pattern)
+        // This ensures: 1) Minimum duplication (each used same times ±1)
+        //               2) Maximum distance between same equipment
+        for (let i = 0; i < TARGET_COUNT; i++) {
+          const equipment = shuffled[i % equipmentCount];
+          result.push(createImageObject(equipment));
         }
       }
   
+      console.log(`📸 Random images: returning ${result.length} images (${equipments.length} unique equipment)`);
+      
       return res.status(200).json({
         images: result,
         message: 'Random equipment images retrieved successfully',
