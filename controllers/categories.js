@@ -1,4 +1,5 @@
 const Category = require('../models/categories'); // Category model with embedded subcategories
+const Equipment = require('../models/equipment'); // For checking equipment references
 
 async function addCategory(req, res) {
     try {
@@ -79,13 +80,36 @@ async function addCategory(req, res) {
       category.name = name || category.name;
       category.category_image = category_image || category.category_image;
 
-      // If sub_categories are provided, update them
+      // If sub_categories are provided, check for removals with equipment
       if (sub_categories && sub_categories.length > 0) {
         // Validate that each subcategory has required fields including security_fee
         for (const subCat of sub_categories) {
           if (!subCat.name || subCat.security_fee === undefined || subCat.security_fee === null) {
             return res.status(400).json({
               message: 'Each subcategory must have name and security_fee.',
+              status: false,
+            });
+          }
+        }
+
+        // Check if any subcategories being removed have equipment
+        const existingSubcategoryIds = category.sub_categories.map(sub => sub._id.toString());
+        const newSubcategoryIds = sub_categories
+          .filter(sub => sub._id || sub.sub_category_id)
+          .map(sub => (sub._id || sub.sub_category_id).toString());
+        
+        // Find removed subcategory IDs
+        const removedSubcategoryIds = existingSubcategoryIds.filter(id => !newSubcategoryIds.includes(id));
+        
+        if (removedSubcategoryIds.length > 0) {
+          // Check if any equipment uses these subcategories
+          const equipmentCount = await Equipment.countDocuments({
+            subCategoryId: { $in: removedSubcategoryIds }
+          });
+          
+          if (equipmentCount > 0) {
+            return res.status(400).json({
+              message: `Cannot remove subcategories. ${equipmentCount} equipment(s) are using them. Please delete or reassign equipment first.`,
               status: false,
             });
           }
@@ -132,15 +156,33 @@ async function addCategory(req, res) {
       const { category_id, categoryId } = req.query;
       const categoryIdToUse = category_id || categoryId; // Support both parameter names
   
-      // Find and delete the category by ID (subcategories are automatically deleted since they're embedded)
-      const deletedCategory = await Category.findByIdAndDelete(categoryIdToUse);
-  
-      if (!deletedCategory) {
+      // Find the category first
+      const category = await Category.findById(categoryIdToUse);
+      
+      if (!category) {
         return res.status(404).json({
           message: 'Category not found',
           status: false,
         });
       }
+
+      // Get all subcategory IDs from this category
+      const subcategoryIds = category.sub_categories.map(sub => sub._id);
+      
+      // Check if any equipment is using this category's subcategories
+      const equipmentCount = await Equipment.countDocuments({
+        subCategoryId: { $in: subcategoryIds }
+      });
+
+      if (equipmentCount > 0) {
+        return res.status(400).json({
+          message: `Cannot delete category. ${equipmentCount} equipment(s) are using subcategories from this category. Please delete or reassign equipment first.`,
+          status: false,
+        });
+      }
+
+      // Safe to delete - no equipment references
+      await Category.findByIdAndDelete(categoryIdToUse);
   
       // Return success response
       return res.status(200).json({

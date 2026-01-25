@@ -798,6 +798,25 @@ function queryMatches(equipment, query) {
           status: false
         });
       }
+
+      // Check for active orders (not Finished, Cancelled, or Returned)
+      const activeOrderCount = await Order.countDocuments({
+        equipmentId: equipmentId,
+        rental_status: { $in: ['Booked', 'Delivered', 'Ongoing', 'Late'] }
+      });
+
+      if (activeOrderCount > 0) {
+        return res.status(400).json({
+          message: `Cannot delete equipment. ${activeOrderCount} active order(s) exist. Please wait for orders to complete or cancel them first.`,
+          status: false
+        });
+      }
+
+      // Clean up: Remove this equipment from all users' favorites
+      await User.updateMany(
+        { favorite_equipments: equipmentId },
+        { $pull: { favorite_equipments: equipmentId } }
+      );
   
       // Delete the equipment
       await Equipment.findByIdAndDelete(equipmentId);
