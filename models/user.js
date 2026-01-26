@@ -49,7 +49,7 @@ const userSchema = new mongoose.Schema({
   about: { type: String, default: "", trim: true }, // Optional - empty string by default
   location: { type: locationSchema, required: false, default: { address: '', lat: 0.0, lng: 0.0 } }, // Optional - Apple App Store compliance
   otpDetails: otpSchema,
-  isUserVerified: { type: Boolean, default: true },
+  isUserVerified: { type: Boolean, default: false },
   rejection_reason: { type: String, default: "" },
   is_blocked: { type: Boolean, default: false },
   block_reason: { type: String, default: "" },

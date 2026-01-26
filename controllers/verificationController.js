@@ -86,6 +86,9 @@ const initiateVerification = async (req, res) => {
             // Update database and return verified status
             user.stripe_verification.status = 'verified';
             user.stripe_verification.verified_at = new Date();
+            // Sync isUserVerified with stripe_verification.status
+            user.isUserVerified = true;
+            user.rejection_reason = '';
             await user.save();
             
             return res.status(200).json({
@@ -412,6 +415,9 @@ async function handleVerificationCanceled(session) {
 
   // Update verification status
   user.stripe_verification.status = 'failed';
+  // Sync isUserVerified with stripe_verification.status
+  user.isUserVerified = false;
+  user.rejection_reason = session.last_error?.reason || 'Identity verification failed';
 
   // Update the attempt
   const attemptIndex = user.stripe_verification.attempts.findIndex(
@@ -906,6 +912,9 @@ const recoverOrphanedVerification = async (req, res) => {
         // Reset to not_verified if session doesn't exist
         user.stripe_verification.status = 'not_verified';
         user.stripe_verification.session_id = '';
+        // Sync isUserVerified with stripe_verification.status
+        user.isUserVerified = false;
+        user.rejection_reason = 'Verification session expired - please verify again';
         await user.save();
         
         return res.status(200).json({

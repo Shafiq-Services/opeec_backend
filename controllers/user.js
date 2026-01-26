@@ -70,7 +70,12 @@ exports.signup = async (req, res) => {
         lat: 0.0,
         lng: 0.0
       },
-      isUserVerified: true
+      // New users start as not verified - they need to complete Stripe Identity verification
+      isUserVerified: false,
+      // Initialize stripe_verification with default status
+      stripe_verification: {
+        status: 'not_verified'
+      }
     });
 
     await user.save();
