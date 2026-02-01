@@ -292,7 +292,15 @@ Triggered for all admin events with professional templates:
 
 ## 🚨 **RECENT MAJOR UPDATES:**
 
-### **Stripe Payment Integration (Latest):**
+### **Stripe Webhook Secrets in Database (Feb 2026):**
+- **Admin Panel Control:** Webhook secrets can now be edited from Admin Panel → Settings
+- **Test/Live Mode Switching:** Client can switch between test and live mode by updating both API keys AND webhook secrets from admin panel
+- **Database Storage:** `StripeKey` model now stores `webhookSecretPayment`, `webhookSecretConnect`, `webhookSecretIdentity`
+- **Fallback to Env Vars:** If DB secrets are empty, system falls back to environment variables
+- **Helper Function:** `getWebhookSecret(type)` in `utils/stripeIdentity.js` handles DB-first with env fallback
+- **Startup Validation:** Server validates required Stripe env vars at startup (fallback safety net)
+
+### **Stripe Payment Integration:**
 - **Payment Collection:** Backend now collects payments via Stripe before order creation
 - **Payment Intent Creation:** New `/payment/create-intent` endpoint creates Stripe PaymentIntent with Connect
 - **Payment Verification:** Orders require valid `payment_intent_id` before creation
@@ -303,7 +311,10 @@ Triggered for all admin events with professional templates:
 - **Webhook Integration:** `/payment/webhook` handles Stripe payment events
 
 ### **User Registration & Profile System Overhaul:**
-- **New User Verification:** Users are now verified by default (`isUserVerified: true`)
+- **New User Verification:** Users start as NOT verified (`isUserVerified: false`) - must complete Stripe Identity verification
+- **Verification Status Sync:** `isUserVerified` is now synced with `stripe_verification.status`:
+  - When verified → `isUserVerified: true`
+  - When failed/not_verified → `isUserVerified: false`
 - **Enhanced Signup Fields:** Added required fields - `age`, `gender`, `DOB`, `address`, `about`
 - **Profile Image Required:** `profile_image` is now mandatory, removed `id_card_selfie` requirement
 - **Gender Validation:** Limited to `male` and `female` options only
@@ -363,6 +374,10 @@ Triggered for all admin events with professional templates:
 - `JWT_SECRET` - Token signing
 - `EMAIL` / `EMAIL_PASSWORD` - SMTP credentials
 - `AZURE_CONNECTION_STRING` - File storage
+- `STRIPE_WEBHOOK_SECRET` - **Required** for `/payment/webhook`
+- `STRIPE_CONNECT_WEBHOOK_SECRET` - **Required** for `/webhooks/stripe-connect` and Identity webhook fallback
+- `STRIPE_IDENTITY_WEBHOOK_SECRET` - Optional (falls back to CONNECT secret) for `/user/verification/webhook`
+- `STRIPE_PLATFORM_COUNTRY` - Optional, defaults to 'CA' for cross-border payment detection
 
 ### **Default Ports:**
 - Server: 5001

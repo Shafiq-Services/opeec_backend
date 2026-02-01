@@ -112,12 +112,37 @@ async function constructWebhookEvent(payload, signature, webhookSecret) {
   }
 }
 
+/**
+ * Get webhook secret from database, with env var fallback
+ * This allows switching between test/live mode from admin panel
+ * @param {String} type - 'payment', 'connect', or 'identity'
+ * @returns {Promise<String>} - Webhook secret
+ */
+async function getWebhookSecret(type) {
+  const StripeKey = require('../models/stripeKey');
+  const stripeKey = await StripeKey.findOne({});
+  
+  switch (type) {
+    case 'payment':
+      // DB value takes priority, then env var fallback
+      return stripeKey?.webhookSecretPayment || process.env.STRIPE_WEBHOOK_SECRET || '';
+    case 'connect':
+      return stripeKey?.webhookSecretConnect || process.env.STRIPE_CONNECT_WEBHOOK_SECRET || '';
+    case 'identity':
+      // Identity falls back to connect secret, then env vars
+      return stripeKey?.webhookSecretIdentity || process.env.STRIPE_IDENTITY_WEBHOOK_SECRET || process.env.STRIPE_CONNECT_WEBHOOK_SECRET || '';
+    default:
+      return '';
+  }
+}
+
 module.exports = {
   getStripeInstance,
   createVerificationSession,
   retrieveVerificationSession,
   chargeVerificationFee,
-  constructWebhookEvent
+  constructWebhookEvent,
+  getWebhookSecret
 };
 
 

@@ -277,10 +277,13 @@ const initiateVerification = async (req, res) => {
 const handleVerificationWebhook = async (req, res) => {
   try {
     const signature = req.headers['stripe-signature'];
-    const webhookSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+    
+    // Get webhook secret from DB first, with env var fallback
+    const { getWebhookSecret } = require('../utils/stripeIdentity');
+    const webhookSecret = await getWebhookSecret('identity');
 
     if (!webhookSecret) {
-      console.error('❌ STRIPE_CONNECT_WEBHOOK_SECRET not configured');
+      console.error('❌ Identity webhook secret not configured in DB or environment variables');
       return res.status(500).json({ message: 'Webhook secret not configured' });
     }
 

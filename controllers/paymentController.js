@@ -473,7 +473,10 @@ exports.chargeLatePenalty = async (orderId, penaltyAmount, daysLate) => {
  */
 exports.handleWebhook = async (req, res) => {
   const sig = req.headers['stripe-signature'];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  
+  // Get webhook secret from DB first, with env var fallback
+  const { getWebhookSecret } = require('../utils/stripeIdentity');
+  const webhookSecret = await getWebhookSecret('payment');
 
   let event;
 

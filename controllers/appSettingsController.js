@@ -42,6 +42,10 @@ exports.getAppSettings = async (req, res) => {
         share_message: settings.share_message,
         stripe_public_key: stripeKey.publishableKey,
         stripe_secret_key: stripeKey.secretKey,
+        // Webhook secrets for test/live mode switching
+        stripe_webhook_secret_payment: stripeKey.webhookSecretPayment || '',
+        stripe_webhook_secret_connect: stripeKey.webhookSecretConnect || '',
+        stripe_webhook_secret_identity: stripeKey.webhookSecretIdentity || '',
         verification_fee: settings.verification_fee || 2.00,
         verification_title: settings.verification_title || 'Identity Verification Required',
         verification_description: settings.verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.',
@@ -72,6 +76,10 @@ exports.updateAppSettings = async (req, res) => {
       share_message,
       stripe_public_key,
       stripe_secret_key,
+      // Webhook secrets for test/live mode switching
+      stripe_webhook_secret_payment,
+      stripe_webhook_secret_connect,
+      stripe_webhook_secret_identity,
       verification_fee,
       verification_title,
       verification_description,
@@ -140,6 +148,26 @@ exports.updateAppSettings = async (req, res) => {
       });
     }
 
+    // Validate webhook secrets format (optional fields - only validate if provided)
+    if (stripe_webhook_secret_payment && stripe_webhook_secret_payment.trim() !== '' && !stripe_webhook_secret_payment.startsWith('whsec_')) {
+      return res.status(400).json({
+        message: 'Payment webhook secret must start with "whsec_"',
+        status: false
+      });
+    }
+    if (stripe_webhook_secret_connect && stripe_webhook_secret_connect.trim() !== '' && !stripe_webhook_secret_connect.startsWith('whsec_')) {
+      return res.status(400).json({
+        message: 'Connect webhook secret must start with "whsec_"',
+        status: false
+      });
+    }
+    if (stripe_webhook_secret_identity && stripe_webhook_secret_identity.trim() !== '' && !stripe_webhook_secret_identity.startsWith('whsec_')) {
+      return res.status(400).json({
+        message: 'Identity webhook secret must start with "whsec_"',
+        status: false
+      });
+    }
+
     // Update or create app settings (privacy policy and terms)
     let settings = await AppSettings.findOne();
     
@@ -185,12 +213,19 @@ exports.updateAppSettings = async (req, res) => {
       // Update existing stripe keys
       stripeKey.publishableKey = stripe_public_key;
       stripeKey.secretKey = stripe_secret_key;
+      // Update webhook secrets if provided
+      if (stripe_webhook_secret_payment !== undefined) stripeKey.webhookSecretPayment = stripe_webhook_secret_payment;
+      if (stripe_webhook_secret_connect !== undefined) stripeKey.webhookSecretConnect = stripe_webhook_secret_connect;
+      if (stripe_webhook_secret_identity !== undefined) stripeKey.webhookSecretIdentity = stripe_webhook_secret_identity;
       await stripeKey.save();
     } else {
       // Create new stripe keys
       stripeKey = new StripeKey({
         publishableKey: stripe_public_key,
-        secretKey: stripe_secret_key
+        secretKey: stripe_secret_key,
+        webhookSecretPayment: stripe_webhook_secret_payment || '',
+        webhookSecretConnect: stripe_webhook_secret_connect || '',
+        webhookSecretIdentity: stripe_webhook_secret_identity || ''
       });
       await stripeKey.save();
     }
@@ -206,6 +241,9 @@ exports.updateAppSettings = async (req, res) => {
         share_message: settings.share_message,
         stripe_public_key: stripeKey.publishableKey,
         stripe_secret_key: stripeKey.secretKey,
+        stripe_webhook_secret_payment: stripeKey.webhookSecretPayment || '',
+        stripe_webhook_secret_connect: stripeKey.webhookSecretConnect || '',
+        stripe_webhook_secret_identity: stripeKey.webhookSecretIdentity || '',
         verification_fee: settings.verification_fee,
         verification_title: settings.verification_title,
         verification_description: settings.verification_description,

@@ -121,6 +121,36 @@ app.use((req, res, next) => {
 // Connect to MongoDB
 connectDB();
 
+// =====================================================
+// STRIPE ENVIRONMENT VALIDATION - Check required env vars
+// =====================================================
+const requiredStripeEnvVars = [
+  'STRIPE_WEBHOOK_SECRET',           // For /payment/webhook
+  'STRIPE_CONNECT_WEBHOOK_SECRET'    // For /webhooks/stripe-connect AND /user/verification/webhook (fallback)
+];
+
+const optionalStripeEnvVars = [
+  'STRIPE_IDENTITY_WEBHOOK_SECRET'   // For /user/verification/webhook (recommended, falls back to CONNECT)
+];
+
+const missingEnvVars = requiredStripeEnvVars.filter(varName => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  console.error('⚠️ WARNING: Missing required Stripe environment variables:');
+  missingEnvVars.forEach(varName => {
+    console.error(`   - ${varName}`);
+  });
+  console.error('   Webhooks will FAIL without these. Set them in Azure App Service Configuration.');
+} else {
+  console.log('✅ All required Stripe environment variables are configured');
+}
+
+// Log optional env vars status
+optionalStripeEnvVars.forEach(varName => {
+  if (!process.env[varName]) {
+    console.log(`ℹ️ Optional: ${varName} not set (using fallback)`);
+  }
+});
+
 // Routes
 app.use('/admin', adminRoutes);
 app.use('/admin/users', adminUserRoutes);
