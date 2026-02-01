@@ -45,35 +45,13 @@ exports.createConnectAccount = async (req, res) => {
 
     // Check if user already has a Stripe Connect account
     if (user.stripe_connect.account_id) {
-      // If account exists but onboarding not completed, check link validity before regenerating
+      // If account exists but onboarding not completed, ALWAYS generate a fresh link
+      // ⚠️ IMPORTANT: Stripe onboarding links are SINGLE-USE and expire after being opened
+      // Never cache/reuse links - always generate fresh ones
       if (!user.stripe_connect.onboarding_completed) {
         const stripe = await getStripeInstance();
         
-        // Check if existing link is still valid (Stripe links expire in 5 minutes)
-        // We reuse links that are less than 2 minutes old to avoid expired links
-        const linkCreatedAt = user.stripe_connect.onboarding_url_created_at;
-        const now = new Date();
-        const twoMinutesAgo = new Date(now.getTime() - 2 * 60 * 1000);
-        
-        const hasValidLink = linkCreatedAt && 
-                            linkCreatedAt > twoMinutesAgo && 
-                            user.stripe_connect.onboarding_url;
-
-        if (hasValidLink) {
-          console.log(`♻️ Reusing valid onboarding link for user ${userId} (created ${Math.floor((now - linkCreatedAt) / 1000)}s ago)`);
-          
-          return res.status(200).json({
-            success: true,
-            message: 'Account exists, using existing onboarding link',
-            account_id: user.stripe_connect.account_id,
-            onboarding_url: user.stripe_connect.onboarding_url,
-            onboarding_completed: false,
-            link_reused: true
-          });
-        }
-
-        // Link expired or doesn't exist - create new one
-        console.log(`🔄 Creating new onboarding link for user ${userId} (previous link expired or missing)`);
+        console.log(`🔄 Creating fresh onboarding link for user ${userId} (account exists, onboarding incomplete)`);
         
         const accountLink = await stripe.accountLinks.create({
           account: user.stripe_connect.account_id,
@@ -83,16 +61,15 @@ exports.createConnectAccount = async (req, res) => {
         });
 
         user.stripe_connect.onboarding_url = accountLink.url;
-        user.stripe_connect.onboarding_url_created_at = new Date(); // Track when link was created
+        user.stripe_connect.onboarding_url_created_at = new Date();
         await user.save();
 
         return res.status(200).json({
           success: true,
-          message: 'Account exists, onboarding link refreshed',
+          message: 'Fresh onboarding link generated',
           account_id: user.stripe_connect.account_id,
           onboarding_url: accountLink.url,
-          onboarding_completed: false,
-          link_reused: false
+          onboarding_completed: false
         });
       }
 
