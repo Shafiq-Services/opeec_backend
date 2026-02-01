@@ -322,8 +322,8 @@ const addEquipment = async (req, res) => {
         const equipment = await Equipment.findById(equipmentId);
         if (!equipment) return res.status(404).json({ message: 'Equipment not found.' });
 
-        // Check if this is a resubmission after rejection
-        const isResubmissionAfterRejection = equipment.equipment_status === 'Rejected';
+        // Track the previous status before any changes
+        const previousStatus = equipment.equipment_status;
 
         // Replace images instead of adding them
         if (images) {
@@ -345,16 +345,27 @@ const addEquipment = async (req, res) => {
         equipment.minimum_trip_duration = minimum_trip_duration;
         equipment.maximum_trip_duration = maximum_trip_duration;
 
+        // Set status to Pending for re-review (Active or Rejected equipment needs admin approval)
+        if (previousStatus === 'Active' || previousStatus === 'Rejected') {
+            equipment.equipment_status = 'Pending';
+            equipment.reason = ''; // Clear any previous rejection reason
+        }
+
         // Save the updated equipment
         const updatedEquipment = await equipment.save();
 
-        // Send admin notification for equipment resubmission if it was previously rejected
-        if (isResubmissionAfterRejection) {
+        // Send admin notification for ALL equipment edits that need review
+        if (previousStatus === 'Active' || previousStatus === 'Rejected') {
             const owner = await User.findById(userId).select('name email');
 
+            const notificationType = previousStatus === 'Rejected' ? 'equipment_resubmission' : 'equipment_updated';
+            const notificationMessage = previousStatus === 'Rejected' 
+                ? `Equipment "${name}" resubmitted by ${owner.name} after rejection`
+                : `Equipment "${name}" was edited by ${owner.name} (moved to Pending for review)`;
+
             await createAdminNotification(
-                'equipment_resubmission',
-                `Equipment "${name}" resubmitted by ${owner.name} after rejection`,
+                notificationType,
+                notificationMessage,
                 {
                     userId: userId,
                     equipmentId: updatedEquipment._id,
@@ -364,13 +375,25 @@ const addEquipment = async (req, res) => {
                         ownerEmail: owner.email,
                         category: subCategory.categoryName,
                         subcategory: subCategory.name,
-                        resubmissionDate: new Date()
+                        previousStatus: previousStatus,
+                        newStatus: updatedEquipment.equipment_status,
+                        editDate: new Date()
                     }
                 }
             );
         }
 
-        res.status(200).json({ message: 'Equipment updated successfully.', data: updatedEquipment });
+        const statusChangeMessage = (previousStatus === 'Active' || previousStatus === 'Rejected')
+            ? ' Equipment moved to Pending for admin review.'
+            : '';
+        
+        res.status(200).json({ 
+            message: `Equipment updated successfully.${statusChangeMessage}`, 
+            data: updatedEquipment,
+            status_changed: previousStatus !== updatedEquipment.equipment_status,
+            previous_status: previousStatus,
+            new_status: updatedEquipment.equipment_status
+        });
 
     } catch (error) {
         console.error('Error updating equipment:', error);
