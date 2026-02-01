@@ -779,11 +779,17 @@ const getUserVerificationHistory = async (req, res) => {
             verificationAttempts[i].status = liveSession.status;
             verificationAttempts[i].synced_at = new Date();
             
-            // Add failure reason if available
-            if (liveSession.last_error?.reason) {
-              verificationAttempts[i].failure_reason = liveSession.last_error.reason;
+            // Add detailed error info if available
+            if (liveSession.last_error) {
+              verificationAttempts[i].error_code = liveSession.last_error.code || null;
+              verificationAttempts[i].failure_reason = liveSession.last_error.reason || null;
             }
             
+            needsSave = true;
+          } else if (liveSession?.last_error && !attempt.error_code) {
+            // Update error details even if status hasn't changed
+            verificationAttempts[i].error_code = liveSession.last_error.code || null;
+            verificationAttempts[i].failure_reason = liveSession.last_error.reason || null;
             needsSave = true;
           }
         } catch (stripeError) {
@@ -798,9 +804,11 @@ const getUserVerificationHistory = async (req, res) => {
       }
     }
     
-    // Format attempts for timeline display with better date formatting
+    // Format attempts for timeline display with better date formatting and error details
     const attempts = verificationAttempts.map((attempt, index) => {
       const startedAt = attempt.started_at || attempt.created_at;
+      const errorDetails = getDetailedErrorInfo(attempt.error_code, attempt.failure_reason);
+      
       return {
         attempt_number: index + 1,
         session_id: attempt.session_id || '',
@@ -808,7 +816,11 @@ const getUserVerificationHistory = async (req, res) => {
         status_display: getStatusDisplayText(attempt.status),
         started_at: startedAt ? formatDateForDisplay(startedAt) : '',
         started_at_raw: startedAt || '',
-        failure_reason: attempt.failure_reason || null
+        // Enhanced error information
+        error_code: attempt.error_code || null,
+        failure_reason: errorDetails.userMessage || attempt.failure_reason || null,
+        failure_title: errorDetails.title || null,
+        failure_action: errorDetails.action || null
       };
     });
 
@@ -857,23 +869,41 @@ const getUserVerificationHistory = async (req, res) => {
       console.log(`💾 Updated user verification status: ${verification.status} → ${computedStatus}`);
     }
     
-    // ✅ SMART STATUS MESSAGES: Context-aware based on history
-    const statusMessages = getSmartStatusMessage(computedStatus, hasAttempts, attempts.length);
+    // Get most recent attempt's error details for smart messaging
+    const latestAttempt = attempts[0] || null;
+    const latestErrorDetails = latestAttempt ? {
+      error_code: latestAttempt.error_code,
+      failure_reason: latestAttempt.failure_reason,
+      failure_title: latestAttempt.failure_title,
+      failure_action: latestAttempt.failure_action
+    } : null;
+    
+    // ✅ SMART STATUS MESSAGES: Context-aware based on history and specific errors
+    const statusMessages = getSmartStatusMessage(computedStatus, hasAttempts, attempts.length, latestErrorDetails);
 
     const response = {
       current_status: computedStatus,
       current_status_message: statusMessages.banner,
-      // Show retry button for: failed, requires_input, canceled, expired, OR not_verified with history
+      // Show retry button for: failed, requires_input, canceled, expired, OR not_verified (no history)
       can_retry: ['failed', 'requires_input', 'canceled', 'expired'].includes(computedStatus) || 
                  (computedStatus === 'not_verified' && !hasAttempts),
       next_steps: statusMessages.nextSteps,
+      // Include specific error details for the most recent problematic attempt
+      current_error: latestErrorDetails?.failure_title ? {
+        title: latestErrorDetails.failure_title,
+        message: latestErrorDetails.failure_reason,
+        action: latestErrorDetails.failure_action
+      } : null,
       attempts: attempts.map(a => ({
         attempt_number: a.attempt_number,
         session_id: a.session_id,
         status: a.status,
         status_display: a.status_display,
         started_at: a.started_at,
-        failure_reason: a.failure_reason
+        error_code: a.error_code,
+        failure_reason: a.failure_reason,
+        failure_title: a.failure_title,
+        failure_action: a.failure_action
       }))
     };
 
@@ -891,9 +921,9 @@ const getUserVerificationHistory = async (req, res) => {
 };
 
 /**
- * Get smart status message based on context
+ * Get smart status message based on context and specific error details
  */
-function getSmartStatusMessage(status, hasAttempts, attemptCount) {
+function getSmartStatusMessage(status, hasAttempts, attemptCount, errorDetails = null) {
   if (status === 'verified') {
     return {
       banner: '✅ Identity Verified',
@@ -909,6 +939,13 @@ function getSmartStatusMessage(status, hasAttempts, attemptCount) {
   }
   
   if (status === 'requires_input') {
+    // Use specific error details if available
+    if (errorDetails?.failure_title) {
+      return {
+        banner: `⚠️ ${errorDetails.failure_title}`,
+        nextSteps: errorDetails.failure_action || 'Please complete the verification with correct information.'
+      };
+    }
     return {
       banner: '⚠️ Additional Information Required',
       nextSteps: 'Please complete the verification process with additional information or clearer documents.'
@@ -916,6 +953,13 @@ function getSmartStatusMessage(status, hasAttempts, attemptCount) {
   }
   
   if (status === 'failed') {
+    // Use specific error details if available
+    if (errorDetails?.failure_title) {
+      return {
+        banner: `❌ ${errorDetails.failure_title}`,
+        nextSteps: errorDetails.failure_action || 'Please try again with valid documents.'
+      };
+    }
     return {
       banner: '❌ Verification Failed',
       nextSteps: 'Your verification was unsuccessful. Please try again with clearer documents or contact support for help.'
@@ -960,6 +1004,118 @@ function getStatusDisplayText(status) {
     'not_verified': 'Not Started'
   };
   return displayTexts[status] || status;
+}
+
+/**
+ * Get detailed error information from Stripe error code
+ * Maps technical error codes to user-friendly messages with actionable next steps
+ */
+function getDetailedErrorInfo(errorCode, fallbackReason) {
+  const errorMapping = {
+    // Document errors
+    'document_expired': {
+      title: 'Document Expired',
+      userMessage: 'The ID document you provided has expired.',
+      action: 'Please use a valid, non-expired government ID (passport, driver\'s license, or national ID card).'
+    },
+    'document_type_not_supported': {
+      title: 'Document Not Supported',
+      userMessage: 'The type of document you provided is not supported for verification.',
+      action: 'Please use a passport, driver\'s license, or government-issued national ID card.'
+    },
+    'document_unverified_other': {
+      title: 'Document Could Not Be Verified',
+      userMessage: 'We couldn\'t verify your document. This may be due to image quality or document issues.',
+      action: 'Try again with a clear, well-lit photo of your document. Ensure all corners are visible.'
+    },
+    'document_fraudulent': {
+      title: 'Document Issue Detected',
+      userMessage: 'We detected an issue with your document that prevents verification.',
+      action: 'Please use an authentic government-issued ID and contact support if you believe this is an error.'
+    },
+    'document_country_not_supported': {
+      title: 'Country Not Supported',
+      userMessage: 'Documents from your country are not currently supported.',
+      action: 'Please use a document from a supported country or contact support for assistance.'
+    },
+    'document_incomplete': {
+      title: 'Document Incomplete',
+      userMessage: 'The document image was incomplete or partially captured.',
+      action: 'Please retake the photo ensuring the entire document is clearly visible within the frame.'
+    },
+    
+    // Selfie errors
+    'selfie_document_missing_photo': {
+      title: 'No Photo on Document',
+      userMessage: 'Your document doesn\'t have a photo to match with your selfie.',
+      action: 'Please use a government ID that includes your photo (passport, driver\'s license).'
+    },
+    'selfie_face_mismatch': {
+      title: 'Photo Doesn\'t Match',
+      userMessage: 'The selfie doesn\'t match the photo on your document.',
+      action: 'Please ensure you\'re taking a selfie of yourself and that it matches the photo on your ID.'
+    },
+    'selfie_unverified_other': {
+      title: 'Selfie Could Not Be Verified',
+      userMessage: 'We couldn\'t verify your selfie.',
+      action: 'Please take a clear selfie in good lighting, facing the camera directly.'
+    },
+    'selfie_manipulated': {
+      title: 'Selfie Issue Detected',
+      userMessage: 'We detected an issue with your selfie that prevents verification.',
+      action: 'Please take a new, unedited selfie in a well-lit environment.'
+    },
+    
+    // ID number errors
+    'id_number_insufficient_document_data': {
+      title: 'Insufficient Document Data',
+      userMessage: 'We couldn\'t read all required information from your document.',
+      action: 'Please retake the photo ensuring the document is clear, well-lit, and all text is readable.'
+    },
+    'id_number_mismatch': {
+      title: 'Information Mismatch',
+      userMessage: 'The information on your document doesn\'t match our records.',
+      action: 'Please ensure you\'re using a document that matches your account information, or contact support.'
+    },
+    
+    // General errors
+    'consent_declined': {
+      title: 'Consent Not Provided',
+      userMessage: 'Verification consent was not provided.',
+      action: 'Please restart verification and accept the consent to continue.'
+    },
+    'under_supported_age': {
+      title: 'Age Requirement',
+      userMessage: 'You must be at least 18 years old to use this service.',
+      action: 'Please contact support if you believe this is an error.'
+    },
+    'session_expired': {
+      title: 'Session Expired',
+      userMessage: 'Your verification session has expired.',
+      action: 'Please start a new verification attempt.'
+    }
+  };
+  
+  const errorInfo = errorMapping[errorCode];
+  
+  if (errorInfo) {
+    return errorInfo;
+  }
+  
+  // Fallback for unknown error codes
+  if (fallbackReason) {
+    return {
+      title: 'Verification Issue',
+      userMessage: fallbackReason,
+      action: 'Please try again with clear documents. If the issue persists, contact support.'
+    };
+  }
+  
+  return {
+    title: null,
+    userMessage: null,
+    action: null
+  };
 }
 
 /**
