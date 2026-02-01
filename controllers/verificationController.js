@@ -750,6 +750,8 @@ const getVerificationStatus = async (req, res) => {
  * 
  * Returns complete verification history for the authenticated user
  * Includes all attempts, statuses, timestamps in timeline format
+ * 
+ * ✅ ENHANCED: Syncs from Stripe API to ensure accurate real-time data
  */
 const getUserVerificationHistory = async (req, res) => {
   try {
@@ -765,44 +767,117 @@ const getUserVerificationHistory = async (req, res) => {
     const verification = user.stripe_verification || {};
     const verificationAttempts = verification.attempts || [];
     
-    // Get app settings for fee info
-    const settings = await AppSettings.findOne().select('verification_fee verification_title verification_description');
-    const verificationFee = settings?.verification_fee || 2.00;
+    // ✅ SYNC: Update each attempt's status from Stripe API (real-time accuracy)
+    let needsSave = false;
+    for (let i = 0; i < verificationAttempts.length; i++) {
+      const attempt = verificationAttempts[i];
+      if (attempt.session_id && attempt.status !== 'verified') {
+        try {
+          const liveSession = await retrieveVerificationSession(attempt.session_id);
+          if (liveSession && liveSession.status !== attempt.status) {
+            console.log(`🔄 Syncing attempt ${i + 1}: ${attempt.status} → ${liveSession.status}`);
+            verificationAttempts[i].status = liveSession.status;
+            verificationAttempts[i].synced_at = new Date();
+            
+            // Add failure reason if available
+            if (liveSession.last_error?.reason) {
+              verificationAttempts[i].failure_reason = liveSession.last_error.reason;
+            }
+            
+            needsSave = true;
+          }
+        } catch (stripeError) {
+          // Session might be expired/deleted - mark as expired
+          if (stripeError.code === 'resource_missing') {
+            verificationAttempts[i].status = 'expired';
+            verificationAttempts[i].failure_reason = 'Session expired';
+            needsSave = true;
+          }
+          console.log(`⚠️ Could not sync attempt ${i + 1}: ${stripeError.message}`);
+        }
+      }
+    }
     
-    // Format attempts for timeline display (simplified)
-    const attempts = verificationAttempts.map((attempt, index) => ({
-      attempt_number: index + 1,
-      session_id: attempt.session_id || '',
-      status: attempt.status || 'pending',
-      started_at: attempt.started_at || attempt.created_at || ''
-    }));
+    // Format attempts for timeline display with better date formatting
+    const attempts = verificationAttempts.map((attempt, index) => {
+      const startedAt = attempt.started_at || attempt.created_at;
+      return {
+        attempt_number: index + 1,
+        session_id: attempt.session_id || '',
+        status: attempt.status || 'pending',
+        status_display: getStatusDisplayText(attempt.status),
+        started_at: startedAt ? formatDateForDisplay(startedAt) : '',
+        started_at_raw: startedAt || '',
+        failure_reason: attempt.failure_reason || null
+      };
+    });
 
     // Sort attempts by most recent first
-    attempts.sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+    attempts.sort((a, b) => new Date(b.started_at_raw) - new Date(a.started_at_raw));
 
-    // Current status info
-    const currentStatus = verification.status || 'not_verified';
+    // ✅ COMPUTE: Determine actual current status based on attempts
+    let computedStatus = 'not_verified';
+    let hasAttempts = attempts.length > 0;
     
-    // Status messages for UI
-    const statusMessages = {
-      'not_verified': 'Identity verification not started',
-      'pending': 'Verification in progress - please wait for review',
-      'verified': 'Identity successfully verified',
-      'failed': 'Verification failed - please try again',
-      'requires_input': 'Additional information required'
-    };
+    if (hasAttempts) {
+      // Check if any attempt is verified
+      const verifiedAttempt = attempts.find(a => a.status === 'verified');
+      if (verifiedAttempt) {
+        computedStatus = 'verified';
+      } else {
+        // Use most recent attempt's status
+        const latestAttempt = attempts[0];
+        if (latestAttempt) {
+          if (latestAttempt.status === 'processing' || latestAttempt.status === 'pending') {
+            computedStatus = 'pending';
+          } else if (latestAttempt.status === 'requires_input') {
+            computedStatus = 'requires_input';
+          } else if (latestAttempt.status === 'canceled' || latestAttempt.status === 'expired') {
+            computedStatus = 'canceled';
+          } else if (latestAttempt.status === 'failed') {
+            computedStatus = 'failed';
+          } else {
+            computedStatus = latestAttempt.status;
+          }
+        }
+      }
+    }
+    
+    // Update database if computed status differs or we synced from Stripe
+    if (computedStatus !== verification.status || needsSave) {
+      user.stripe_verification.status = computedStatus;
+      user.stripe_verification.attempts = verificationAttempts;
+      
+      if (computedStatus === 'verified') {
+        user.isUserVerified = true;
+        user.stripe_verification.verified_at = new Date();
+      }
+      
+      await user.save();
+      console.log(`💾 Updated user verification status: ${verification.status} → ${computedStatus}`);
+    }
+    
+    // ✅ SMART STATUS MESSAGES: Context-aware based on history
+    const statusMessages = getSmartStatusMessage(computedStatus, hasAttempts, attempts.length);
 
     const response = {
-      current_status: currentStatus,
-      current_status_message: statusMessages[currentStatus] || 'Unknown status',
-      // Only show retry button for failed or requires_input status
-      // Hide for pending (still processing) and not_verified (hasn't started yet)
-      can_retry: ['failed', 'requires_input'].includes(currentStatus),
-      next_steps: getNextStepsMessage(currentStatus),
-      attempts
+      current_status: computedStatus,
+      current_status_message: statusMessages.banner,
+      // Show retry button for: failed, requires_input, canceled, expired, OR not_verified with history
+      can_retry: ['failed', 'requires_input', 'canceled', 'expired'].includes(computedStatus) || 
+                 (computedStatus === 'not_verified' && !hasAttempts),
+      next_steps: statusMessages.nextSteps,
+      attempts: attempts.map(a => ({
+        attempt_number: a.attempt_number,
+        session_id: a.session_id,
+        status: a.status,
+        status_display: a.status_display,
+        started_at: a.started_at,
+        failure_reason: a.failure_reason
+      }))
     };
 
-    console.log(`✅ Verification history retrieved for user ${userId}: ${attempts.length} attempts`);
+    console.log(`✅ Verification history retrieved for user ${userId}: ${attempts.length} attempts, status: ${computedStatus}`);
     
     res.status(200).json(response);
 
@@ -816,18 +891,93 @@ const getUserVerificationHistory = async (req, res) => {
 };
 
 /**
- * Get next steps message based on current status
+ * Get smart status message based on context
  */
-function getNextStepsMessage(status) {
-  const nextSteps = {
-    'not_verified': 'Start your identity verification to rent equipment',
-    'pending': 'Your verification is being reviewed. You\'ll receive a notification once complete.',
-    'verified': 'You\'re all set! You can now rent equipment and access all features.',
-    'failed': 'Please retry verification with clearer documents or contact support for help.',
-    'requires_input': 'Please complete the verification process with additional information.'
-  };
+function getSmartStatusMessage(status, hasAttempts, attemptCount) {
+  if (status === 'verified') {
+    return {
+      banner: '✅ Identity Verified',
+      nextSteps: 'You\'re all set! You can now rent equipment and access all features.'
+    };
+  }
   
-  return nextSteps[status] || 'Check your verification status in the app.';
+  if (status === 'pending' || status === 'processing') {
+    return {
+      banner: '⏳ Verification In Progress',
+      nextSteps: 'Your verification is being reviewed. You\'ll receive a notification once complete (usually within 24-48 hours).'
+    };
+  }
+  
+  if (status === 'requires_input') {
+    return {
+      banner: '⚠️ Additional Information Required',
+      nextSteps: 'Please complete the verification process with additional information or clearer documents.'
+    };
+  }
+  
+  if (status === 'failed') {
+    return {
+      banner: '❌ Verification Failed',
+      nextSteps: 'Your verification was unsuccessful. Please try again with clearer documents or contact support for help.'
+    };
+  }
+  
+  if (status === 'canceled' || status === 'expired') {
+    return {
+      banner: '⏹️ Verification Incomplete',
+      nextSteps: hasAttempts 
+        ? `You have ${attemptCount} previous attempt(s). Please start a new verification to continue.`
+        : 'Your previous verification session expired. Please start a new verification.'
+    };
+  }
+  
+  // not_verified
+  if (hasAttempts) {
+    return {
+      banner: '🔄 Verification Needed',
+      nextSteps: `You have ${attemptCount} previous attempt(s) but none were successful. Please verify your identity to continue.`
+    };
+  }
+  
+  return {
+    banner: '📋 Verification Required',
+    nextSteps: 'Start your identity verification to rent equipment and access all features.'
+  };
+}
+
+/**
+ * Get display text for status
+ */
+function getStatusDisplayText(status) {
+  const displayTexts = {
+    'verified': 'Verified',
+    'pending': 'Pending',
+    'processing': 'Processing',
+    'requires_input': 'Needs Input',
+    'failed': 'Failed',
+    'canceled': 'Canceled',
+    'expired': 'Expired',
+    'not_verified': 'Not Started'
+  };
+  return displayTexts[status] || status;
+}
+
+/**
+ * Format date for display
+ */
+function formatDateForDisplay(dateStr) {
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (e) {
+    return dateStr;
+  }
 }
 
 /**
