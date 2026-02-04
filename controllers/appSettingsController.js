@@ -189,6 +189,8 @@ exports.updateAppSettings = async (req, res) => {
       if (stripe_connect_description !== undefined) settings.stripe_connect_description = stripe_connect_description;
       
       await settings.save();
+      // Reload to get fresh updatedAt timestamp from MongoDB
+      settings = await AppSettings.findById(settings._id);
     } else {
       // Create new settings
       settings = new AppSettings({
@@ -204,6 +206,8 @@ exports.updateAppSettings = async (req, res) => {
         stripe_connect_description: stripe_connect_description || 'Connect your bank account to receive automatic payouts after each rental.'
       });
       await settings.save();
+      // Reload to get fresh updatedAt timestamp from MongoDB
+      settings = await AppSettings.findById(settings._id);
     }
 
     // Update or create stripe keys in separate collection
