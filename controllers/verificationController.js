@@ -810,9 +810,9 @@ const getUserVerificationHistory = async (req, res) => {
       const errorDetails = getDetailedErrorInfo(attempt.error_code, attempt.failure_reason);
       
       return {
-        attempt_number: index + 1,
-        session_id: attempt.session_id || '',
-        status: attempt.status || 'pending',
+      attempt_number: index + 1,
+      session_id: attempt.session_id || '',
+      status: attempt.status || 'pending',
         status_display: getStatusDisplayText(attempt.status),
         started_at: startedAt ? formatDateForDisplay(startedAt) : '',
         started_at_raw: startedAt || '',
