@@ -1,8 +1,8 @@
 const PercentageSetting = require('../models/percentageSettings');
 const EquipmentDropdown = require('../models/equipmentDropDown');
 
-/** Risk rate for insurance (client: per-category later; use 1% for now) */
-const INSURANCE_RISK_RATE_PERCENT = 1;
+/** Fallback risk rate (%) when admin Insurance % is not set */
+const DEFAULT_INSURANCE_RR_PERCENT = 1;
 
 /**
  * Duration factor for insurance: days ≤ 3 → 1; days > 3 → +0.5% per extra day, capped at +3%.
@@ -46,14 +46,16 @@ async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1
     const taxableAmount = rentalFee + roundedPlatformFee;
     const taxAmount = (taxableAmount * settings.taxPercentage) / 100;
     
-    // Insurance = EV × Risk Rate × Duration Factor. Deposit = EV × admin deposit %.
+    // Insurance = EV × Risk Rate × Duration Factor. RR = admin "Insurance (%)" from Pricing.
     const ev = Number(equipmentValue) || 0;
+    const rrPercent = settings.insurancePercentage != null && !isNaN(settings.insurancePercentage)
+      ? Number(settings.insurancePercentage) : DEFAULT_INSURANCE_RR_PERCENT;
     let insuranceAmount = 0;
     let depositAmount = 0;
     
     if (isInsurance) {
       const df = insuranceDurationFactor(rentalDays);
-      insuranceAmount = ev * (INSURANCE_RISK_RATE_PERCENT / 100) * df;
+      insuranceAmount = ev * (rrPercent / 100) * df;
     } else {
       depositAmount = ev * (settings.depositPercentage / 100);
     }
