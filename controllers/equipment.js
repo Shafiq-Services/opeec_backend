@@ -9,6 +9,37 @@ const Order = require('../models/orders');
 const { sendEventToUser } = require('../utils/socketService');
 const { createAdminNotification } = require('./adminNotificationController');
 const { getDurationDetails } = require('../utils/feeCalculations');
+const EquipmentDropdown = require('../models/equipmentDropDown');
+
+/**
+ * When client sends type string (e.g. "day") as dropdownId instead of ObjectId, resolve to the real dropdown _id.
+ * @param {string} dropdownName - 'advanceNotice' | 'minimumRentalDuration' | 'maximumRentalDuration'
+ * @param {string} typeOrId - Either an ObjectId string or a unit type like "day", "days", "hour", "week"
+ * @param {number} selectedValue
+ * @returns {Promise<{ dropdownId: ObjectId, selectedValue: number }|null>}
+ */
+async function resolveDurationRefForUpdate(dropdownName, typeOrId, selectedValue) {
+  const val = typeOrId != null ? String(typeOrId).trim() : '';
+  const selected = selectedValue != null ? Number(selectedValue) : 0;
+  // Already a valid 24-char hex ObjectId: use as-is
+  if (val.length === 24 && /^[a-fA-F0-9]{24}$/.test(val)) {
+    return { dropdownId: new mongoose.Types.ObjectId(val), selectedValue: selected };
+  }
+  // Client sent unit string (e.g. "day", "hour"): resolve to EquipmentDropdown _id
+  const unitMap = {
+    day: 'days', days: 'days',
+    hour: 'hours', hours: 'hours',
+    week: 'weeks', weeks: 'weeks',
+    month: 'months', months: 'months',
+  };
+  const unit = unitMap[val.toLowerCase()] || 'days';
+  const dropdown = await EquipmentDropdown.findOne({ name: dropdownName, unit }).lean();
+  if (!dropdown) return null;
+  return {
+    dropdownId: new mongoose.Types.ObjectId(dropdown._id.toString()),
+    selectedValue: selected,
+  };
+}
 
 /**
  * Resolve duration ref (dropdownId + selectedValue) to { type, count, label } for API responses.
@@ -384,9 +415,21 @@ const addEquipment = async (req, res) => {
         equipment.delivery_by_owner = delivery_by_owner;
         equipment.rental_price = rental_price;
         equipment.equipment_price = equipment_price;
-        equipment.notice_period = notice_period;
-        equipment.minimum_trip_duration = minimum_trip_duration;
-        equipment.maximum_trip_duration = maximum_trip_duration;
+
+        // Resolve duration refs: client may send type string ("day", "hour") as dropdownId; backend needs ObjectId
+        const [resolvedNotice, resolvedMinTrip, resolvedMaxTrip] = await Promise.all([
+          resolveDurationRefForUpdate('advanceNotice', notice_period?.dropdownId, notice_period?.selectedValue),
+          resolveDurationRefForUpdate('minimumRentalDuration', minimum_trip_duration?.dropdownId, minimum_trip_duration?.selectedValue),
+          resolveDurationRefForUpdate('maximumRentalDuration', maximum_trip_duration?.dropdownId, maximum_trip_duration?.selectedValue),
+        ]);
+        if (!resolvedNotice || !resolvedMinTrip || !resolvedMaxTrip) {
+          return res.status(400).json({
+            message: 'Invalid duration configuration. Ensure advance notice, minimum and maximum trip durations use valid units (e.g. day, hour, week).',
+          });
+        }
+        equipment.set('notice_period', { dropdownId: resolvedNotice.dropdownId, selectedValue: resolvedNotice.selectedValue });
+        equipment.set('minimum_trip_duration', { dropdownId: resolvedMinTrip.dropdownId, selectedValue: resolvedMinTrip.selectedValue });
+        equipment.set('maximum_trip_duration', { dropdownId: resolvedMaxTrip.dropdownId, selectedValue: resolvedMaxTrip.selectedValue });
 
         // Set status to Pending for re-review (Active or Rejected equipment needs admin approval)
         if (previousStatus === 'Active' || previousStatus === 'Rejected') {

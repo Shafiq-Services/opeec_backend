@@ -169,6 +169,32 @@ exports.login = async (req, res) => {
   }
 };
 
+// Clear FCM token (called on logout)
+exports.clearFcmToken = async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.userId, { fcm_token: "" });
+    res.status(200).json({ message: "FCM token cleared" });
+  } catch (error) {
+    console.error("clearFcmToken error:", error);
+    res.status(500).json({ message: "Error clearing FCM token" });
+  }
+};
+
+// Update FCM token (called on token refresh or app start)
+exports.updateFcmToken = async (req, res) => {
+  try {
+    const { fcm_token } = req.body;
+    if (!fcm_token || typeof fcm_token !== "string" || fcm_token.trim() === "") {
+      return res.status(400).json({ message: "FCM token is required" });
+    }
+    await User.findByIdAndUpdate(req.userId, { fcm_token });
+    res.status(200).json({ message: "FCM token updated" });
+  } catch (error) {
+    console.error("updateFcmToken error:", error);
+    res.status(500).json({ message: "Error updating FCM token" });
+  }
+};
+
 // Send OTP to email
 exports.sendOtp = async (req, res) => {
   try {

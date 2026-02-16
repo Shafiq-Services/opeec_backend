@@ -55,6 +55,8 @@ router.put('/resend_id_card_selfie', userController.resendIdCardSelfie);
 router.post('/request_account_reactivation', userController.requestAccountReactivation);
 
 router.get('/get_fcm', userController.getFCMToken);
+router.post('/clear_fcm', userController.clearFcmToken);
+router.post('/update_fcm', userController.updateFcmToken);
 
 // ---------------------- User-to-User Block/Report (Apple App Store Guideline 1.2) ----------------------
 

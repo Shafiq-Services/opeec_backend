@@ -6,10 +6,12 @@ const mongoose = require('mongoose');
 const moment = require('moment');
 const { calculateOrderFees } = require('../utils/feeCalculations');
 const { createAdminNotification } = require('./adminNotificationController');
+const { sendNotificationToUser } = require('./notification');
 const User = require('../models/user');
 const { triggerAutomaticPayout } = require('./stripeConnectController');
 const { getStripeInstance } = require('../utils/stripeIdentity');
 const { processOrderCancellation, processOrderCompletion } = require('./settlementController');
+const { processRefund } = require('./paymentController');
 
 // Helper function to create subcategory lookup pipeline for embedded subcategories
 function createSubcategoryLookupPipeline() {
@@ -278,7 +280,28 @@ exports.addOrder = async (req, res) => {
         }
       }
     );
-    
+
+    // Notify both parties to use chat for address and pickup coordination (push + in-app)
+    const ownerId = equipment.ownerId?.toString?.() || equipment.ownerId;
+    const renterId = userId;
+    const orderIdStr = savedOrder._id.toString();
+    Promise.allSettled([
+      sendNotificationToUser({
+        receiverId: ownerId,
+        senderId: renterId,
+        title: 'New booking',
+        body: 'Chat with the renter to get their address and coordinate pickup/delivery.',
+        details: { orderId: orderIdStr, type: 'booking_chat_reminder' },
+      }),
+      sendNotificationToUser({
+        receiverId: renterId,
+        senderId: ownerId,
+        title: 'Rental confirmed',
+        body: 'Chat with the owner to share your address and coordinate pickup.',
+        details: { orderId: orderIdStr, type: 'booking_chat_reminder' },
+      }),
+    ]).catch((err) => console.error('Booking chat reminders:', err));
+
     // Return saved order with all pricing data
     res.status(201).json({ 
       message: 'Order created successfully.', 
@@ -761,7 +784,7 @@ exports.finishOrder = async (req, res) => {
     await equipment.save();
     await order.save();
 
-    // Process settlement for finished order
+    // Process settlement for finished order (owner gets rental_fee only; deposit is not paid to owner)
     try {
       if (order.rental_status === 'Late' && order.penalty_amount > 0) {
         // Process as late return with penalty
@@ -777,7 +800,27 @@ exports.finishOrder = async (req, res) => {
       // Continue with order completion even if settlement fails
     }
 
-    // Trigger automatic Stripe payout to equipment owner
+    // Refund security deposit to renter when equipment is marked as received (only for deposit option, not insurance)
+    const depositAmount = order.deposit_amount || 0;
+    const usedDeposit = !order.security_option?.insurance && depositAmount > 0;
+    if (usedDeposit && order.stripe_payment?.payment_intent_id && order.stripe_payment?.payment_status === 'succeeded') {
+      try {
+        await processRefund(order._id, depositAmount, 'requested_by_customer');
+        console.log(`✅ Security deposit refunded to renter: $${depositAmount} for order ${order._id}`);
+      } catch (refundErr) {
+        console.error(`❌ Deposit refund error for order ${order._id}:`, refundErr);
+        await createAdminNotification(
+          'refund_failed',
+          `Security deposit refund failed for order ${order._id} - requires manual processing`,
+          {
+            orderId: order._id,
+            data: { depositAmount, error: refundErr.message }
+          }
+        );
+      }
+    }
+
+    // Trigger automatic Stripe payout to equipment owner (rental_fee - penalty only; no deposit)
     try {
       const payoutResult = await triggerAutomaticPayout(order._id);
       if (payoutResult.success) {
