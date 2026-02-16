@@ -123,39 +123,39 @@ async function getNotifications(req, res) {
 async function sendNotificationToUser({ receiverId, senderId, title, body, details }) {
   try {
     const receiver = await User.findById(receiverId).select("fcm_token").lean();
-    if (!receiver || !receiver.fcm_token || String(receiver.fcm_token).trim() === "") {
-      return;
-    }
-    const fcmToken = receiver.fcm_token;
-    const message = {
-      notification: { title, body },
-      data: { details: details ? JSON.stringify(details) : "{}" },
-      token: fcmToken,
-    };
+    const fcmToken = (receiver?.fcm_token && String(receiver.fcm_token).trim()) ? receiver.fcm_token : '';
 
-    try {
-      await admin.messaging().send(message);
-    } catch (firebaseError) {
-      const code = firebaseError.code || firebaseError.errorInfo?.code || "";
-      if (
-        code === "messaging/registration-token-not-registered" ||
-        code === "messaging/invalid-registration-token"
-      ) {
-        console.warn(`Stale FCM token for user ${receiverId}, clearing it.`);
-        await User.findByIdAndUpdate(receiverId, { fcm_token: "" });
-      }
-      throw firebaseError;
-    }
-
+    // Always save to DB so the user sees it in the in-app notification list (e.g. equipment approved)
     const notification = new Notification({
       title,
       body,
       senderId,
       receiverId,
-      fcmToken,
+      fcmToken: fcmToken || '',
       details: details || null,
     });
     await notification.save();
+
+    if (fcmToken) {
+      const message = {
+        notification: { title, body },
+        data: { details: details ? JSON.stringify(details) : "{}" },
+        token: fcmToken,
+      };
+      try {
+        await admin.messaging().send(message);
+      } catch (firebaseError) {
+        const code = firebaseError.code || firebaseError.errorInfo?.code || "";
+        if (
+          code === "messaging/registration-token-not-registered" ||
+          code === "messaging/invalid-registration-token"
+        ) {
+          console.warn(`Stale FCM token for user ${receiverId}, clearing it.`);
+          await User.findByIdAndUpdate(receiverId, { fcm_token: "" });
+        }
+        throw firebaseError;
+      }
+    }
   } catch (error) {
     console.error("sendNotificationToUser error:", error.message);
   }

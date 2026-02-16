@@ -5,7 +5,7 @@ const notificationSchema = new mongoose.Schema({
     body: { type: String, required: true },
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     receiverId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    fcmToken: { type: String, required: true },
+    fcmToken: { type: String, default: '' }, // empty when push not sent (e.g. no device token); in-app notification still saved
     details: { type: mongoose.Schema.Types.Mixed, default: null }
 }, { 
     timestamps: true // Replaces createdAt with automatic timestamps
