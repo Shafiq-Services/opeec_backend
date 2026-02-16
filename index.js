@@ -12,14 +12,36 @@ process.on('unhandledRejection', (reason, promise) => {
   // Log but don't exit - keep the process alive
 });
 
-// Catch Azure/system termination signals
-process.on('SIGTERM', () => {
-  console.log('⚠️ SIGTERM received - Azure is shutting down the app');
-});
-
-process.on('SIGINT', () => {
-  console.log('⚠️ SIGINT received - Process interrupted');
-});
+// Graceful shutdown - close server and DB so Ctrl+C actually exits
+function setupGracefulShutdown(server) {
+  const shutdown = (signal) => {
+    console.log(`\n⚠️ ${signal} received - Shutting down...`);
+    let exited = false;
+    const forceExit = () => {
+      if (!exited) {
+        exited = true;
+        process.exit(1);
+      }
+    };
+    setTimeout(forceExit, 5000);
+    const mongoose = require('mongoose');
+    if (server && server.listening) {
+      server.close(() => {
+        mongoose.disconnect().then(() => {
+          console.log('✅ Server and MongoDB closed');
+          if (!exited) {
+            exited = true;
+            process.exit(0);
+          }
+        }).catch(() => process.exit(0));
+      });
+    } else {
+      mongoose.disconnect().then(() => process.exit(0)).catch(() => process.exit(0));
+    }
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
 // Heartbeat - log every 30 seconds to detect if event loop is frozen
 let heartbeatCount = 0;
@@ -192,6 +214,19 @@ app.use((req, res) => res.status(404).send('Route not found'));
 
 // Use only one listen statement
 const PORT = config.PORT || 5001;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+setupGracefulShutdown(server);
+
+if (isDevelopment) {
+  // Development: bind to 0.0.0.0 for LAN access (phones, simulators)
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT} (development)`);
+    console.log(`LAN access: http://192.168.1.3:${PORT}`);
+  });
+} else {
+  // Production (default): bind to localhost only
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT} (production)`);
+  });
+}

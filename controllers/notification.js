@@ -7,33 +7,32 @@ async function sendNotification(req, res) {
   const { title, body, fcmToken, details } = req.body;
   const senderId = req.userId;
 
-  const user = await User.findOne({ fcm_token: fcmToken});
-
-  if (!user) {
-    return res.status(404).json({ message: "FCM Token not found" });
-  }
-
-  const receiverId = user._id;
-
   try {
     // Validate body
     if (typeof body !== "string") {
       return res.status(400).json({ message: "Body must be a valid string" });
     }
 
-    // Validate fcmToken
-    if (!fcmToken) {
-      return res.status(400).json({ message: "FCM token is required" });
+    // Validate fcmToken - reject empty so we don't look up wrong user or send invalid push
+    if (!fcmToken || typeof fcmToken !== "string" || fcmToken.trim() === "") {
+      return res.status(400).json({ message: "FCM token is required and must be non-empty" });
     }
 
-    // Construct the message object
+    const user = await User.findOne({ fcm_token: fcmToken });
+    if (!user) {
+      return res.status(404).json({ message: "FCM token not found for any user" });
+    }
+
+    const receiverId = user._id;
+
+    // Firebase data payload values must be strings
     const message = {
       notification: {
         title: title,
         body: body,
       },
       data: {
-        details: details ? JSON.stringify(details) : {},
+        details: details ? JSON.stringify(details) : "{}",
       },
       token: fcmToken,
     };

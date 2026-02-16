@@ -13,10 +13,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://opeecuser:4aGN7vh7e5nO
 
 // Users to reset (by email)
 const usersToReset = [
-  'cu1@opeec.com',
-  'buyer@gmail.com',
-  'cu2@opeec.com',
-  'alexwloe@gmail.com'
+  'seller.test@opeec.app'
 ];
 
 async function resetStripeData() {

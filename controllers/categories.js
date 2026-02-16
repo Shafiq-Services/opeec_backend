@@ -210,10 +210,10 @@ async function getAllCategories(req, res) {
       });
     }
 
-    // Format the categories with embedded subcategories
+    // Format the categories with embedded subcategories (ensure category_image is always a string for frontend)
     const formattedCategories = categories.map(category => ({
       category_id: category._id,
-      category_image: category.category_image,
+      category_image: category.category_image != null ? String(category.category_image).trim() : '',
       name: category.name,
       sub_categories: category.sub_categories?.map(subCategory => ({
         sub_category_id: subCategory._id,

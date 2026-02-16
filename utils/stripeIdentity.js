@@ -1,15 +1,25 @@
 const Stripe = require('stripe');
 const StripeKey = require('../models/stripeKey');
+const stripeDevDefaults = require('../config/stripeDevDefaults');
 
 /**
  * Get initialized Stripe instance with secret key from database
+ * When NODE_ENV=development: always use test key (ignore DB) so test payment intents work
+ * Otherwise: use DB key (live mode)
  */
 async function getStripeInstance() {
+  if (process.env.NODE_ENV === 'development') {
+    return Stripe(stripeDevDefaults.STRIPE_SECRET_KEY);
+  }
   const stripeKey = await StripeKey.findOne({});
   if (!stripeKey || !stripeKey.secretKey) {
     throw new Error('Stripe secret key not configured in database');
   }
-  return Stripe(stripeKey.secretKey);
+  const key = stripeKey.secretKey;
+  if (typeof key === 'string' && key.startsWith('sk_live_')) {
+    console.warn('⚠️ Using Stripe LIVE secret key from DB. Payment intents must be created with live keys.');
+  }
+  return Stripe(key);
 }
 
 /**
@@ -112,24 +122,31 @@ async function constructWebhookEvent(payload, signature, webhookSecret) {
   }
 }
 
+const WEBHOOK_KEY_MAP = {
+  payment: 'STRIPE_WEBHOOK_SECRET',
+  connect: 'STRIPE_CONNECT_WEBHOOK_SECRET',
+  identity: 'STRIPE_IDENTITY_WEBHOOK_SECRET'
+};
+
 /**
  * Get webhook secret from database, with env var fallback
- * This allows switching between test/live mode from admin panel
+ * When NODE_ENV=development: always use test webhooks (ignore DB)
+ * Otherwise: DB first, then env var
  * @param {String} type - 'payment', 'connect', or 'identity'
  * @returns {Promise<String>} - Webhook secret
  */
 async function getWebhookSecret(type) {
+  if (process.env.NODE_ENV === 'development') {
+    return stripeDevDefaults[WEBHOOK_KEY_MAP[type]] || '';
+  }
   const StripeKey = require('../models/stripeKey');
   const stripeKey = await StripeKey.findOne({});
-  
   switch (type) {
     case 'payment':
-      // DB value takes priority, then env var fallback
       return stripeKey?.webhookSecretPayment || process.env.STRIPE_WEBHOOK_SECRET || '';
     case 'connect':
       return stripeKey?.webhookSecretConnect || process.env.STRIPE_CONNECT_WEBHOOK_SECRET || '';
     case 'identity':
-      // Identity falls back to connect secret, then env vars
       return stripeKey?.webhookSecretIdentity || process.env.STRIPE_IDENTITY_WEBHOOK_SECRET || process.env.STRIPE_CONNECT_WEBHOOK_SECRET || '';
     default:
       return '';

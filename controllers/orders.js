@@ -9,6 +9,7 @@ const { createAdminNotification } = require('./adminNotificationController');
 const User = require('../models/user');
 const { triggerAutomaticPayout } = require('./stripeConnectController');
 const { getStripeInstance } = require('../utils/stripeIdentity');
+const { processOrderCancellation, processOrderCompletion } = require('./settlementController');
 
 // Helper function to create subcategory lookup pipeline for embedded subcategories
 function createSubcategoryLookupPipeline() {
@@ -534,17 +535,18 @@ exports.cancelOrder = async (req, res) => {
       const settlementResult = await processOrderCancellation(order._id, isBeforeCutoff);
       console.log(`💰 Settlement processed for cancelled order: ${order._id}`);
       
-      // Extract refund amount from settlement result
-      // Settlement returns wallet transactions - find the refund to customer
+      // Extract refund amount from settlement result (if settlement ever returns RENTAL_REFUND for buyer)
       if (settlementResult && settlementResult.transactions) {
-        const customerRefund = settlementResult.transactions.find(t => 
+        const customerRefund = settlementResult.transactions.find(t =>
           t.type === 'RENTAL_REFUND' && String(t.user_id) === String(order.userId)
         );
         if (customerRefund) {
           refundAmount = Math.abs(customerRefund.amount);
         }
-      } else {
-        // Fallback: full refund if before cutoff
+      }
+      // Fallback: when cancelled before delivery (by seller or buyer), buyer gets full refund.
+      // Settlement only creates seller-side REFUND transactions, so we always use this for Stripe.
+      if (refundAmount === 0) {
         refundAmount = isBeforeCutoff ? order.total_amount : 0;
       }
 
@@ -615,6 +617,18 @@ exports.deliverOrder = async (req, res) => {
     if (!order) return res.status(404).json({ message: "Order not found." });
     if (order.rental_status !== "Booked") return res.status(400).json({ message: "Only 'Booked' orders can be delivered." });
     if (String(order.equipmentId.ownerId) !== sellerId) return res.status(403).json({ message: "Only the owner can deliver the order." });
+
+    // Seller can mark "ready for pickup" only on or after the rental start date
+    const startDate = new Date(order.rental_schedule.start_date);
+    const now = new Date();
+    const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const startUTC = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
+    if (todayUTC < startUTC) {
+      const startFormatted = moment.utc(startDate).format('MMM D, YYYY');
+      return res.status(400).json({
+        message: `You can mark as ready for pickup only on or after the rental start date (${startFormatted}).`,
+      });
+    }
 
     order.rental_status = "Delivered";
     order.owner_images = images;
@@ -1119,7 +1133,19 @@ const processOrders = async () => {
         });
         const hoursWaited = ((now - order.status_change_timestamp) / (1000 * 60 * 60)).toFixed(1);
         console.log(`🚀 Order ${order._id} changed from Returned → Finished (waited ${hoursWaited}h)`);
-        
+
+        // Set equipment back to Active so it can be rented again
+        try {
+          const equipment = await Equipment.findById(order.equipmentId);
+          if (equipment) {
+            equipment.equipment_status = 'Active';
+            await equipment.save();
+            console.log(`✅ Equipment ${equipment._id} set back to Active after auto-finish`);
+          }
+        } catch (equipErr) {
+          console.error(`❌ Error setting equipment Active for order ${order._id}:`, equipErr.message);
+        }
+
         // Process settlement for automatically finished order
         try {
           await processOrderCompletion(order._id);
@@ -1129,11 +1155,13 @@ const processOrders = async () => {
           // Continue with order processing even if settlement fails
         }
 
-        // Trigger automatic Stripe payout
+        // Trigger automatic Stripe payout to seller
         try {
           const payoutResult = await triggerAutomaticPayout(order._id);
           if (payoutResult.success) {
             console.log(`💸 Auto Stripe payout: $${payoutResult.transfer_amount} to ${payoutResult.owner_name}`);
+          } else {
+            console.log(`⚠️ Auto payout skipped: ${payoutResult.message}`);
           }
         } catch (payoutError) {
           console.error(`❌ Auto Stripe payout error for order ${order._id}:`, payoutError.message);

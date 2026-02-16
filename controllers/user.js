@@ -187,16 +187,19 @@ exports.getFCMToken = async (req, res) => {
   const { userId } = req.query;
 
   try {
-    // Find the user by email
     const user = await User.findOne({ _id: userId });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.status(200).json({ message: 'FCM token retrieved successfully', fcmToken: user.fcm_token });
-  }
-    catch (error) {
-    res.status(500).json({ message: 'Error in updating FCM token', error });
+    const token = user.fcm_token;
+    if (!token || token.trim() === '') {
+      return res.status(404).json({ message: 'User has no FCM token registered', fcmToken: '' });
+    }
+
+    res.status(200).json({ message: 'FCM token retrieved successfully', fcmToken: token });
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving FCM token', error: error.message });
   }
 };
 
@@ -408,22 +411,29 @@ exports.forgotOrResetPasswordOtp = async (req, res) => {
 // Reset Password
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, new_password } = req.body;
+    const { email, password, new_password } = req.body;
+    const rawPassword = new_password ?? password;
+
+    if (!email || !rawPassword || String(rawPassword).trim() === '') {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
 
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Hash the new password
-    const hashedPassword = await bcrypt.hash(new_password, 10);
-
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
     user.password = hashedPassword;
     await user.save();
 
     res.status(200).json({ message: 'Password reset successful' });
   } catch (error) {
-    res.status(500).json({ message: 'Error in resetting password', error });
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      message: 'Error in resetting password',
+      error: error?.message || 'Unknown error'
+    });
   }
 };
 

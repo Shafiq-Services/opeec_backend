@@ -69,7 +69,7 @@ equipmentSchema.index({ "location.lat": 1, "location.lng": 1 });
 // Adding 2dsphere index for GeoJSON coordinates (required for $geoNear)
 equipmentSchema.index({ "location.coordinates": "2dsphere" });
 
-// Pre-save middleware to populate GeoJSON coordinates from lat/lng
+// Pre-save: set GeoJSON coordinates from lat/lng so get_listing $geoNear and 2dsphere index work for new/updated equipment
 equipmentSchema.pre('save', function(next) {
   if (this.location && this.location.lat != null && this.location.lng != null) {
     this.location.coordinates = {

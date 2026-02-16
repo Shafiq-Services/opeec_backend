@@ -5,6 +5,26 @@ const Equipment = require('../models/equipment');
 const { createTransaction } = require('../utils/walletService');
 const { createAdminNotification } = require('./adminNotificationController');
 
+/** Check if Stripe error means this Connect account is unusable (clear and allow new account) */
+function isNoSuchAccountError(err) {
+  const msg = (err.message || '').toLowerCase();
+  const code = err.code || err.type || '';
+  return (
+    code === 'resource_missing' ||
+    code === 'account_invalid' ||
+    msg.includes('no such account') ||
+    msg.includes('account does not exist') ||
+    msg.includes('does not have access to account') ||
+    msg.includes('application access may have been revoked')
+  );
+}
+
+/** Get dynamic base URL for Connect return/refresh (dev vs prod) */
+function getConnectBaseUrl() {
+  const base = process.env.BASE_URL || process.env.BACKEND_URL || 'https://opeec.azurewebsites.net';
+  return base.replace(/\/$/, '');
+}
+
 /**
  * Stripe Connect Controller - Handles equipment owner onboarding and automated payouts
  * 
@@ -44,42 +64,60 @@ exports.createConnectAccount = async (req, res) => {
     }
 
     // Check if user already has a Stripe Connect account
-    if (user.stripe_connect.account_id) {
+    if (user.stripe_connect?.account_id) {
       // If account exists but onboarding not completed, ALWAYS generate a fresh link
       // ⚠️ IMPORTANT: Stripe onboarding links are SINGLE-USE and expire after being opened
       // Never cache/reuse links - always generate fresh ones
       if (!user.stripe_connect.onboarding_completed) {
         const stripe = await getStripeInstance();
-        
-        console.log(`🔄 Creating fresh onboarding link for user ${userId} (account exists, onboarding incomplete)`);
-        
-        const accountLink = await stripe.accountLinks.create({
-          account: user.stripe_connect.account_id,
-          refresh_url: `https://opeec.azurewebsites.net/stripe-connect/refresh`,
-          return_url: `https://opeec.azurewebsites.net/stripe-connect/success`,
-          type: 'account_onboarding'
-        });
+        const baseUrl = getConnectBaseUrl();
 
-        user.stripe_connect.onboarding_url = accountLink.url;
-        user.stripe_connect.onboarding_url_created_at = new Date();
-        await user.save();
+        try {
+          console.log(`🔄 Creating fresh onboarding link for user ${userId} (account exists, onboarding incomplete)`);
 
-        return res.status(200).json({
-          success: true,
-          message: 'Fresh onboarding link generated',
-          account_id: user.stripe_connect.account_id,
-          onboarding_url: accountLink.url,
-          onboarding_completed: false
-        });
+          const accountLink = await stripe.accountLinks.create({
+            account: user.stripe_connect.account_id,
+            refresh_url: `${baseUrl}/stripe-connect/refresh`,
+            return_url: `${baseUrl}/stripe-connect/success`,
+            type: 'account_onboarding'
+          });
+
+          user.stripe_connect.onboarding_url = accountLink.url;
+          user.stripe_connect.onboarding_url_created_at = new Date();
+          await user.save();
+
+          return res.status(200).json({
+            success: true,
+            message: 'Fresh onboarding link generated',
+            account_id: user.stripe_connect.account_id,
+            onboarding_url: accountLink.url,
+            onboarding_completed: false
+          });
+        } catch (linkErr) {
+          // Stale account: created in different Stripe mode or deleted → create new
+          if (isNoSuchAccountError(linkErr)) {
+            console.log(`⚠️ Stale Connect account (${user.stripe_connect.account_id}) not found in Stripe - creating new account`);
+            user.stripe_connect.account_id = '';
+            user.stripe_connect.account_status = 'not_connected';
+            user.stripe_connect.onboarding_completed = false;
+            user.stripe_connect.onboarding_url = '';
+            await user.save();
+            // Fall through to create new account below
+          } else {
+            throw linkErr;
+          }
+        }
       }
 
-      return res.status(200).json({
-        success: true,
-        message: 'Stripe Connect account already exists and is active',
-        account_id: user.stripe_connect.account_id,
-        onboarding_completed: true,
-        account_status: user.stripe_connect.account_status
-      });
+      if (user.stripe_connect?.account_id) {
+        return res.status(200).json({
+          success: true,
+          message: 'Stripe Connect account already exists and is active',
+          account_id: user.stripe_connect.account_id,
+          onboarding_completed: true,
+          account_status: user.stripe_connect.account_status
+        });
+      }
     }
 
     // Create new Stripe Express Connect account
@@ -127,12 +165,38 @@ exports.createConnectAccount = async (req, res) => {
       });
     }
 
+    // Create Person (representative) - REQUIRED to avoid "User not found" / "Provide a representative" past-due
+    // Stripe docs: "After creating the Account, create a Person with relationship.representative = true"
+    const nameParts = (user.name || 'User').trim().split(/\s+/);
+    const firstName = nameParts[0] || 'User';
+    const lastName = nameParts.slice(1).join(' ') || 'Account';
+    try {
+      await stripe.accounts.createPerson(account.id, {
+        first_name: firstName,
+        last_name: lastName,
+        relationship: { representative: true },
+      });
+      console.log(`✅ Person (representative) created for account ${account.id}`);
+    } catch (personError) {
+      console.error('❌ Failed to create Person:', personError);
+      try {
+        await stripe.accounts.del(account.id);
+      } catch (_) {}
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to set up account representative',
+        error: personError.message,
+        error_code: 'person_creation_failed'
+      });
+    }
+
     // Create onboarding link with error handling
+    const baseUrl = getConnectBaseUrl();
     try {
       accountLink = await stripe.accountLinks.create({
         account: account.id,
-        refresh_url: `https://opeec.azurewebsites.net/stripe-connect/refresh`,
-        return_url: `https://opeec.azurewebsites.net/stripe-connect/success`,
+        refresh_url: `${baseUrl}/stripe-connect/refresh`,
+        return_url: `${baseUrl}/stripe-connect/success`,
         type: 'account_onboarding'
       });
       console.log('━'.repeat(80));
@@ -141,8 +205,8 @@ exports.createConnectAccount = async (req, res) => {
       console.log(`   URL: ${accountLink.url}`);
       console.log(`   Created: ${new Date().toISOString()}`);
       console.log(`   Expires: ${new Date(Date.now() + 5 * 60 * 1000).toISOString()} (5 min)`);
-      console.log(`   Refresh URL: https://opeec.azurewebsites.net/stripe-connect/refresh`);
-      console.log(`   Return URL: https://opeec.azurewebsites.net/stripe-connect/success`);
+      console.log(`   Refresh URL: ${baseUrl}/stripe-connect/refresh`);
+      console.log(`   Return URL: ${baseUrl}/stripe-connect/success`);
       console.log('━'.repeat(80));
     } catch (linkError) {
       console.error('❌ Failed to create onboarding link:', linkError);
@@ -295,7 +359,26 @@ exports.getAccountStatus = async (req, res) => {
 
     // Fetch latest account status from Stripe
     const stripe = await getStripeInstance();
-    const account = await stripe.accounts.retrieve(user.stripe_connect.account_id);
+    let account;
+    try {
+      account = await stripe.accounts.retrieve(user.stripe_connect.account_id);
+    } catch (retrieveErr) {
+      if (isNoSuchAccountError(retrieveErr)) {
+        user.stripe_connect.account_id = '';
+        user.stripe_connect.account_status = 'not_connected';
+        user.stripe_connect.onboarding_completed = false;
+        await user.save();
+        return res.status(200).json({
+          success: true,
+          connected: false,
+          account_id: null,
+          onboarding_completed: false,
+          payouts_enabled: false,
+          message: 'Previous Connect account no longer exists. Create a new one to receive payouts.'
+        });
+      }
+      throw retrieveErr;
+    }
 
     // Update user record with latest status
     user.stripe_connect.charges_enabled = account.charges_enabled;
@@ -360,12 +443,30 @@ exports.refreshOnboardingLink = async (req, res) => {
 
     // Create new onboarding link
     const stripe = await getStripeInstance();
-    const accountLink = await stripe.accountLinks.create({
-      account: user.stripe_connect.account_id,
-      refresh_url: `https://opeec.azurewebsites.net/stripe-connect/refresh`,
-      return_url: `https://opeec.azurewebsites.net/stripe-connect/success`,
-      type: 'account_onboarding'
-    });
+    const baseUrl = getConnectBaseUrl();
+    let accountLink;
+    try {
+      accountLink = await stripe.accountLinks.create({
+        account: user.stripe_connect.account_id,
+        refresh_url: `${baseUrl}/stripe-connect/refresh`,
+        return_url: `${baseUrl}/stripe-connect/success`,
+        type: 'account_onboarding'
+      });
+    } catch (linkErr) {
+      if (isNoSuchAccountError(linkErr)) {
+        user.stripe_connect.account_id = '';
+        user.stripe_connect.account_status = 'not_connected';
+        user.stripe_connect.onboarding_completed = false;
+        await user.save();
+        return res.status(400).json({
+          success: false,
+          message: 'Your previous Connect account no longer exists. Please create a new one.',
+          error_code: 'stale_account',
+          create_new: true
+        });
+      }
+      throw linkErr;
+    }
 
     user.stripe_connect.onboarding_url = accountLink.url;
     user.stripe_connect.onboarding_url_created_at = new Date(); // Track when link was created

@@ -1,5 +1,6 @@
 const AppSettings = require('../models/appSettings');
 const StripeKey = require('../models/stripeKey');
+const stripeDevDefaults = require('../config/stripeDevDefaults');
 
 // GET: Get app settings (including stripe keys from separate collection)
 exports.getAppSettings = async (req, res) => {
@@ -31,6 +32,15 @@ exports.getAppSettings = async (req, res) => {
       await stripeKey.save();
     }
 
+    // When NODE_ENV=development: always return test Stripe keys (ignore DB)
+    // Otherwise: use DB values
+    const isDev = process.env.NODE_ENV === 'development';
+    const stripePk = isDev ? stripeDevDefaults.STRIPE_PUBLISHABLE_KEY : stripeKey.publishableKey;
+    const stripeSk = isDev ? stripeDevDefaults.STRIPE_SECRET_KEY : stripeKey.secretKey;
+    const whPayment = isDev ? stripeDevDefaults.STRIPE_WEBHOOK_SECRET : (stripeKey.webhookSecretPayment || '');
+    const whConnect = isDev ? stripeDevDefaults.STRIPE_CONNECT_WEBHOOK_SECRET : (stripeKey.webhookSecretConnect || '');
+    const whIdentity = isDev ? stripeDevDefaults.STRIPE_IDENTITY_WEBHOOK_SECRET : (stripeKey.webhookSecretIdentity || '');
+
     res.status(200).json({
       message: 'App settings retrieved successfully',
       status: true,
@@ -40,12 +50,12 @@ exports.getAppSettings = async (req, res) => {
         android_store_url: settings.android_store_url,
         ios_store_url: settings.ios_store_url,
         share_message: settings.share_message,
-        stripe_public_key: stripeKey.publishableKey,
-        stripe_secret_key: stripeKey.secretKey,
+        stripe_public_key: stripePk || '',
+        stripe_secret_key: stripeSk || '',
         // Webhook secrets for test/live mode switching
-        stripe_webhook_secret_payment: stripeKey.webhookSecretPayment || '',
-        stripe_webhook_secret_connect: stripeKey.webhookSecretConnect || '',
-        stripe_webhook_secret_identity: stripeKey.webhookSecretIdentity || '',
+        stripe_webhook_secret_payment: whPayment,
+        stripe_webhook_secret_connect: whConnect,
+        stripe_webhook_secret_identity: whIdentity,
         verification_fee: settings.verification_fee || 2.00,
         verification_title: settings.verification_title || 'Identity Verification Required',
         verification_description: settings.verification_description || 'To ensure a safe and secure rental experience, we need to verify your identity.',

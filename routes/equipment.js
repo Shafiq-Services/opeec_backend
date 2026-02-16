@@ -18,6 +18,9 @@ router.post('/add', equipmentController.addEquipment);
 // Update equipment
 router.put('/update/:id', equipmentController.updateEquipment);
 
+// Owner: update equipment status (Active <-> InActive only)
+router.put('/update_status', equipmentController.updateMyEquipmentStatus);
+
 // Delete equipment
 router.delete('/delete', equipmentController.deleteEquipment);
 

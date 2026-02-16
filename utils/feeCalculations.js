@@ -1,4 +1,5 @@
 const PercentageSetting = require('../models/percentageSettings');
+const EquipmentDropdown = require('../models/equipmentDropDown');
 
 /**
  * Calculate all fees dynamically based on rental fee and percentage settings
@@ -74,9 +75,8 @@ async function getDurationDetails(durationRef) {
   if (!durationRef || !durationRef.dropdownId) {
     return { type: '', count: 0 };
   }
-  
+
   try {
-    const EquipmentDropdown = require('../models/equipmentDropDown');
     const dropdown = await EquipmentDropdown.findById(durationRef.dropdownId);
     
     if (!dropdown) {

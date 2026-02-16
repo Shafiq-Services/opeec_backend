@@ -8,6 +8,37 @@ const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSell
 const Order = require('../models/orders');
 const { sendEventToUser } = require('../utils/socketService');
 const { createAdminNotification } = require('./adminNotificationController');
+const { getDurationDetails } = require('../utils/feeCalculations');
+
+/**
+ * Resolve duration ref (dropdownId + selectedValue) to { type, count, label } for API responses.
+ * If ref already has type/count (legacy), return it; otherwise resolve via dropdown.
+ */
+async function resolveDuration(durationRef) {
+  if (!durationRef) return { type: '', count: 0, label: '' };
+  if (durationRef.type !== undefined && durationRef.type !== '') {
+    return {
+      type: durationRef.type || '',
+      count: durationRef.count ?? 0,
+      label: durationRef.label || `${durationRef.count ?? 0} ${durationRef.type || ''}`
+    };
+  }
+  const resolved = await getDurationDetails(durationRef);
+  return { type: resolved.type || '', count: resolved.count ?? 0, label: resolved.label || '' };
+}
+
+/** Haversine distance in km between two lat/lng points. */
+function haversineDistanceKm(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Earth radius in km
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 // Helper function to find subcategory by ID across all categories
 async function findSubCategoryById(subCategoryId) {
@@ -45,6 +76,20 @@ async function getSubCategoryDetails(subCategoryId) {
     categoryId: subCategoryData.categoryId,
     categoryName: subCategoryData.categoryName
   };
+}
+
+// Ensure API always returns images as an array of non-empty strings (handles legacy single string or mixed data)
+function normalizeImageUrls(value) {
+  if (value == null) return [];
+  if (typeof value === 'string') return value.trim() ? [value.trim()] : [];
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item.url === 'string') return item.url.trim();
+      return null;
+    })
+    .filter(Boolean);
 }
 
 // Helper function to get multiple subcategory details efficiently
@@ -101,16 +146,14 @@ async function getReservationText(equipmentId) {
       return ''; // Reservation has ended (past date), don't show text
     }
     
-    // Format the date as "Reserved till HH:MM - DD/MM/YY"
-    // Extract time components
-    const hours = String(endDate.getHours()).padStart(2, '0');
-    const minutes = String(endDate.getMinutes()).padStart(2, '0');
-    
-    // Extract date components
-    const day = String(endDate.getDate()).padStart(2, '0');
-    const month = String(endDate.getMonth() + 1).padStart(2, '0');
-    const year = String(endDate.getFullYear()).slice(-2);
-    
+    // Format the date as "Reserved till HH:MM - DD/MM/YY" using UTC so the
+    // displayed date matches the stored calendar date regardless of server TZ
+    const hours = String(endDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(endDate.getUTCMinutes()).padStart(2, '0');
+    const day = String(endDate.getUTCDate()).padStart(2, '0');
+    const month = String(endDate.getUTCMonth() + 1).padStart(2, '0');
+    const year = String(endDate.getUTCFullYear()).slice(-2);
+
     return `Reserved till ${hours}:${minutes} - ${day}/${month}/${year}`;
   } catch (error) {
     console.error('Error getting reservation text:', error);
@@ -509,8 +552,67 @@ async function getAllEquipments(req, res) {
     }
 
     // ✅ Fetch filtered equipment
-    const equipments = await Equipment.aggregate(geoPipeline);
-    
+    let equipments = await Equipment.aggregate(geoPipeline);
+
+    const maxDistanceKm = parsedLat !== 0.0 && parsedLng !== 0.0 ? (distance ? parseFloat(distance) : 50) : 0;
+
+    // ✅ Fallback 1: include equipment that have lat/lng but no location.coordinates (so $geoNear skipped them)
+    if (parsedLat !== 0.0 && parsedLng !== 0.0) {
+      const fallbackQuery = {
+        ...query,
+        'location.lat': { $exists: true, $nin: [null, undefined] },
+        'location.lng': { $exists: true, $nin: [null, undefined] },
+        $or: [
+          { 'location.coordinates': { $exists: false } },
+          { 'location.coordinates': null },
+          { 'location.coordinates.type': { $ne: 'Point' } },
+          { 'location.coordinates.coordinates': { $exists: false } },
+          { 'location.coordinates.coordinates': { $not: { $size: 2 } } },
+        ],
+      };
+      const fallbackDocs = await Equipment.find(fallbackQuery).lean();
+      const geoIds = new Set(equipments.map((e) => e._id.toString()));
+      const fallbackWithDistance = fallbackDocs
+        .map((doc) => {
+          const distKm = haversineDistanceKm(parsedLat, parsedLng, doc.location.lat, doc.location.lng);
+          return { ...doc, distance: distKm * 1000, distanceInKm: distKm };
+        })
+        .filter((doc) => doc.distanceInKm <= maxDistanceKm)
+        .filter((doc) => {
+          if (!doc.delivery_by_owner) return true;
+          const rangeKm = doc.location?.range ?? 50;
+          return doc.distanceInKm <= rangeKm;
+        })
+        .filter((doc) => !geoIds.has(doc._id.toString()));
+      equipments = [...equipments, ...fallbackWithDistance].sort((a, b) => (a.distance || 0) - (b.distance || 0));
+    }
+
+    // ✅ Fallback 2: when $geoNear returned 0 (e.g. missing 2dsphere index), use find + haversine so listing still works
+    if (equipments.length === 0 && parsedLat !== 0.0 && parsedLng !== 0.0 && maxDistanceKm > 0) {
+      const distanceQuery = {
+        ...query,
+        $or: [
+          { 'location.coordinates.type': 'Point', 'location.coordinates.coordinates': { $exists: true, $size: 2 } },
+          { 'location.lat': { $exists: true, $nin: [null, undefined] }, 'location.lng': { $exists: true, $nin: [null, undefined] } },
+        ],
+      };
+      const allWithLocation = await Equipment.find(distanceQuery).lean();
+      equipments = allWithLocation
+        .map((doc) => {
+          const lat = doc.location?.lat ?? doc.location?.coordinates?.coordinates?.[1];
+          const lng = doc.location?.lng ?? doc.location?.coordinates?.coordinates?.[0];
+          if (lat == null || lng == null) return null;
+          const distKm = haversineDistanceKm(parsedLat, parsedLng, lat, lng);
+          return { ...doc, distance: distKm * 1000, distanceInKm: distKm };
+        })
+        .filter((doc) => doc != null && doc.distanceInKm <= maxDistanceKm)
+        .filter((doc) => {
+          if (!doc.delivery_by_owner) return true;
+          const rangeKm = doc.location?.range ?? 50;
+          return doc.distanceInKm <= rangeKm;
+        })
+        .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+    }
 
     // ✅ Fetch subcategories and categories using helper function
     const subCategoryIds = equipments.map(equipment => equipment.subCategoryId.toString());
@@ -519,6 +621,11 @@ async function getAllEquipments(req, res) {
     // ✅ Enhanced equipment response with all details
     const formattedEquipments = await Promise.all(equipments.map(async (equipment) => {
       const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
+      const [resolvedNoticePeriod, resolvedMinTrip, resolvedMaxTrip] = await Promise.all([
+        resolveDuration(equipment.notice_period),
+        resolveDuration(equipment.minimum_trip_duration),
+        resolveDuration(equipment.maximum_trip_duration),
+      ]);
 
       if (!subCategoryDetails) {
         // If subcategory details not found, try to fetch individually
@@ -531,7 +638,7 @@ async function getAllEquipments(req, res) {
         delivery_by_owner: equipment.delivery_by_owner,
         description: equipment.description,
         equipment_price: equipment.equipment_price,
-        images: equipment.images,
+        images: normalizeImageUrls(equipment.images),
         isFavorite: userId ? (await User.findById(userId))?.favorite_equipments.includes(equipment._id) || false : false,
         location: {
           address: equipment.location?.address || "",
@@ -540,11 +647,11 @@ async function getAllEquipments(req, res) {
           range: equipment.location?.range || 0,
         },
         make: equipment.make,
-        maximum_trip_duration: equipment.maximum_trip_duration,
-        minimum_trip_duration: equipment.minimum_trip_duration,
+        maximum_trip_duration: resolvedMaxTrip,
+        minimum_trip_duration: resolvedMinTrip,
         model: equipment.model,
         name: equipment.name,
-        notice_period: equipment.notice_period,
+        notice_period: resolvedNoticePeriod,
         ownerId: equipment.ownerId,
         postal_code: equipment.postal_code,
         rental_price: equipment.rental_price,
@@ -566,7 +673,7 @@ async function getAllEquipments(req, res) {
         delivery_by_owner: equipment.delivery_by_owner,
         description: equipment.description,
         equipment_price: equipment.equipment_price,
-        images: equipment.images,
+        images: normalizeImageUrls(equipment.images),
         isFavorite: userId ? (await User.findById(userId))?.favorite_equipments.includes(equipment._id) || false : false,
         location: {
           address: equipment.location?.address || "",
@@ -575,11 +682,11 @@ async function getAllEquipments(req, res) {
           range: equipment.location?.range || 0,
         },
         make: equipment.make,
-        maximum_trip_duration: equipment.maximum_trip_duration,
-        minimum_trip_duration: equipment.minimum_trip_duration,
+        maximum_trip_duration: resolvedMaxTrip,
+        minimum_trip_duration: resolvedMinTrip,
         model: equipment.model,
         name: equipment.name,
-        notice_period: equipment.notice_period,
+        notice_period: resolvedNoticePeriod,
         ownerId: equipment.ownerId,
         postal_code: equipment.postal_code,
         rental_price: equipment.rental_price,
@@ -654,6 +761,11 @@ async function getMyEquipments(req, res) {
           category = subCategoryData ? { _id: subCategoryData.categoryId, name: subCategoryData.categoryName } : null;
         }
         const owner = await User.findById(equipment.ownerId);
+        const [resolvedNoticePeriod, resolvedMinTrip, resolvedMaxTrip] = await Promise.all([
+          resolveDuration(equipment.notice_period),
+          resolveDuration(equipment.minimum_trip_duration),
+          resolveDuration(equipment.maximum_trip_duration),
+        ]);
 
         return {
           _id: equipment._id,
@@ -662,7 +774,7 @@ async function getMyEquipments(req, res) {
           delivery_by_owner: equipment.delivery_by_owner,
           description: equipment.description,
           equipment_price: equipment.equipment_price,
-          images: equipment.images,
+          images: normalizeImageUrls(equipment.images),
           isFavorite: owner.favorite_equipments.includes(equipment._id), // All these are favorites
           location: {
             address: equipment.location?.address || "",
@@ -671,11 +783,11 @@ async function getMyEquipments(req, res) {
             range: equipment.location?.range || 0,
           },
           make: equipment.make,
-          maximum_trip_duration: equipment.maximum_trip_duration,
-          minimum_trip_duration: equipment.minimum_trip_duration,
+          maximum_trip_duration: resolvedMaxTrip,
+          minimum_trip_duration: resolvedMinTrip,
           model: equipment.model,
           name: equipment.name,
-          notice_period: equipment.notice_period,
+          notice_period: resolvedNoticePeriod,
           ownerId: equipment.ownerId,
           postal_code: equipment.postal_code,
           rental_price: equipment.rental_price,
@@ -756,7 +868,13 @@ function queryMatches(equipment, query) {
           conversationId = "";
         }
       }
-      
+
+      const [resolvedNoticePeriod, resolvedMinTrip, resolvedMaxTrip] = await Promise.all([
+        resolveDuration(equipment.notice_period),
+        resolveDuration(equipment.minimum_trip_duration),
+        resolveDuration(equipment.maximum_trip_duration),
+      ]);
+
       // Formatting the equipment details
       const equipmentDetails = {
         _id: equipment._id,
@@ -764,7 +882,7 @@ function queryMatches(equipment, query) {
         delivery_by_owner: equipment.delivery_by_owner || false,
         description: equipment.description || '',
         equipment_price: equipment.equipment_price || 0,
-        images: equipment.images || [],
+        images: normalizeImageUrls(equipment.images),
         equipment_status: equipment.equipment_status,
         location: {
           address: equipment.location?.address || '',
@@ -773,12 +891,12 @@ function queryMatches(equipment, query) {
           range: equipment.location?.range || 0,
         },
         make: equipment.make || '',
-        maximum_trip_duration: equipment.maximum_trip_duration || { count: 0, type: '' },
+        maximum_trip_duration: resolvedMaxTrip,
         message: 'Equipment details retrieved successfully',
-        minimum_trip_duration: equipment.minimum_trip_duration || { count: 0, type: '' },
+        minimum_trip_duration: resolvedMinTrip,
         model: equipment.model || '',
         name: equipment.name || '',
-        notice_period: equipment.notice_period || { count: 0, type: '' },
+        notice_period: resolvedNoticePeriod,
         owner: {
           id: owner?._id || null,
           name: owner?.name || '',
@@ -1000,7 +1118,7 @@ async function getUserShop(req, res) {
         name: equipment.name,
         make: equipment.make,
         rental_price: equipment.rental_price,
-        images: equipment.images,
+        images: normalizeImageUrls(equipment.images),
         average_rating: equipment_average_rating,
                   location: {
             address: equipment.location?.address || "",
@@ -1112,7 +1230,7 @@ async function getFavoriteEquipments(req, res) {
         name: equipment.name,
         make: equipment.make,
         rental_price: equipment.rental_price,
-        images: equipment.images,
+        images: normalizeImageUrls(equipment.images),
         average_rating: average_rating,
         owner: equipment.ownerId ? {
           _id: equipment.ownerId._id,
@@ -1193,6 +1311,45 @@ async function toggleFavorite(req, res) {
       message: 'Server error',
       status: false,
     });
+  }
+}
+
+/**
+ * Owner self-service: update equipment status between Active and InActive only.
+ * Used by the app when owner deactivates/activates their listing.
+ */
+async function updateMyEquipmentStatus(req, res) {
+  try {
+    const userId = req.userId;
+    const { equipmentId, status } = req.query;
+    if (!equipmentId || !status) {
+      return res.status(400).json({ message: "Equipment ID and status are required." });
+    }
+    const allowedStatuses = ['Active', 'InActive'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ message: "Status must be Active or InActive." });
+    }
+    const equipment = await Equipment.findById(equipmentId);
+    if (!equipment) return res.status(404).json({ message: "Equipment not found." });
+    if (String(equipment.ownerId) !== userId) {
+      return res.status(403).json({ message: "You can only update your own equipment." });
+    }
+    const current = equipment.equipment_status;
+    if (current !== 'Active' && current !== 'InActive') {
+      return res.status(400).json({
+        message: `Cannot change status from ${current}. Only Active equipment can be deactivated, and only InActive can be activated.`,
+      });
+    }
+    equipment.equipment_status = status;
+    await equipment.save({ validateModifiedOnly: true });
+    return res.status(200).json({
+      message: `Equipment is now ${status}.`,
+      status: true,
+      equipment_status: equipment.equipment_status,
+    });
+  } catch (error) {
+    console.error('Error in updateMyEquipmentStatus:', error);
+    return res.status(500).json({ message: "Error updating equipment status.", error: error.message });
   }
 }
 
@@ -1306,31 +1463,30 @@ async function getEquipmentByStatus(req, res) {
       console.log("🔹 Query status:", query.equipment_status);
     }
 
-    // Get equipment with owner details
+    // Get equipment with owner details (subcategories are embedded in Category, so resolve names via helper)
     console.log("🔹 Fetching equipment with query:", query);
     const equipments = await Equipment.find(query)
       .populate('ownerId', 'name email profile_image')
-      .populate('subCategoryId', 'name')
-      .populate({
-        path: 'subCategoryId',
-        populate: {
-          path: 'categoryId',
-          select: 'name'
-        }
-      });
+      .lean();
     console.log(`🔹 Found ${equipments.length} equipment`);
+
+    const subCategoryIds = equipments.map((e) => e.subCategoryId?.toString()).filter(Boolean);
+    const subCategoryMap = await getMultipleSubCategoryDetails(subCategoryIds);
 
     // Get rental counts for each equipment
     console.log("🔹 Getting rental stats for each equipment");
     const equipmentsWithStats = await Promise.all(equipments.map(async (equipment) => {
-      
+      const subCategoryDetails = equipment.subCategoryId
+        ? subCategoryMap[equipment.subCategoryId.toString()]
+        : null;
+
       // Check if equipment is booked by looking for active orders
       const activeOrderStatuses = ['Delivered', 'Ongoing', 'Returned', 'Late'];
       const isBooked = await Order.exists({
         equipmentId: equipment._id,
         rental_status: { $in: activeOrderStatuses }
       });
-      
+
       return {
         _id: equipment._id,
         name: equipment.name,
@@ -1338,9 +1494,9 @@ async function getEquipmentByStatus(req, res) {
         model: equipment.model,
         serial_number: equipment.serial_number,
         description: equipment.description,
-        images: equipment.images,
-        category: equipment.subCategoryId?.categoryId?.name || 'Unknown',
-        sub_category: equipment.subCategoryId?.name || 'Unknown',
+        images: normalizeImageUrls(equipment.images),
+        category: subCategoryDetails?.category_name ?? 'Unknown',
+        sub_category: subCategoryDetails?.sub_category_name ?? 'Unknown',
         postal_code: equipment.postal_code,
         delivery_by_owner: equipment.delivery_by_owner,
         rental_price: equipment.rental_price,
@@ -1388,51 +1544,43 @@ async function searchEquipment(req, res) {
       orQuery.push({ _id: text });
       orQuery.push({ ownerId: text });
     }
-    // Find all equipment matching text fields or exact id/owner_id
+    // Find all equipment matching text fields or exact id/owner_id (subcategories resolved via helper)
     let equipments = await Equipment.find({ $or: orQuery })
       .populate('ownerId', 'name email profile_image')
-      .populate('subCategoryId', 'name')
-      .populate({
-        path: 'subCategoryId',
-        populate: {
-          path: 'categoryId',
-          select: 'name'
-        }
-      });
+      .lean();
     // If not an exact ObjectId, also filter for partial _id and owner_id match
     if (!mongoose.Types.ObjectId.isValid(text)) {
       const textLower = text.toLowerCase();
       const allEquipments = await Equipment.find()
         .populate('ownerId', 'name email profile_image')
-        .populate('subCategoryId', 'name')
-        .populate({
-          path: 'subCategoryId',
-          populate: {
-            path: 'categoryId',
-            select: 'name'
-          }
-        });
+        .lean();
       const filtered = allEquipments.filter(e =>
         e._id.toString().toLowerCase().includes(textLower) ||
         (e.ownerId && e.ownerId._id && e.ownerId._id.toString().toLowerCase().includes(textLower))
       );
-      // Merge and deduplicate
       const ids = new Set(equipments.map(e => e._id.toString()));
       filtered.forEach(e => {
         if (!ids.has(e._id.toString())) equipments.push(e);
       });
     }
+    const subCategoryIds = equipments.map((e) => e.subCategoryId?.toString()).filter(Boolean);
+    const subCategoryMap = await getMultipleSubCategoryDetails(subCategoryIds);
+
     // Format the response
-    const formattedEquipments = await Promise.all(equipments.map(async equipment => ({
+    const formattedEquipments = await Promise.all(equipments.map(async equipment => {
+      const subCategoryDetails = equipment.subCategoryId
+        ? subCategoryMap[equipment.subCategoryId.toString()]
+        : null;
+      return {
       _id: equipment._id,
       name: equipment.name,
       make: equipment.make,
       model: equipment.model,
       serial_number: equipment.serial_number,
       description: equipment.description,
-      images: equipment.images,
-      category: equipment.subCategoryId?.categoryId?.name || 'Unknown',
-      sub_category: equipment.subCategoryId?.name || 'Unknown',
+      images: normalizeImageUrls(equipment.images),
+      category: subCategoryDetails?.category_name ?? 'Unknown',
+      sub_category: subCategoryDetails?.sub_category_name ?? 'Unknown',
       postal_code: equipment.postal_code,
       delivery_by_owner: equipment.delivery_by_owner,
       rental_price: equipment.rental_price,
@@ -1447,7 +1595,8 @@ async function searchEquipment(req, res) {
       status: equipment.equipment_status,
       reserved_till: await getReservationText(equipment._id),
       created_at: equipment.createdAt
-    })));
+    };
+    }));
     res.status(200).json({ message: 'Equipment fetched successfully', equipments: formattedEquipments });
   } catch (error) {
     console.error("🔴 Error in searchEquipment:", error);
@@ -1458,6 +1607,7 @@ async function searchEquipment(req, res) {
 module.exports = {
   addEquipment,
   updateEquipment,
+  updateMyEquipmentStatus,
   getAllEquipments,
   getEquipmentDetails,
   deleteEquipment,

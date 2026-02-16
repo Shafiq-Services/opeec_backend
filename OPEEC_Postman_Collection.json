@@ -1,0 +1,1710 @@
+{
+	"info": {
+		"_postman_id": "opeec-complete-collection",
+		"name": "OPEEC - Complete API Collection",
+		"description": "Complete API collection for OPEEC Equipment Rental Platform.\n\nVariables:\n- {{url}} - Base server URL (e.g. http://localhost:5005)\n- {{admin_token}} - Admin JWT token\n- {{seller_token}} - Seller/Owner JWT token\n- {{buyer_token}} - Buyer/Renter JWT token\n- {{user_token}} - Common user JWT token",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "url", "value": "http://localhost:5005", "type": "string" },
+		{ "key": "admin_token", "value": "", "type": "string" },
+		{ "key": "seller_token", "value": "", "type": "string" },
+		{ "key": "buyer_token", "value": "", "type": "string" },
+		{ "key": "user_token", "value": "", "type": "string" }
+	],
+	"item": [
+		{
+			"name": "Admin",
+			"item": [
+				{
+					"name": "Auth",
+					"item": [
+						{
+							"name": "Send Login OTP",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"admin@opeec.com\",\n  \"password\": \"Admin123!\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/send-login-otp", "host": ["{{url}}"], "path": ["admin", "send-login-otp"] }
+							}
+						},
+						{
+							"name": "Verify Login OTP",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"admin@opeec.com\",\n  \"otp\": \"123456\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/verify-login-otp", "host": ["{{url}}"], "path": ["admin", "verify-login-otp"] }
+							}
+						},
+						{
+							"name": "Forgot Password (Send OTP)",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"admin@opeec.com\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/forgot-password", "host": ["{{url}}"], "path": ["admin", "forgot-password"] }
+							}
+						},
+						{
+							"name": "Verify OTP (Password Reset)",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"admin@opeec.com\",\n  \"otp\": \"123456\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/verify_otp", "host": ["{{url}}"], "path": ["admin", "verify_otp"] }
+							}
+						},
+						{
+							"name": "Reset Password",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"admin@opeec.com\",\n  \"newPassword\": \"NewAdmin123!\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/reset_password", "host": ["{{url}}"], "path": ["admin", "reset_password"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Profile",
+					"item": [
+						{
+							"name": "Get Admin Profile",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/profile", "host": ["{{url}}"], "path": ["admin", "profile"] }
+							}
+						},
+						{
+							"name": "Update Admin Profile",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"name\": \"Admin User\",\n  \"mobile\": \"+14155551234\",\n  \"age\": 30,\n  \"location\": \"San Francisco, CA\",\n  \"about\": \"Platform administrator\",\n  \"profile_picture\": \"https://example.com/admin-avatar.jpg\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/update", "host": ["{{url}}"], "path": ["admin", "update"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "User Management",
+					"item": [
+						{
+							"name": "Get All Users",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/users/all", "host": ["{{url}}"], "path": ["admin", "users", "all"] }
+							}
+						},
+						{
+							"name": "Search Users",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/users/search?text=john",
+									"host": ["{{url}}"],
+									"path": ["admin", "users", "search"],
+									"query": [{ "key": "text", "value": "john" }]
+								}
+							}
+						},
+						{
+							"name": "Approve User",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"userId\": \"64a1b2c3d4e5f6a7b8c9d0e1\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/users/approve", "host": ["{{url}}"], "path": ["admin", "users", "approve"] }
+							}
+						},
+						{
+							"name": "Reject User",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"userId\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"reason\": \"Incomplete profile information\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/users/reject", "host": ["{{url}}"], "path": ["admin", "users", "reject"] }
+							}
+						},
+						{
+							"name": "Block User",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"userId\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"reason\": \"Violation of terms of service\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/users/block", "host": ["{{url}}"], "path": ["admin", "users", "block"] }
+							}
+						},
+						{
+							"name": "Unblock User",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"userId\": \"64a1b2c3d4e5f6a7b8c9d0e1\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/users/unblock", "host": ["{{url}}"], "path": ["admin", "users", "unblock"] }
+							}
+						},
+						{
+							"name": "Update User Profile (by Admin)",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"userId\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"name\": \"Updated User Name\",\n  \"email\": \"updated@example.com\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/users/update-profile", "host": ["{{url}}"], "path": ["admin", "users", "update-profile"] }
+							}
+						},
+						{
+							"name": "Filter by Verification Status",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/users/verification-filter?status=verified",
+									"host": ["{{url}}"],
+									"path": ["admin", "users", "verification-filter"],
+									"query": [{ "key": "status", "value": "verified" }]
+								}
+							}
+						},
+						{
+							"name": "Sync Verification Statuses",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/users/sync-verification-statuses", "host": ["{{url}}"], "path": ["admin", "users", "sync-verification-statuses"] }
+							}
+						},
+						{
+							"name": "Get User Verification History",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/users/64a1b2c3d4e5f6a7b8c9d0e1/verification-history", "host": ["{{url}}"], "path": ["admin", "users", "64a1b2c3d4e5f6a7b8c9d0e1", "verification-history"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Equipment Management",
+					"item": [
+						{
+							"name": "Get All Equipment",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/equipment/all", "host": ["{{url}}"], "path": ["admin", "equipment", "all"] }
+							}
+						},
+						{
+							"name": "Get Equipment Details",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/equipment/details/64a1b2c3d4e5f6a7b8c9d0e1", "host": ["{{url}}"], "path": ["admin", "equipment", "details", "64a1b2c3d4e5f6a7b8c9d0e1"] }
+							}
+						},
+						{
+							"name": "Get Equipment by Status",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/equipment/by-status?status=Pending",
+									"host": ["{{url}}"],
+									"path": ["admin", "equipment", "by-status"],
+									"query": [{ "key": "status", "value": "Pending" }]
+								}
+							}
+						},
+						{
+							"name": "Search Equipment",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/equipment/search?text=drill",
+									"host": ["{{url}}"],
+									"path": ["admin", "equipment", "search"],
+									"query": [{ "key": "text", "value": "drill" }]
+								}
+							}
+						},
+						{
+							"name": "Update Equipment Status",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"equipmentId\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"status\": \"Active\",\n  \"reason\": \"\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/equipment/update-status", "host": ["{{url}}"], "path": ["admin", "equipment", "update-status"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Orders",
+					"item": [
+						{
+							"name": "Get Rentals by Status",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/orders/by-status?status=Booked",
+									"host": ["{{url}}"],
+									"path": ["admin", "orders", "by-status"],
+									"query": [{ "key": "status", "value": "Booked" }]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Categories",
+					"item": [
+						{
+							"name": "Get All Categories",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/categories/all", "host": ["{{url}}"], "path": ["admin", "categories", "all"] }
+							}
+						},
+						{
+							"name": "Add Category",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"category_name\": \"Construction Equipment\",\n  \"categoryImage\": \"https://example.com/construction.jpg\",\n  \"sub_categories\": [\n    { \"name\": \"Excavators\", \"security_fee\": 5000 },\n    { \"name\": \"Bulldozers\", \"security_fee\": 8000 },\n    { \"name\": \"Concrete Mixers\", \"security_fee\": 2000 }\n  ]\n}"
+								},
+								"url": { "raw": "{{url}}/admin/categories/add", "host": ["{{url}}"], "path": ["admin", "categories", "add"] }
+							}
+						},
+						{
+							"name": "Update Category",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"name\": \"Construction Equipment Updated\",\n  \"category_image\": \"https://example.com/construction-v2.jpg\",\n  \"sub_categories\": [\n    { \"_id\": \"64a1b2c3d4e5f6a7b8c9d0e1\", \"name\": \"Excavators\", \"security_fee\": 6000 },\n    { \"name\": \"Cranes\", \"security_fee\": 15000 }\n  ]\n}"
+								},
+								"url": {
+									"raw": "{{url}}/admin/categories/update?category_id=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["admin", "categories", "update"],
+									"query": [{ "key": "category_id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						},
+						{
+							"name": "Delete Category",
+							"request": {
+								"method": "DELETE",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/categories/delete?category_id=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["admin", "categories", "delete"],
+									"query": [{ "key": "category_id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Dashboard",
+					"item": [
+						{
+							"name": "Get Dashboard Summary",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/dashboard/summary", "host": ["{{url}}"], "path": ["admin", "dashboard", "summary"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Settings",
+					"item": [
+						{
+							"name": "Get App Settings",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/settings", "host": ["{{url}}"], "path": ["admin", "settings"] }
+							}
+						},
+						{
+							"name": "Update App Settings",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"privacy_policy_link\": \"https://opeec.com/privacy\",\n  \"terms_conditions_link\": \"https://opeec.com/terms\",\n  \"android_store_url\": \"https://play.google.com/store/apps/details?id=com.official.opeec\",\n  \"ios_store_url\": \"https://apps.apple.com/app/opeec/id123456789\",\n  \"share_message\": \"Check out OPEEC - Rent equipment near you!\",\n  \"stripe_public_key\": \"pk_test_...\",\n  \"stripe_secret_key\": \"sk_test_...\",\n  \"stripe_webhook_secret_payment\": \"whsec_...\",\n  \"stripe_webhook_secret_connect\": \"whsec_...\",\n  \"stripe_webhook_secret_identity\": \"whsec_...\",\n  \"verification_fee\": 2.00,\n  \"verification_title\": \"Identity Verification Required\",\n  \"verification_description\": \"To ensure a safe rental experience, we need to verify your identity.\",\n  \"stripe_connect_title\": \"Connect Your Bank Account\",\n  \"stripe_connect_description\": \"Connect your bank account to receive automatic payouts.\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/settings", "host": ["{{url}}"], "path": ["admin", "settings"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Notifications",
+					"item": [
+						{
+							"name": "Get Admin Notifications",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/notifications/list", "host": ["{{url}}"], "path": ["admin", "notifications", "list"] }
+							}
+						},
+						{
+							"name": "Send Notification to User",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"title\": \"Equipment Approved\",\n  \"body\": \"Your equipment listing has been approved and is now live!\",\n  \"userId\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"details\": {\n    \"type\": \"equipment_approved\",\n    \"equipmentId\": \"64a1b2c3d4e5f6a7b8c9d0e2\"\n  }\n}"
+								},
+								"url": { "raw": "{{url}}/admin/send_notification", "host": ["{{url}}"], "path": ["admin", "send_notification"] }
+							}
+						},
+						{
+							"name": "Send Bulk Notification",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"title\": \"Platform Update\",\n  \"body\": \"New features are now available! Check out the latest improvements.\",\n  \"userIds\": [\"64a1b2c3d4e5f6a7b8c9d0e1\", \"64a1b2c3d4e5f6a7b8c9d0e2\"],\n  \"details\": {\n    \"type\": \"platform_update\"\n  }\n}"
+								},
+								"url": { "raw": "{{url}}/admin/send_bulk_notification", "host": ["{{url}}"], "path": ["admin", "send_bulk_notification"] }
+							}
+						},
+						{
+							"name": "Get User FCM Token",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/get_fcm?userId=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["admin", "get_fcm"],
+									"query": [{ "key": "userId", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Support Chat",
+					"item": [
+						{
+							"name": "Get Support Conversations",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/support/conversations", "host": ["{{url}}"], "path": ["admin", "support", "conversations"] }
+							}
+						},
+						{
+							"name": "Get Support Messages",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/support/messages?conversationId=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["admin", "support", "messages"],
+									"query": [{ "key": "conversationId", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						},
+						{
+							"name": "Reply to Support Message",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"conversationId\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"content\": \"Thank you for reaching out. We are looking into your issue and will get back to you shortly.\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/support/reply", "host": ["{{url}}"], "path": ["admin", "support", "reply"] }
+							}
+						},
+						{
+							"name": "Mark Support Resolved",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"conversationId\": \"64a1b2c3d4e5f6a7b8c9d0e1\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/support/mark-resolved", "host": ["{{url}}"], "path": ["admin", "support", "mark-resolved"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Withdrawals",
+					"item": [
+						{
+							"name": "Get All Withdrawal Requests",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/withdrawals", "host": ["{{url}}"], "path": ["admin", "withdrawals"] }
+							}
+						},
+						{
+							"name": "Approve Withdrawal",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"transaction_id\": \"TXN-2026-001234\",\n  \"screenshot_url\": \"https://example.com/payment-proof.jpg\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/withdrawals/64a1b2c3d4e5f6a7b8c9d0e1/approve", "host": ["{{url}}"], "path": ["admin", "withdrawals", "64a1b2c3d4e5f6a7b8c9d0e1", "approve"] }
+							}
+						},
+						{
+							"name": "Reject Withdrawal",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"transaction_id\": \"TXN-2026-001234\",\n  \"rejection_reason\": \"Insufficient documentation provided\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/withdrawals/64a1b2c3d4e5f6a7b8c9d0e1/reject", "host": ["{{url}}"], "path": ["admin", "withdrawals", "64a1b2c3d4e5f6a7b8c9d0e1", "reject"] }
+							}
+						},
+						{
+							"name": "Mark Withdrawal as Paid",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"transaction_id\": \"TXN-2026-001234\",\n  \"screenshot_url\": \"https://example.com/final-payment-proof.jpg\"\n}"
+								},
+								"url": { "raw": "{{url}}/admin/withdrawals/64a1b2c3d4e5f6a7b8c9d0e1/mark-paid", "host": ["{{url}}"], "path": ["admin", "withdrawals", "64a1b2c3d4e5f6a7b8c9d0e1", "mark-paid"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Finance",
+					"item": [
+						{
+							"name": "Get Withdrawals for Finance Dashboard",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/finance/withdrawals?page=1&limit=10&status=Pending",
+									"host": ["{{url}}"],
+									"path": ["admin", "finance", "withdrawals"],
+									"query": [
+										{ "key": "page", "value": "1" },
+										{ "key": "limit", "value": "10" },
+										{ "key": "status", "value": "Pending" }
+									]
+								}
+							}
+						},
+						{
+							"name": "Get Stripe Transfer Details",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/finance/stripe-transfer-details/64a1b2c3d4e5f6a7b8c9d0e1", "host": ["{{url}}"], "path": ["admin", "finance", "stripe-transfer-details", "64a1b2c3d4e5f6a7b8c9d0e1"] }
+							}
+						},
+						{
+							"name": "Approve Withdrawal (Finance)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"transaction_id\": \"TXN-FIN-2026-001\",\n  \"screenshot_url\": \"https://example.com/finance-proof.jpg\"\n}"
+								},
+								"url": {
+									"raw": "{{url}}/admin/finance/withdrawals/approve?id=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["admin", "finance", "withdrawals", "approve"],
+									"query": [{ "key": "id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						},
+						{
+							"name": "Reject Withdrawal (Finance)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"rejection_reason\": \"Payment method not verified\"\n}"
+								},
+								"url": {
+									"raw": "{{url}}/admin/finance/withdrawals/reject?id=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["admin", "finance", "withdrawals", "reject"],
+									"query": [{ "key": "id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Stripe Connect Monitoring",
+					"item": [
+						{
+							"name": "Get All Connect Accounts",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/stripe-connect/accounts?status=active&limit=50&offset=0",
+									"host": ["{{url}}"],
+									"path": ["admin", "stripe-connect", "accounts"],
+									"query": [
+										{ "key": "status", "value": "active" },
+										{ "key": "limit", "value": "50" },
+										{ "key": "offset", "value": "0" }
+									]
+								}
+							}
+						},
+						{
+							"name": "Get All Transfers",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/stripe-connect/transfers?status=completed&limit=50&offset=0",
+									"host": ["{{url}}"],
+									"path": ["admin", "stripe-connect", "transfers"],
+									"query": [
+										{ "key": "status", "value": "completed" },
+										{ "key": "limit", "value": "50" },
+										{ "key": "offset", "value": "0" }
+									]
+								}
+							}
+						},
+						{
+							"name": "Get Transfer Statistics",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/stripe-connect/statistics", "host": ["{{url}}"], "path": ["admin", "stripe-connect", "statistics"] }
+							}
+						},
+						{
+							"name": "Get Transfer Details by Order",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/admin/stripe-connect/transfer/64a1b2c3d4e5f6a7b8c9d0e1", "host": ["{{url}}"], "path": ["admin", "stripe-connect", "transfer", "64a1b2c3d4e5f6a7b8c9d0e1"] }
+							}
+						},
+						{
+							"name": "Get User Payout History",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": {
+									"raw": "{{url}}/admin/stripe-connect/user-payouts/64a1b2c3d4e5f6a7b8c9d0e1?limit=20",
+									"host": ["{{url}}"],
+									"path": ["admin", "stripe-connect", "user-payouts", "64a1b2c3d4e5f6a7b8c9d0e1"],
+									"query": [{ "key": "limit", "value": "20" }]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Percentage Settings",
+					"item": [
+						{
+							"name": "Get Percentage Settings",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{admin_token}}" }],
+								"url": { "raw": "{{url}}/perrcentageSettings/getPercentageSettings", "host": ["{{url}}"], "path": ["perrcentageSettings", "getPercentageSettings"] }
+							}
+						},
+						{
+							"name": "Update Percentage Settings",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{admin_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"adminFeePercentage\": 10.0,\n  \"taxPercentage\": 13.0,\n  \"insurancePercentage\": 9.0,\n  \"dailyInsuranceMultiplier\": 0.015,\n  \"depositPercentage\": 20.1,\n  \"stripeFeePercentage\": 1.3\n}"
+								},
+								"url": { "raw": "{{url}}/perrcentageSettings/updatePercentageSettings", "host": ["{{url}}"], "path": ["perrcentageSettings", "updatePercentageSettings"] }
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "User",
+			"item": [
+				{
+					"name": "Auth",
+					"item": [
+						{
+							"name": "Signup",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"profile_image\": \"https://example.com/avatars/john.jpg\",\n  \"phone_number\": \"+14155559876\",\n  \"age\": 28,\n  \"gender\": \"male\",\n  \"DOB\": \"1997-06-15\",\n  \"address\": \"456 Market Street, San Francisco, CA\",\n  \"about\": \"Equipment enthusiast and DIY hobbyist\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/signup", "host": ["{{url}}"], "path": ["user", "signup"] }
+							}
+						},
+						{
+							"name": "Login",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"fcm_token\": \"dGVzdF9mY21fdG9rZW5fZm9yX3Bvc3RtYW4...\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/login", "host": ["{{url}}"], "path": ["user", "login"] }
+							}
+						},
+						{
+							"name": "Send OTP",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"john.doe@example.com\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/send_otp", "host": ["{{url}}"], "path": ["user", "send_otp"] }
+							}
+						},
+						{
+							"name": "Verify OTP",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"otp\": \"123456\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/verify_user_otp", "host": ["{{url}}"], "path": ["user", "verify_user_otp"] }
+							}
+						},
+						{
+							"name": "Forgot / Reset Password OTP",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"john.doe@example.com\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/forgot_or_reset_password_otp", "host": ["{{url}}"], "path": ["user", "forgot_or_reset_password_otp"] }
+							}
+						},
+						{
+							"name": "Reset Password",
+							"request": {
+								"method": "POST",
+								"header": [{ "key": "Content-Type", "value": "application/json" }],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"NewSecurePass456!\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/reset_password", "host": ["{{url}}"], "path": ["user", "reset_password"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Profile",
+					"item": [
+						{
+							"name": "Get Profile",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/user/profile", "host": ["{{url}}"], "path": ["user", "profile"] }
+							}
+						},
+						{
+							"name": "Update Profile",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"name\": \"John Doe Updated\",\n  \"email\": \"john.doe@example.com\",\n  \"profile_image\": \"https://example.com/avatars/john-v2.jpg\",\n  \"phone_number\": \"+14155559876\",\n  \"age\": 29,\n  \"gender\": \"male\",\n  \"DOB\": \"1997-06-15\",\n  \"address\": \"789 Mission Street, San Francisco, CA\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/update", "host": ["{{url}}"], "path": ["user", "update"] }
+							}
+						},
+						{
+							"name": "Get FCM Token",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": {
+									"raw": "{{url}}/user/get_fcm?userId=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["user", "get_fcm"],
+									"query": [{ "key": "userId", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						},
+						{
+							"name": "Request Account Reactivation",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"reason\": \"I believe my account was blocked by mistake. I have followed all community guidelines.\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/request_account_reactivation", "host": ["{{url}}"], "path": ["user", "request_account_reactivation"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Verification",
+					"item": [
+						{
+							"name": "Initiate Verification",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": { "mode": "raw", "raw": "{}" },
+								"url": { "raw": "{{url}}/user/verification/initiate", "host": ["{{url}}"], "path": ["user", "verification", "initiate"] }
+							}
+						},
+						{
+							"name": "Can Retry Verification",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/user/verification/can-retry", "host": ["{{url}}"], "path": ["user", "verification", "can-retry"] }
+							}
+						},
+						{
+							"name": "Get Verification Status",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/user/verification/status", "host": ["{{url}}"], "path": ["user", "verification", "status"] }
+							}
+						},
+						{
+							"name": "Get Verification History",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/user/verification/history", "host": ["{{url}}"], "path": ["user", "verification", "history"] }
+							}
+						},
+						{
+							"name": "Recover Orphaned Verification",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/user/verification/recover", "host": ["{{url}}"], "path": ["user", "verification", "recover"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Categories",
+					"item": [
+						{
+							"name": "Get All Categories (Public)",
+							"request": {
+								"method": "GET",
+								"url": { "raw": "{{url}}/categories/get_all", "host": ["{{url}}"], "path": ["categories", "get_all"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Equipment",
+					"item": [
+						{
+							"name": "Get Equipment Listing (Public)",
+							"request": {
+								"method": "GET",
+								"url": {
+									"raw": "{{url}}/equipment/get_listing?lat=37.7749&lng=-122.4194",
+									"host": ["{{url}}"],
+									"path": ["equipment", "get_listing"],
+									"query": [
+										{ "key": "lat", "value": "37.7749" },
+										{ "key": "lng", "value": "-122.4194" }
+									]
+								}
+							}
+						},
+						{
+							"name": "Get Equipment Details (Public)",
+							"request": {
+								"method": "GET",
+								"url": {
+									"raw": "{{url}}/equipment/get?equipment_id=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["equipment", "get"],
+									"query": [{ "key": "equipment_id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						},
+						{
+							"name": "Get Random Images (Public)",
+							"request": {
+								"method": "GET",
+								"url": { "raw": "{{url}}/equipment/random-images", "host": ["{{url}}"], "path": ["equipment", "random-images"] }
+							}
+						},
+						{
+							"name": "Get Equipment Dropdowns",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/equipment/equipment-dropdowns", "host": ["{{url}}"], "path": ["equipment", "equipment-dropdowns"] }
+							}
+						},
+						{
+							"name": "Get Percentage Settings",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/perrcentageSettings/getPercentageSettings", "host": ["{{url}}"], "path": ["perrcentageSettings", "getPercentageSettings"] }
+							}
+						},
+						{
+							"name": "Get Public App Settings",
+							"request": {
+								"method": "GET",
+								"url": { "raw": "{{url}}/user/app-settings", "host": ["{{url}}"], "path": ["user", "app-settings"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Seller",
+					"item": [
+						{
+							"name": "Equipment",
+							"item": [
+								{
+									"name": "Add Equipment",
+									"request": {
+										"method": "POST",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{seller_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"subCategoryId\": \"6971181e3ab5694a2f3fc7b3\",\n  \"name\": \"Professional Cordless Drill\",\n  \"make\": \"DeWalt\",\n  \"model\": \"DCD771C2\",\n  \"serial_number\": \"DW-DRILL-001\",\n  \"description\": \"High-performance 20V cordless drill with 2 batteries, charger, and carrying case.\",\n  \"images\": [\"https://example.com/drill-1.jpg\", \"https://example.com/drill-2.jpg\"],\n  \"address\": \"123 Main Street, San Francisco, CA\",\n  \"lat\": 37.7749,\n  \"lng\": -122.4194,\n  \"range\": 10,\n  \"delivery_by_owner\": true,\n  \"rental_price\": 25,\n  \"equipment_price\": 299,\n  \"notice_period\": { \"dropdownId\": \"680fe8c82dc34d01d4609347\", \"selectedValue\": 3 },\n  \"minimum_trip_duration\": { \"dropdownId\": \"680fe8c82dc34d01d4609350\", \"selectedValue\": 2 },\n  \"maximum_trip_duration\": { \"dropdownId\": \"680fe8c82dc34d01d460935d\", \"selectedValue\": 6 }\n}"
+										},
+										"url": { "raw": "{{url}}/equipment/add", "host": ["{{url}}"], "path": ["equipment", "add"] }
+									}
+								},
+								{
+									"name": "Update Equipment",
+									"request": {
+										"method": "PUT",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{seller_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"subCategoryId\": \"6971181e3ab5694a2f3fc7b3\",\n  \"name\": \"Professional Cordless Drill V2\",\n  \"make\": \"DeWalt\",\n  \"model\": \"DCD771C2\",\n  \"serial_number\": \"DW-DRILL-001\",\n  \"description\": \"Updated description with improved details.\",\n  \"images\": [\"https://example.com/drill-1.jpg\", \"https://example.com/drill-3.jpg\"],\n  \"address\": \"123 Main Street, San Francisco, CA\",\n  \"lat\": 37.7749,\n  \"lng\": -122.4194,\n  \"range\": 15,\n  \"delivery_by_owner\": true,\n  \"rental_price\": 30,\n  \"equipment_price\": 349,\n  \"notice_period\": { \"dropdownId\": \"680fe8c82dc34d01d4609347\", \"selectedValue\": 4 },\n  \"minimum_trip_duration\": { \"dropdownId\": \"680fe8c82dc34d01d4609350\", \"selectedValue\": 1 },\n  \"maximum_trip_duration\": { \"dropdownId\": \"680fe8c82dc34d01d460935d\", \"selectedValue\": 7 }\n}"
+										},
+										"url": { "raw": "{{url}}/equipment/update/64a1b2c3d4e5f6a7b8c9d0e1", "host": ["{{url}}"], "path": ["equipment", "update", "64a1b2c3d4e5f6a7b8c9d0e1"] }
+									}
+								},
+								{
+									"name": "Delete Equipment",
+									"request": {
+										"method": "DELETE",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/equipment/delete?equipmentId=64a1b2c3d4e5f6a7b8c9d0e1",
+											"host": ["{{url}}"],
+											"path": ["equipment", "delete"],
+											"query": [{ "key": "equipmentId", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+										}
+									}
+								},
+								{
+									"name": "Get My Equipment",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/equipment/my_equipment?equipment_status=All",
+											"host": ["{{url}}"],
+											"path": ["equipment", "my_equipment"],
+											"query": [{ "key": "equipment_status", "value": "All" }]
+										}
+									}
+								},
+								{
+									"name": "Get My Shop",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/equipment/my_shop?userId=64a1b2c3d4e5f6a7b8c9d0e1",
+											"host": ["{{url}}"],
+											"path": ["equipment", "my_shop"],
+											"query": [{ "key": "userId", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "Orders",
+							"item": [
+								{
+									"name": "Get Current Rentals (Seller)",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/current-rentals?status=All&isSeller=true",
+											"host": ["{{url}}"],
+											"path": ["order", "current-rentals"],
+											"query": [
+												{ "key": "status", "value": "All" },
+												{ "key": "isSeller", "value": "true" }
+											]
+										}
+									}
+								},
+								{
+									"name": "Get History Rentals (Seller)",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/history-rentals?status=All&isSeller=true",
+											"host": ["{{url}}"],
+											"path": ["order", "history-rentals"],
+											"query": [
+												{ "key": "status", "value": "All" },
+												{ "key": "isSeller", "value": "true" }
+											]
+										}
+									}
+								},
+								{
+									"name": "Deliver Order",
+									"request": {
+										"method": "PUT",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/deliver?order_id=64a1b2c3d4e5f6a7b8c9d0e1",
+											"host": ["{{url}}"],
+											"path": ["order", "deliver"],
+											"query": [{ "key": "order_id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+										}
+									}
+								},
+								{
+									"name": "Finish Order",
+									"request": {
+										"method": "PUT",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/finish?order_id=64a1b2c3d4e5f6a7b8c9d0e1",
+											"host": ["{{url}}"],
+											"path": ["order", "finish"],
+											"query": [{ "key": "order_id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+										}
+									}
+								},
+								{
+									"name": "Cancel Order (Seller)",
+									"request": {
+										"method": "PUT",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/cancel?order_id=64a1b2c3d4e5f6a7b8c9d0e1&reason=Equipment%20unavailable",
+											"host": ["{{url}}"],
+											"path": ["order", "cancel"],
+											"query": [
+												{ "key": "order_id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" },
+												{ "key": "reason", "value": "Equipment unavailable" }
+											]
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "Wallet & Withdrawals",
+							"item": [
+								{
+									"name": "Get Wallet Info",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": { "raw": "{{url}}/wallet", "host": ["{{url}}"], "path": ["wallet"] }
+									}
+								},
+								{
+									"name": "Refresh Wallet",
+									"request": {
+										"method": "POST",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": { "raw": "{{url}}/wallet/refresh", "host": ["{{url}}"], "path": ["wallet", "refresh"] }
+									}
+								},
+								{
+									"name": "Create Withdrawal Request",
+									"request": {
+										"method": "POST",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{seller_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"amount\": 50.00\n}"
+										},
+										"url": { "raw": "{{url}}/withdrawals", "host": ["{{url}}"], "path": ["withdrawals"] }
+									}
+								},
+								{
+									"name": "Get My Withdrawal Requests",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": { "raw": "{{url}}/withdrawals", "host": ["{{url}}"], "path": ["withdrawals"] }
+									}
+								}
+							]
+						},
+						{
+							"name": "Stripe Connect",
+							"item": [
+								{
+									"name": "Create Connect Account",
+									"request": {
+										"method": "POST",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{seller_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"country\": \"US\"\n}"
+										},
+										"url": { "raw": "{{url}}/stripe-connect/create-account", "host": ["{{url}}"], "path": ["stripe-connect", "create-account"] }
+									}
+								},
+								{
+									"name": "Get Account Status",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": { "raw": "{{url}}/stripe-connect/account-status", "host": ["{{url}}"], "path": ["stripe-connect", "account-status"] }
+									}
+								},
+								{
+									"name": "Refresh Onboarding Link",
+									"request": {
+										"method": "POST",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": { "raw": "{{url}}/stripe-connect/refresh-onboarding", "host": ["{{url}}"], "path": ["stripe-connect", "refresh-onboarding"] }
+									}
+								},
+								{
+									"name": "Get Payout History",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{seller_token}}" }],
+										"url": {
+											"raw": "{{url}}/stripe-connect/payout-history?limit=20",
+											"host": ["{{url}}"],
+											"path": ["stripe-connect", "payout-history"],
+											"query": [{ "key": "limit", "value": "20" }]
+										}
+									}
+								}
+							]
+						}
+					]
+				},
+				{
+					"name": "Buyer",
+					"item": [
+						{
+							"name": "Orders",
+							"item": [
+								{
+									"name": "Create Payment Intent",
+									"request": {
+										"method": "POST",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{buyer_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"equipment_id\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"total_amount\": 72.59,\n  \"platform_fee\": 4.40,\n  \"rental_fee\": 44.00,\n  \"owner_id\": \"64a1b2c3d4e5f6a7b8c9d0e2\"\n}"
+										},
+										"url": { "raw": "{{url}}/payment/create-intent", "host": ["{{url}}"], "path": ["payment", "create-intent"] }
+									}
+								},
+								{
+									"name": "Confirm Payment",
+									"request": {
+										"method": "POST",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{buyer_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"payment_intent_id\": \"pi_3ABC123DEF456\"\n}"
+										},
+										"url": { "raw": "{{url}}/payment/confirm", "host": ["{{url}}"], "path": ["payment", "confirm"] }
+									}
+								},
+								{
+									"name": "Add Order",
+									"request": {
+										"method": "POST",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{buyer_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"equipmentId\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"start_date\": \"2026-03-01T10:00:00.000Z\",\n  \"end_date\": \"2026-03-03T10:00:00.000Z\",\n  \"address\": \"456 Market Street, San Francisco, CA 94103\",\n  \"lat\": 37.7849,\n  \"lng\": -122.4094,\n  \"rental_fee\": 44.00,\n  \"platform_fee\": 4.40,\n  \"tax_amount\": 6.29,\n  \"insurance_amount\": 14.40,\n  \"deposit_amount\": 24.00,\n  \"total_amount\": 72.59,\n  \"subtotal\": 58.40,\n  \"is_insurance\": true,\n  \"payment_intent_id\": \"pi_3ABC123DEF456\"\n}"
+										},
+										"url": { "raw": "{{url}}/order/add", "host": ["{{url}}"], "path": ["order", "add"] }
+									}
+								},
+								{
+									"name": "Get Current Rentals (Buyer)",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{buyer_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/current-rentals?status=All&isSeller=false",
+											"host": ["{{url}}"],
+											"path": ["order", "current-rentals"],
+											"query": [
+												{ "key": "status", "value": "All" },
+												{ "key": "isSeller", "value": "false" }
+											]
+										}
+									}
+								},
+								{
+									"name": "Get History Rentals (Buyer)",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{buyer_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/history-rentals?status=All&isSeller=false",
+											"host": ["{{url}}"],
+											"path": ["order", "history-rentals"],
+											"query": [
+												{ "key": "status", "value": "All" },
+												{ "key": "isSeller", "value": "false" }
+											]
+										}
+									}
+								},
+								{
+									"name": "Collect Order",
+									"request": {
+										"method": "PUT",
+										"header": [{ "key": "Authorization", "value": "Bearer {{buyer_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/collect?order_id=64a1b2c3d4e5f6a7b8c9d0e1",
+											"host": ["{{url}}"],
+											"path": ["order", "collect"],
+											"query": [{ "key": "order_id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+										}
+									}
+								},
+								{
+									"name": "Return Order",
+									"request": {
+										"method": "PUT",
+										"header": [{ "key": "Authorization", "value": "Bearer {{buyer_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/return?order_id=64a1b2c3d4e5f6a7b8c9d0e1",
+											"host": ["{{url}}"],
+											"path": ["order", "return"],
+											"query": [{ "key": "order_id", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+										}
+									}
+								},
+								{
+									"name": "Toggle Penalty",
+									"request": {
+										"method": "PUT",
+										"header": [{ "key": "Authorization", "value": "Bearer {{buyer_token}}" }],
+										"url": {
+											"raw": "{{url}}/order/change-penalty?orderId=64a1b2c3d4e5f6a7b8c9d0e1",
+											"host": ["{{url}}"],
+											"path": ["order", "change-penalty"],
+											"query": [{ "key": "orderId", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+										}
+									}
+								},
+								{
+									"name": "Add Buyer Review",
+									"request": {
+										"method": "POST",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{buyer_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"rating\": 5,\n  \"review\": \"Excellent equipment! Very well maintained and the owner was very helpful.\"\n}"
+										},
+										"url": {
+											"raw": "{{url}}/order/add-review?orderId=64a1b2c3d4e5f6a7b8c9d0e1",
+											"host": ["{{url}}"],
+											"path": ["order", "add-review"],
+											"query": [{ "key": "orderId", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+										}
+									}
+								},
+								{
+									"name": "Dispute Penalty",
+									"request": {
+										"method": "POST",
+										"header": [
+											{ "key": "Authorization", "value": "Bearer {{buyer_token}}" },
+											{ "key": "Content-Type", "value": "application/json" }
+										],
+										"body": {
+											"mode": "raw",
+											"raw": "{\n  \"orderId\": \"64a1b2c3d4e5f6a7b8c9d0e1\",\n  \"reason\": \"The equipment was returned on time but the system registered it late due to timezone issue.\"\n}"
+										},
+										"url": { "raw": "{{url}}/order/dispute-penalty", "host": ["{{url}}"], "path": ["order", "dispute-penalty"] }
+									}
+								}
+							]
+						},
+						{
+							"name": "Favorites",
+							"item": [
+								{
+									"name": "Toggle Favorite",
+									"request": {
+										"method": "PUT",
+										"header": [{ "key": "Authorization", "value": "Bearer {{buyer_token}}" }],
+										"url": { "raw": "{{url}}/equipment/toggle_favorite/64a1b2c3d4e5f6a7b8c9d0e1", "host": ["{{url}}"], "path": ["equipment", "toggle_favorite", "64a1b2c3d4e5f6a7b8c9d0e1"] }
+									}
+								},
+								{
+									"name": "Get Favorite Equipment",
+									"request": {
+										"method": "GET",
+										"header": [{ "key": "Authorization", "value": "Bearer {{buyer_token}}" }],
+										"url": { "raw": "{{url}}/equipment/favorites", "host": ["{{url}}"], "path": ["equipment", "favorites"] }
+									}
+								}
+							]
+						}
+					]
+				},
+				{
+					"name": "Chat",
+					"item": [
+						{
+							"name": "Get Conversations",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/chat/conversations", "host": ["{{url}}"], "path": ["chat", "conversations"] }
+							}
+						},
+						{
+							"name": "Get Messages",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": {
+									"raw": "{{url}}/chat/messages?conversationId=64a1b2c3d4e5f6a7b8c9d0e1",
+									"host": ["{{url}}"],
+									"path": ["chat", "messages"],
+									"query": [{ "key": "conversationId", "value": "64a1b2c3d4e5f6a7b8c9d0e1" }]
+								}
+							}
+						},
+						{
+							"name": "Send Message",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"receiverId\": \"64a1b2c3d4e5f6a7b8c9d0e2\",\n  \"content\": \"Hi! Is this drill still available for rent this weekend?\",\n  \"equipmentId\": \"64a1b2c3d4e5f6a7b8c9d0e1\"\n}"
+								},
+								"url": { "raw": "{{url}}/chat/send", "host": ["{{url}}"], "path": ["chat", "send"] }
+							}
+						},
+						{
+							"name": "Send Support Message",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"content\": \"I need help with a recent rental issue. The equipment was damaged when I received it.\"\n}"
+								},
+								"url": { "raw": "{{url}}/chat/support/send", "host": ["{{url}}"], "path": ["chat", "support", "send"] }
+							}
+						},
+						{
+							"name": "Get Support Messages",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/chat/support/messages", "host": ["{{url}}"], "path": ["chat", "support", "messages"] }
+							}
+						},
+						{
+							"name": "Get Online Users",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/chat/online-users", "host": ["{{url}}"], "path": ["chat", "online-users"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Notifications",
+					"item": [
+						{
+							"name": "Send Notification",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"title\": \"New Message\",\n  \"body\": \"You have a new message about your equipment listing\",\n  \"fcmToken\": \"target_user_fcm_token_here\",\n  \"details\": {\n    \"type\": \"new_message\",\n    \"conversationId\": \"64a1b2c3d4e5f6a7b8c9d0e1\"\n  }\n}"
+								},
+								"url": { "raw": "{{url}}/notification/send", "host": ["{{url}}"], "path": ["notification", "send"] }
+							}
+						},
+						{
+							"name": "Get Notifications",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/notification/get-notifications", "host": ["{{url}}"], "path": ["notification", "get-notifications"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Stripe Key",
+					"item": [
+						{
+							"name": "Get Stripe Key",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/stripe/get", "host": ["{{url}}"], "path": ["stripe", "get"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Block & Report",
+					"item": [
+						{
+							"name": "Block User",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"blocked_user_id\": \"64a1b2c3d4e5f6a7b8c9d0e2\",\n  \"reason\": \"Harassment and inappropriate messages\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/block-user", "host": ["{{url}}"], "path": ["user", "block-user"] }
+							}
+						},
+						{
+							"name": "Unblock User",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"blocked_user_id\": \"64a1b2c3d4e5f6a7b8c9d0e2\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/unblock-user", "host": ["{{url}}"], "path": ["user", "unblock-user"] }
+							}
+						},
+						{
+							"name": "Get Blocked Users",
+							"request": {
+								"method": "GET",
+								"header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }],
+								"url": { "raw": "{{url}}/user/blocked-users", "host": ["{{url}}"], "path": ["user", "blocked-users"] }
+							}
+						},
+						{
+							"name": "Report Content",
+							"request": {
+								"method": "POST",
+								"header": [
+									{ "key": "Authorization", "value": "Bearer {{user_token}}" },
+									{ "key": "Content-Type", "value": "application/json" }
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"reported_user_id\": \"64a1b2c3d4e5f6a7b8c9d0e2\",\n  \"equipment_id\": \"64a1b2c3d4e5f6a7b8c9d0e3\",\n  \"reason\": \"inappropriate_content\",\n  \"description\": \"The equipment listing has misleading images that do not match the actual item.\",\n  \"type\": \"equipment\"\n}"
+								},
+								"url": { "raw": "{{url}}/user/report", "host": ["{{url}}"], "path": ["user", "report"] }
+							}
+						}
+					]
+				},
+				{
+					"name": "Upload",
+					"item": [
+						{
+							"name": "Upload Images",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{ "key": "images", "type": "file", "src": "" },
+										{ "key": "images", "type": "file", "src": "" }
+									]
+								},
+								"url": { "raw": "{{url}}/upload/images", "host": ["{{url}}"], "path": ["upload", "images"] }
+							}
+						},
+						{
+							"name": "Upload Video",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{ "key": "video", "type": "file", "src": "" }
+									]
+								},
+								"url": { "raw": "{{url}}/upload/videos", "host": ["{{url}}"], "path": ["upload", "videos"] }
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Stripe Connect Testing",
+			"item": [
+				{
+					"name": "Simulate Account Active",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"seller@example.com\"\n}"
+						},
+						"url": { "raw": "{{url}}/stripe-connect/test/simulate-account-active", "host": ["{{url}}"], "path": ["stripe-connect", "test", "simulate-account-active"] }
+					}
+				},
+				{
+					"name": "Simulate Account Disabled",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"seller@example.com\"\n}"
+						},
+						"url": { "raw": "{{url}}/stripe-connect/test/simulate-account-disabled", "host": ["{{url}}"], "path": ["stripe-connect", "test", "simulate-account-disabled"] }
+					}
+				},
+				{
+					"name": "Reset to Pending",
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"seller@example.com\"\n}"
+						},
+						"url": { "raw": "{{url}}/stripe-connect/test/reset-to-pending", "host": ["{{url}}"], "path": ["stripe-connect", "test", "reset-to-pending"] }
+					}
+				},
+				{
+					"name": "Get Stripe Connect Users",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{url}}/stripe-connect/test/users", "host": ["{{url}}"], "path": ["stripe-connect", "test", "users"] }
+					}
+				}
+			]
+		}
+	]
+}

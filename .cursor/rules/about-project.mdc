@@ -119,6 +119,7 @@ Order (orderId)
 
 ### **Order APIs (`/order/`):**
 - `POST /add` - Create rental order with complete pricing breakdown
+- `PUT /deliver` - Seller marks order as "ready for pickup"; allowed only on or after `rental_schedule.start_date` (returns 400 with message if before)
 - `GET /current-rentals` - Active rentals for user/owner
 - `GET /history-rentals` - Completed rental history
 - `POST /dispute-penalty` - Contest late fees (triggers admin notification)
@@ -433,5 +434,6 @@ Triggered for all admin events with professional templates:
   - Lat/lng parameters now optional (0.0 or missing = show all equipment)
   - Distance-based filtering with equipment range logic (delivery_by_owner consideration)
   - Reservation text now only shows FUTURE reservations (past dates return empty string)
+  - Reservation date/time formatted in UTC (getReservationText) so "Reserved till DD/MM/YY" matches stored end_date regardless of server timezone
 
 This comprehensive overview ensures Cursor understands the complete OPEEC project structure, business logic, and current implementation without needing to search through individual files.

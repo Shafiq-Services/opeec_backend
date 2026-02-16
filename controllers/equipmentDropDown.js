@@ -1,4 +1,4 @@
-const EquipmentDropdown = require('../models/EquipmentDropdown'); // Your model path
+const EquipmentDropdown = require('../models/equipmentDropDown');
 
 // ✅ GET: Fetch All Dropdown Settings
 const getEquipmentDropdowns = async (req, res) => {

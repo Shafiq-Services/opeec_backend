@@ -8,9 +8,11 @@ const {
     uploadImages, 
     uploadVideo
 } = require('../controllers/upload');
+const { proxyImage } = require('../controllers/proxyImageController');
 
 // Middlewares
 
+router.get('/proxy-image', proxyImage);
 router.post('/images', upload.array('images', 10), uploadImages);
 router.post('/videos', fileUpload({ useTempFiles: true, tempFileDir: '/tmp/' }), uploadVideo);
 

@@ -1,9 +1,16 @@
 const StripeKey = require('../models/stripeKey'); // Adjust the path as needed
 const Stripe = require('stripe'); // Import Stripe
-const mongoose = require('mongoose'); // Import Mongoose if not already
+const stripeDevDefaults = require('../config/stripeDevDefaults');
 
+// When NODE_ENV=development, use test keys so app and backend stay in test mode
 async function getStripeKey(req, res) {
     try {
+        if (process.env.NODE_ENV === 'development') {
+            return res.status(200).json({
+                secretKey: stripeDevDefaults.STRIPE_SECRET_KEY,
+                publishableKey: stripeDevDefaults.STRIPE_PUBLISHABLE_KEY,
+            });
+        }
         const stripeKey = await StripeKey.findOne({});
         if (!stripeKey) {
             return res.status(404).json({ message: 'Stripe key not found' });
@@ -35,12 +42,14 @@ async function createPaymentIntent(req, res) {
     const { amount, currency } = req.body;
 
     try {
-        const stripeKey = await StripeKey.findOne({});
-        if (!stripeKey) {
+        const secretKey = process.env.NODE_ENV === 'development'
+            ? stripeDevDefaults.STRIPE_SECRET_KEY
+            : (await StripeKey.findOne({}))?.secretKey;
+        if (!secretKey) {
             return res.status(404).json({ message: 'Stripe key not found' });
         }
 
-        const stripe = Stripe(stripeKey.secretKey);
+        const stripe = Stripe(secretKey);
 
         const paymentIntent = await stripe.paymentIntents.create({
             amount,
