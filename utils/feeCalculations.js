@@ -1,14 +1,35 @@
 const PercentageSetting = require('../models/percentageSettings');
 const EquipmentDropdown = require('../models/equipmentDropDown');
 
+/** Risk rate for insurance (client: per-category later; use 1% for now) */
+const INSURANCE_RISK_RATE_PERCENT = 1;
+
 /**
- * Calculate all fees dynamically based on rental fee and percentage settings
- * @param {Number} rentalFee - Base rental fee
+ * Duration factor for insurance: days ≤ 3 → 1; days > 3 → +0.5% per extra day, capped at +3%.
+ * @param {Number} rentalDays
+ * @returns {Number} multiplier (e.g. 1, 1.005, 1.01, ... up to 1.03)
+ */
+function insuranceDurationFactor(rentalDays) {
+  if (rentalDays <= 3) return 1;
+  const extraDays = rentalDays - 3;
+  const additionalPercent = Math.min(3, extraDays * 0.5); // cap +3%
+  return 1 + additionalPercent / 100;
+}
+
+/**
+ * Calculate all fees dynamically. Insurance and deposit are based on equipment value.
+ *
+ * Revenue flow:
+ * - To Opeec: insurance_amount + platform_fee + tax_amount (retained from payment).
+ * - To renter: security deposit is credited back when the rental completes (see orders.js).
+ *
+ * @param {Number} rentalFee - Base rental fee (daily rate × days)
  * @param {Boolean} isInsurance - Whether insurance is selected (true) or deposit (false)
- * @param {Number} rentalDays - Number of rental days for insurance calculation
+ * @param {Number} rentalDays - Number of rental days (for insurance duration factor)
+ * @param {Number} equipmentValue - Owner-set equipment value (within admin subcategory range)
  * @returns {Object} Calculated fees
  */
-async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1) {
+async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1, equipmentValue = 0) {
   try {
     // Get latest percentage settings
     const settings = await PercentageSetting.findOne().sort({ createdAt: -1 });
@@ -17,26 +38,24 @@ async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1
       throw new Error('Percentage settings not found');
     }
 
-    // Calculate platform fee
+    // Calculate platform fee (on rental fee only)
     const platformFee = (rentalFee * settings.adminFeePercentage) / 100;
     
-    // Calculate tax on rental + platform fee (use rounded platform fee for tax calculation)
+    // Calculate tax on rental + platform fee only (not insurance/deposit)
     const roundedPlatformFee = Math.round(platformFee * 100) / 100;
     const taxableAmount = rentalFee + roundedPlatformFee;
     const taxAmount = (taxableAmount * settings.taxPercentage) / 100;
     
-    // Calculate insurance or deposit
+    // Insurance = EV × Risk Rate × Duration Factor. Deposit = EV × admin deposit %.
+    const ev = Number(equipmentValue) || 0;
     let insuranceAmount = 0;
     let depositAmount = 0;
     
     if (isInsurance) {
-      // Insurance calculation: base percentage + daily multiplier
-      const baseInsurance = (rentalFee * settings.insurancePercentage) / 100;
-      const dailyMultiplier = rentalDays * settings.dailyInsuranceMultiplier;
-      insuranceAmount = baseInsurance * (1 + dailyMultiplier);
+      const df = insuranceDurationFactor(rentalDays);
+      insuranceAmount = ev * (INSURANCE_RISK_RATE_PERCENT / 100) * df;
     } else {
-      // Deposit calculation: percentage of rental fee
-      depositAmount = (rentalFee * settings.depositPercentage) / 100;
+      depositAmount = ev * (settings.depositPercentage / 100);
     }
     
     // Use rounded values for final calculations to ensure consistency

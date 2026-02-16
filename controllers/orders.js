@@ -197,16 +197,16 @@ exports.addOrder = async (req, res) => {
       console.log(`⚠️ Order created without payment verification - User ${userId}, Equipment ${equipmentId}`);
     }
 
-    // Backend validation: Verify pricing calculations match expected values
+    // Backend validation: Verify pricing calculations match expected values (insurance/deposit use equipment value)
     try {
-      const { calculateOrderFees } = require('../utils/feeCalculations');
       const rentalDays = Math.ceil((new Date(end_date) - new Date(start_date)) / (1000 * 60 * 60 * 24)) || 1;
-      const expectedFees = await calculateOrderFees(rental_fee, is_insurance, rentalDays);
+      const equipmentValue = equipment.equipment_price != null ? Number(equipment.equipment_price) : 0;
+      const expectedFees = await calculateOrderFees(rental_fee, is_insurance, rentalDays, equipmentValue);
       
       // Allow small rounding differences (±$0.10 to handle floating-point precision issues)
       const tolerance = 0.10;
-      const providedFees = { platform_fee, tax_amount, total_amount, subtotal };
-      const feesToValidate = ['platform_fee', 'tax_amount', 'total_amount', 'subtotal'];
+      const providedFees = { platform_fee, tax_amount, total_amount, subtotal, insurance_amount: insurance_amount ?? 0, deposit_amount: deposit_amount ?? 0 };
+      const feesToValidate = ['platform_fee', 'tax_amount', 'total_amount', 'subtotal', 'insurance_amount', 'deposit_amount'];
       
       for (const fee of feesToValidate) {
         const expected = expectedFees[fee];
