@@ -199,13 +199,23 @@ exports.addOrder = async (req, res) => {
 
     // Backend validation: Verify pricing calculations match expected values (insurance/deposit use equipment value)
     try {
-      const rentalDays = Math.ceil((new Date(end_date) - new Date(start_date)) / (1000 * 60 * 60 * 24)) || 1;
+      // Match app: date-only strings → full 24h periods (same as Dart DateTime.difference().inDays)
+      const startMs = new Date(String(start_date).trim().split('T')[0]).getTime();
+      const endMs = new Date(String(end_date).trim().split('T')[0]).getTime();
+      const rentalDays = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)));
       const equipmentValue = equipment.equipment_price != null ? Number(equipment.equipment_price) : 0;
       const expectedFees = await calculateOrderFees(rental_fee, is_insurance, rentalDays, equipmentValue);
       
-      // Allow small rounding differences (±$0.10 to handle floating-point precision issues)
-      const tolerance = 0.10;
-      const providedFees = { platform_fee, tax_amount, total_amount, subtotal, insurance_amount: insurance_amount ?? 0, deposit_amount: deposit_amount ?? 0 };
+      // Allow rounding/percentage drift so app and backend stay in sync (e.g. cached percentages, float rounding)
+      const tolerance = 0.50;
+      const providedFees = {
+        platform_fee: Number(platform_fee) || 0,
+        tax_amount: Number(tax_amount) || 0,
+        total_amount: Number(total_amount) || 0,
+        subtotal: Number(subtotal) || 0,
+        insurance_amount: Number(insurance_amount) || 0,
+        deposit_amount: Number(deposit_amount) || 0,
+      };
       const feesToValidate = ['platform_fee', 'tax_amount', 'total_amount', 'subtotal', 'insurance_amount', 'deposit_amount'];
       
       for (const fee of feesToValidate) {
