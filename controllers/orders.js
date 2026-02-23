@@ -1416,7 +1416,7 @@ console.log(`✅ Order monitoring started.`);
 exports.getRentalsByStatus = async (req, res) => {
   try {
     const { status = 'All' } = req.query;
-    const allowedStatuses = ["Booked", "Delivered", "Ongoing", "Returned", "Late", "All"];
+    const allowedStatuses = ["Booked", "Delivered", "Ongoing", "Returned", "Cancelled", "Finished", "Late", "All"];
 
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ message: "Invalid status value provided." });
