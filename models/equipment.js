@@ -20,17 +20,7 @@ const locationSchema = new mongoose.Schema({
   }
 }, { _id: false, strict: false });
 
-// Flexible Duration Schema - handles both old and new format
-const durationRefSchema = new mongoose.Schema({
-  // New format
-  dropdownId: { type: mongoose.Schema.Types.ObjectId, ref: 'EquipmentDropdown' },
-  selectedValue: { type: Number },
-  // Old format (for backward compatibility)
-  type: { type: String },
-  count: { type: Number }
-}, { _id: false, strict: false });
-
-// Equipment Schema - Flexible for migration compatibility
+// Equipment Schema - Simplified duration fields (plain numbers = days)
 const equipmentSchema = new mongoose.Schema({
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   name: { type: String, trim: true },
@@ -45,10 +35,11 @@ const equipmentSchema = new mongoose.Schema({
   rental_price: { type: Number },
   equipment_price: { type: Number },
   
-  // Flexible duration fields
-  notice_period: durationRefSchema,
-  minimum_trip_duration: durationRefSchema,
-  maximum_trip_duration: durationRefSchema,
+  // Duration fields - stored as plain numbers (days)
+  // API output transforms these to { selectedValue: N } for Flutter compatibility
+  notice_period: { type: mongoose.Schema.Types.Mixed, default: 0 },
+  minimum_trip_duration: { type: mongoose.Schema.Types.Mixed, default: 1 },
+  maximum_trip_duration: { type: mongoose.Schema.Types.Mixed, default: 0 },
   
   equipment_status: { 
     type: String, 
@@ -90,6 +81,37 @@ equipmentSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function(ne
     };
   }
   next();
+});
+
+// Helper: extract days value from duration field (handles both old nested and new plain number formats)
+function extractDays(value) {
+  if (value == null) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'object') {
+    return value.selectedValue ?? value.count ?? 0;
+  }
+  return 0;
+}
+
+// toJSON transform: output duration fields as { selectedValue: N } for Flutter compatibility
+equipmentSchema.set('toJSON', {
+  transform: function(doc, ret) {
+    // Transform duration fields to Flutter-compatible format
+    ret.notice_period = { selectedValue: extractDays(ret.notice_period) };
+    ret.minimum_trip_duration = { selectedValue: extractDays(ret.minimum_trip_duration) };
+    ret.maximum_trip_duration = { selectedValue: extractDays(ret.maximum_trip_duration) };
+    return ret;
+  }
+});
+
+// toObject transform: same as toJSON for consistency
+equipmentSchema.set('toObject', {
+  transform: function(doc, ret) {
+    ret.notice_period = { selectedValue: extractDays(ret.notice_period) };
+    ret.minimum_trip_duration = { selectedValue: extractDays(ret.minimum_trip_duration) };
+    ret.maximum_trip_duration = { selectedValue: extractDays(ret.maximum_trip_duration) };
+    return ret;
+  }
 });
 
 module.exports = mongoose.model('Equipment', equipmentSchema);

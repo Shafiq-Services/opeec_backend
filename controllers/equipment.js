@@ -9,54 +9,29 @@ const Order = require('../models/orders');
 const { sendEventToUser } = require('../utils/socketService');
 const { createAdminNotification } = require('./adminNotificationController');
 const { sendNotificationToUser } = require('./notification');
-const { getDurationDetails } = require('../utils/feeCalculations');
-const EquipmentDropdown = require('../models/equipmentDropDown');
 
 /**
- * When client sends type string (e.g. "day") as dropdownId instead of ObjectId, resolve to the real dropdown _id.
- * @param {string} dropdownName - 'advanceNotice' | 'minimumRentalDuration' | 'maximumRentalDuration'
- * @param {string} typeOrId - Either an ObjectId string or a unit type like "day", "days", "hour", "week"
- * @param {number} selectedValue
- * @returns {Promise<{ dropdownId: ObjectId, selectedValue: number }|null>}
+ * Extract days value from duration field.
+ * Handles: plain number, { selectedValue }, { count }, or legacy { dropdownId, selectedValue }
  */
-async function resolveDurationRefForUpdate(dropdownName, typeOrId, selectedValue) {
-  const val = typeOrId != null ? String(typeOrId).trim() : '';
-  const selected = selectedValue != null ? Number(selectedValue) : 0;
-  // Already a valid 24-char hex ObjectId: use as-is
-  if (val.length === 24 && /^[a-fA-F0-9]{24}$/.test(val)) {
-    return { dropdownId: new mongoose.Types.ObjectId(val), selectedValue: selected };
+function extractDaysFromDuration(value, defaultValue = 0) {
+  if (value == null) return defaultValue;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'object') {
+    return value.selectedValue ?? value.count ?? defaultValue;
   }
-  // Client sent unit string (e.g. "day", "hour"): resolve to EquipmentDropdown _id
-  const unitMap = {
-    day: 'days', days: 'days',
-    hour: 'hours', hours: 'hours',
-    week: 'weeks', weeks: 'weeks',
-    month: 'months', months: 'months',
-  };
-  const unit = unitMap[val.toLowerCase()] || 'days';
-  const dropdown = await EquipmentDropdown.findOne({ name: dropdownName, unit }).lean();
-  if (!dropdown) return null;
-  return {
-    dropdownId: new mongoose.Types.ObjectId(dropdown._id.toString()),
-    selectedValue: selected,
-  };
+  // Try parsing as number string
+  const parsed = parseInt(value, 10);
+  return isNaN(parsed) ? defaultValue : parsed;
 }
 
 /**
- * Resolve duration ref (dropdownId + selectedValue) to { type, count, label } for API responses.
- * If ref already has type/count (legacy), return it; otherwise resolve via dropdown.
+ * Resolve duration for API response - returns { selectedValue } format for Flutter compatibility.
+ * The Equipment model's toJSON transform handles this, but this is kept for explicit formatting in responses.
  */
-async function resolveDuration(durationRef) {
-  if (!durationRef) return { type: '', count: 0, label: '' };
-  if (durationRef.type !== undefined && durationRef.type !== '') {
-    return {
-      type: durationRef.type || '',
-      count: durationRef.count ?? 0,
-      label: durationRef.label || `${durationRef.count ?? 0} ${durationRef.type || ''}`
-    };
-  }
-  const resolved = await getDurationDetails(durationRef);
-  return { type: resolved.type || '', count: resolved.count ?? 0, label: resolved.label || '' };
+function resolveDuration(durationRef) {
+  const days = extractDaysFromDuration(durationRef, 0);
+  return { selectedValue: days };
 }
 
 /** Haversine distance in km between two lat/lng points. */
@@ -279,6 +254,7 @@ const addEquipment = async (req, res) => {
     if (!subCategory) return res.status(404).json({ message: 'Sub-category not found.' });
 
     // Create and save equipment
+    // Duration fields: extract days value (handles both plain number and object formats)
     const newEquipment = new Equipment({
       ownerId: req.userId,
       subCategoryId,
@@ -297,9 +273,9 @@ const addEquipment = async (req, res) => {
       delivery_by_owner: isDeliveryByOwner,
       rental_price,
       equipment_price,
-      notice_period,
-      minimum_trip_duration,
-      maximum_trip_duration,
+      notice_period: extractDaysFromDuration(notice_period, 0),
+      minimum_trip_duration: extractDaysFromDuration(minimum_trip_duration, 1),
+      maximum_trip_duration: extractDaysFromDuration(maximum_trip_duration, 0),
       equipment_status: "Pending",
     });
 
@@ -417,20 +393,11 @@ const addEquipment = async (req, res) => {
         equipment.rental_price = rental_price;
         equipment.equipment_price = equipment_price;
 
-        // Resolve duration refs: client may send type string ("day", "hour") as dropdownId; backend needs ObjectId
-        const [resolvedNotice, resolvedMinTrip, resolvedMaxTrip] = await Promise.all([
-          resolveDurationRefForUpdate('advanceNotice', notice_period?.dropdownId, notice_period?.selectedValue),
-          resolveDurationRefForUpdate('minimumRentalDuration', minimum_trip_duration?.dropdownId, minimum_trip_duration?.selectedValue),
-          resolveDurationRefForUpdate('maximumRentalDuration', maximum_trip_duration?.dropdownId, maximum_trip_duration?.selectedValue),
-        ]);
-        if (!resolvedNotice || !resolvedMinTrip || !resolvedMaxTrip) {
-          return res.status(400).json({
-            message: 'Invalid duration configuration. Ensure advance notice, minimum and maximum trip durations use valid units (e.g. day, hour, week).',
-          });
-        }
-        equipment.set('notice_period', { dropdownId: resolvedNotice.dropdownId, selectedValue: resolvedNotice.selectedValue });
-        equipment.set('minimum_trip_duration', { dropdownId: resolvedMinTrip.dropdownId, selectedValue: resolvedMinTrip.selectedValue });
-        equipment.set('maximum_trip_duration', { dropdownId: resolvedMaxTrip.dropdownId, selectedValue: resolvedMaxTrip.selectedValue });
+        // Duration fields: store as plain numbers (days)
+        // Accept either plain number or object with selectedValue
+        equipment.notice_period = extractDaysFromDuration(notice_period, 0);
+        equipment.minimum_trip_duration = extractDaysFromDuration(minimum_trip_duration, 1);
+        equipment.maximum_trip_duration = extractDaysFromDuration(maximum_trip_duration, 0);
 
         // Set status to Pending for re-review (Active or Rejected equipment needs admin approval)
         if (previousStatus === 'Active' || previousStatus === 'Rejected') {

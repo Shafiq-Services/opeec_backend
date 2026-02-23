@@ -464,6 +464,15 @@ Triggered for all admin events with professional templates:
 - **Min Duration:** 1-5 days
 - **Max Duration:** 1, 2, 3, 4, 5, 6, 7, 14, 30 days
 
+### **Simplified Duration Field Storage (Feb 2026):**
+- **Database:** Duration fields (`notice_period`, `minimum_trip_duration`, `maximum_trip_duration`) stored as plain numbers (days)
+- **API Output:** `toJSON`/`toObject` transforms wrap values as `{ selectedValue: N }` for Flutter compatibility
+- **API Input:** Backend `extractDaysFromDuration()` accepts:
+  - Plain numbers: `1`, `2`, `3`
+  - Objects: `{ selectedValue: N }`, `{ count: N }`, `{ dropdownId: "", selectedValue: N }`
+- **Flutter Parsing:** `DurationModel.fromJson()` extracts from both `count` and `selectedValue` keys
+- **Editing Flow:** Flutter uses numeric value matching to find/display dropdown options (not ObjectId lookup)
+
 ### **Rental Days Calculation:**
 ```
 Same day (17→17) = 1 day

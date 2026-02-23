@@ -29,4 +29,30 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [Equipment Duration UI Fixes - Feb 2026]
+**Type:** Bug Fix / Enhancement  
+**Description:** Fixed equipment duration fields display and navigation issues in Flutter app.
+
+**Issues Fixed:**
+1. **Duration values not showing when editing equipment** - Pre-filled values now correctly displayed in dropdowns
+2. **Add equipment navigation** - Now properly navigates to equipment list instead of step 1 after successful add
+
+**Flutter App Changes:**
+- `equipment_details.dart`:
+  - Updated `assignValues()` to use "preset" markers instead of empty type strings
+  - Simplified update/add equipment to send empty dropdownIds (backend only needs selectedValue)
+  - Fixed add equipment navigation to use `Navigator.pop()` like update flow
+  
+- `equipment_availability.dart`:
+  - Added `getOptionByValue()` to find dropdown options by numeric value (not ObjectId)
+  - Updated `assignValue()` to check int values and match by numeric value
+  - Fixed `initState()` to re-run `assignValue()` when dropdown data loads
+  - Updated `autoSelectRecommendedValues()` to respect pre-filled values
+  - Updated dropdown `onChanged` handlers to mark as "selected" (no ObjectId needed)
+
+**Backend Documentation:**
+- Updated `about-project.mdc` with simplified duration field storage documentation
+
+---
+
 *This log will be updated after each prompt with new changes...*
