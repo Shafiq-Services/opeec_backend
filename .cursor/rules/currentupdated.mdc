@@ -55,4 +55,53 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [Equipment Edit Mode & Add Navigation Fix - Feb 16, 2026]
+**Type:** Bug Fix  
+**Description:** Fixed two persistent issues with equipment add/edit flows.
+
+**Issues Fixed:**
+1. **Edit mode showing default dropdown values** - Changed from "preset" marker (which only set when value > 0) to "editing" marker (always set in edit mode). This ensures edit mode is properly detected even for `notice_period: 0` (same-day allowed).
+2. **Add equipment not navigating to equipment list** - Fixed by adding `resetStepper` parameter to `_clearAllData()`. Now skips stepper reset during navigation to prevent UI from jumping to step 1 before `Navigator.pop()` completes.
+
+**Flutter App Changes:**
+- `equipment_details.dart`:
+  - Changed string markers from "preset" to "editing" (always set in edit mode regardless of numeric value)
+  - Added `resetStepper` optional parameter to `_clearAllData()`
+  - Updated `_handleAddSubmit()` to call `_clearAllData(resetStepper: false)` before navigation
+  
+- `equipment_availability.dart`:
+  - Added `isEditingMode` getter to check for "editing" marker strings
+  - Updated `assignValue()` to always display equipment values in editing mode
+  - Updated `autoSelectRecommendedValues()` to skip entirely in editing mode
+  - Fixed `_setDisplayLabelFromValue()` to handle `notice_period: 0` (same-day) as valid value
+
+---
+
+### [Payment Webhook Order Creation Fix - Feb 16, 2026]
+**Type:** Critical Bug Fix  
+**Description:** Fixed issue where payment succeeded but order wasn't created (money deducted, no rental).
+
+**Root Cause:**
+- Flutter calls `createPaymentIntent` → User pays → Flutter calls `addOrder`
+- If `addOrder` call fails (network error, app crash), payment is taken but no order exists
+- Webhook `payment_intent.succeeded` only logged success, didn't create order
+
+**Solution:**
+1. Store ALL order details in payment intent metadata when creating intent
+2. Webhook checks if order exists for payment_intent_id
+3. If no order exists, webhook creates it from metadata (fallback)
+
+**Backend Changes (`paymentController.js`):**
+- `createPaymentIntent`: Now accepts all order details (dates, address, amounts, etc.)
+- Stores all data in Stripe metadata for webhook access
+- `handleWebhook`: Now checks for existing order on `payment_intent.succeeded`
+- Added `createOrderFromPaymentIntent()` to create order from metadata if Flutter call failed
+- Sends notifications to buyer/seller and admin alert for webhook-created orders
+
+**Flutter Changes:**
+- `payment_service.dart`: `createPaymentIntent` and `processPayment` now accept all order details
+- `rental_checkout_screen.dart`: Passes all order details when creating payment intent
+
+---
+
 *This log will be updated after each prompt with new changes...*

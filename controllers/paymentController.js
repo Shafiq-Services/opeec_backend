@@ -19,6 +19,7 @@ const { createAdminNotification } = require('./adminNotificationController');
 /**
  * Create Payment Intent for rental booking
  * POST /payment/create-intent
+ * Now accepts ALL order details so webhook can create order if Flutter call fails
  */
 exports.createPaymentIntent = async (req, res) => {
   try {
@@ -28,10 +29,22 @@ exports.createPaymentIntent = async (req, res) => {
       total_amount,
       platform_fee,
       rental_fee,
-      owner_id
+      owner_id,
+      // Additional order details for webhook fallback
+      start_date,
+      end_date,
+      address,
+      lat,
+      lng,
+      tax_amount,
+      insurance_amount,
+      deposit_amount,
+      subtotal,
+      is_insurance,
+      renter_timezone
     } = req.body;
 
-    // Validation
+    // Validation - core fields required
     if (!equipment_id || !total_amount || !platform_fee || !rental_fee || !owner_id) {
       return res.status(400).json({ 
         success: false,
@@ -128,6 +141,7 @@ exports.createPaymentIntent = async (req, res) => {
     }
 
     // Create PaymentIntent (with or without Stripe Connect based on onboarding status)
+    // Store ALL order details in metadata so webhook can create order if Flutter call fails
     const paymentIntentParams = {
       amount: amountInCents,
       currency: 'usd',
@@ -139,9 +153,22 @@ exports.createPaymentIntent = async (req, res) => {
         rental_fee: rental_fee.toString(),
         platform_fee: platform_fee.toString(),
         platform: 'OPEEC',
-        test_mode: isOwnerFullyOnboarded ? 'false' : 'true', // Flag for testing
+        test_mode: isOwnerFullyOnboarded ? 'false' : 'true',
         cross_border: isCrossBorder ? 'true' : 'false',
-        connected_account_country: connectedAccountCountry || 'unknown'
+        connected_account_country: connectedAccountCountry || 'unknown',
+        // Order details for webhook fallback (store as strings - Stripe metadata requirement)
+        start_date: start_date || '',
+        end_date: end_date || '',
+        address: address || '',
+        lat: lat?.toString() || '',
+        lng: lng?.toString() || '',
+        tax_amount: tax_amount?.toString() || '0',
+        insurance_amount: insurance_amount?.toString() || '0',
+        deposit_amount: deposit_amount?.toString() || '0',
+        subtotal: subtotal?.toString() || '0',
+        total_amount: total_amount.toString(),
+        is_insurance: is_insurance ? 'true' : 'false',
+        renter_timezone: renter_timezone || ''
       },
       // Enable automatic payment methods (card, etc.)
       automatic_payment_methods: {
@@ -494,7 +521,17 @@ exports.handleWebhook = async (req, res) => {
       case 'payment_intent.succeeded':
         const paymentIntent = event.data.object;
         console.log(`✅ Payment succeeded: ${paymentIntent.id}`);
-        // Payment is already confirmed, no action needed
+        
+        // Check if order already exists for this payment
+        const existingOrder = await Order.findOne({ 'stripe_payment.payment_intent_id': paymentIntent.id });
+        
+        if (!existingOrder) {
+          // Order doesn't exist - create it from payment intent metadata
+          console.log(`⚠️ No order found for payment ${paymentIntent.id}, creating from metadata...`);
+          await createOrderFromPaymentIntent(paymentIntent);
+        } else {
+          console.log(`✅ Order ${existingOrder._id} already exists for payment ${paymentIntent.id}`);
+        }
         break;
 
       case 'payment_intent.payment_failed':
@@ -529,6 +566,104 @@ exports.handleWebhook = async (req, res) => {
     res.status(500).json({ error: 'Webhook handler failed' });
   }
 };
+
+/**
+ * Create order from payment intent metadata (webhook fallback)
+ */
+async function createOrderFromPaymentIntent(paymentIntent) {
+  const { sendNotificationToUser } = require('./notification');
+  const meta = paymentIntent.metadata;
+  
+  // Validate required metadata
+  if (!meta.user_id || !meta.equipment_id || !meta.start_date || !meta.end_date) {
+    console.error(`❌ Missing required metadata for order creation. PI: ${paymentIntent.id}`);
+    await createAdminNotification(
+      'order_creation_failed',
+      `Payment ${paymentIntent.id} succeeded but missing metadata for order creation`,
+      { data: { payment_intent_id: paymentIntent.id, metadata: meta } }
+    );
+    return;
+  }
+
+  try {
+    const equipment = await Equipment.findById(meta.equipment_id);
+    if (!equipment) {
+      throw new Error(`Equipment ${meta.equipment_id} not found`);
+    }
+
+    // Create order with data from payment intent metadata
+    const newOrder = new Order({
+      userId: meta.user_id,
+      equipmentId: meta.equipment_id,
+      rental_schedule: { 
+        start_date: meta.start_date, 
+        end_date: meta.end_date 
+      },
+      renter_timezone: meta.renter_timezone || 'America/Toronto',
+      location: { 
+        address: meta.address || '', 
+        lat: parseFloat(meta.lat) || 0, 
+        lng: parseFloat(meta.lng) || 0 
+      },
+      rental_fee: parseFloat(meta.rental_fee) || 0,
+      platform_fee: parseFloat(meta.platform_fee) || 0,
+      tax_amount: parseFloat(meta.tax_amount) || 0,
+      insurance_amount: meta.is_insurance === 'true' ? parseFloat(meta.insurance_amount) || 0 : 0,
+      deposit_amount: meta.is_insurance === 'true' ? 0 : parseFloat(meta.deposit_amount) || 0,
+      subtotal: parseFloat(meta.subtotal) || 0,
+      total_amount: parseFloat(meta.total_amount) || (paymentIntent.amount / 100),
+      is_insurance: meta.is_insurance === 'true',
+      status: 'pending',
+      stripe_payment: {
+        payment_intent_id: paymentIntent.id,
+        payment_method_id: paymentIntent.payment_method,
+        customer_id: paymentIntent.customer,
+        payment_status: 'succeeded',
+        amount_captured: paymentIntent.amount / 100,
+        payment_captured_at: new Date()
+      }
+    });
+
+    await newOrder.save();
+    console.log(`✅ Order ${newOrder._id} created from webhook for payment ${paymentIntent.id}`);
+
+    // Send notifications
+    try {
+      // Notify seller
+      await sendNotificationToUser(
+        equipment.ownerId.toString(),
+        'New Booking!',
+        `Your ${equipment.name} has been booked from ${meta.start_date} to ${meta.end_date}.`,
+        { orderId: newOrder._id.toString(), type: 'new_booking' }
+      );
+      
+      // Notify buyer
+      await sendNotificationToUser(
+        meta.user_id,
+        'Booking Confirmed!',
+        `Your rental of ${equipment.name} is confirmed for ${meta.start_date} to ${meta.end_date}.`,
+        { orderId: newOrder._id.toString(), type: 'booking_confirmed' }
+      );
+    } catch (notifErr) {
+      console.error('Notification error (non-fatal):', notifErr.message);
+    }
+
+    // Admin notification
+    await createAdminNotification(
+      'order_created_via_webhook',
+      `Order ${newOrder._id} created via webhook fallback (Flutter call may have failed)`,
+      { data: { orderId: newOrder._id.toString(), payment_intent_id: paymentIntent.id } }
+    );
+
+  } catch (error) {
+    console.error(`❌ Failed to create order from webhook:`, error);
+    await createAdminNotification(
+      'order_creation_failed',
+      `Failed to create order from payment ${paymentIntent.id}: ${error.message}`,
+      { data: { payment_intent_id: paymentIntent.id, error: error.message } }
+    );
+  }
+}
 
 module.exports = exports;
 
