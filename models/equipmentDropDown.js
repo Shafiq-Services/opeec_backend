@@ -9,7 +9,8 @@ const EquipmentDropdownSchema = new mongoose.Schema({
     unit: {
       type: String,
       required: true,
-      enum: ['hours', 'days', 'weeks', 'months'],
+      enum: ['days'], // Days-only for Option A (simplified rental system)
+      default: 'days'
     },
     options: [
       {

@@ -83,7 +83,8 @@ exports.getConversations = async (req, res) => {
         );
 
         // Find opponent user (could be user or admin)
-        let opponentUser = await User.findById(opponent).select("name picture email");
+        // User model uses profile_image; Admin uses profile_picture
+        let opponentUser = await User.findById(opponent).select("name profile_image email");
         if (!opponentUser) {
           // Try to find admin if user not found
           opponentUser = await Admin.findById(opponent).select("name email profile_picture");
@@ -92,17 +93,17 @@ exports.getConversations = async (req, res) => {
             opponentUser = {
               _id: opponentUser._id,
               name: opponentUser.name,
-              picture: opponentUser.profile_picture,
+              picture: opponentUser.profile_picture || null,
               email: opponentUser.email,
               userType: 'admin'
             };
           }
         } else {
-          // Add userType to user data
+          // Add userType to user data; User schema has profile_image
           opponentUser = {
             _id: opponentUser._id,
             name: opponentUser.name,
-            picture: opponentUser.picture,
+            picture: opponentUser.profile_image || null,
             email: opponentUser.email,
             userType: 'user'
           };
@@ -220,12 +221,15 @@ exports.getMessages = async (req, res) => {
       }
     }
 
-    // Get unread messages that will be marked as read
-    const unreadMessages = await Message.find({
-      conversation: conversationId,
-      receiver: userId,
-      read: false
-    }).select('sender _id');
+    // Only mark as read when chat is visibly opened (not when fetching in background e.g. pagination)
+    const markAsRead = req.query.markAsRead !== 'false';
+    const unreadMessages = markAsRead
+      ? await Message.find({
+          conversation: conversationId,
+          receiver: userId,
+          read: false
+        }).select('sender _id')
+      : [];
 
     // Fetch messages for the conversation
     const messages = await Message.find({
@@ -266,25 +270,23 @@ exports.getMessages = async (req, res) => {
         }
       );
 
-      // Emit read receipts to senders via socket
+      // Emit "messageStatusUpdated" for each message to respective senders
       const senderIds = [...new Set(unreadMessages.map(msg => msg.sender.toString()))];
-      const readByUserDetails = await getUserDetails(userId);
       
       for (const senderId of senderIds) {
         if (senderId !== userId) {
-          const readMessageIds = unreadMessages
+          const senderMessageIds = unreadMessages
             .filter(msg => msg.sender.toString() === senderId)
-            .map(msg => msg._id);
+            .map(msg => msg._id.toString());
           
-          const senderDetails = await getUserDetails(senderId);
-          
-          sendEventToUser(senderId, "messagesRead", {
-            conversationId: conversationId,
-            messageIds: readMessageIds,
-            readBy: userId,
-            readByUser: readByUserDetails,
-            sender: senderDetails
-          });
+          // Emit status update for each message
+          for (const messageId of senderMessageIds) {
+            sendEventToUser(senderId, "messageStatusUpdated", {
+              messageId: messageId,
+              conversationId: conversationId,
+              status: "read"
+            });
+          }
         }
       }
     }
@@ -360,87 +362,76 @@ exports.sendMessage = async (req, res) => {
     // Check if receiver has joined this conversation (to prevent unread count increment)
     const isReceiverJoined = isUserJoinedToConversation(receiverId, conversation._id);
     
-    // Create message with initial status 'sent' and set read status based on join status
+    // Create message with initial status 'sent'
     const message = await new Message({
       conversation: conversation._id,
       sender: senderId,
       receiver: receiverId,
       content: text,
       status: 'sent',
-      read: isReceiverJoined // Mark as read if receiver is joined to conversation
+      read: isReceiverJoined
     }).save();
 
     conversation.lastMessage = message._id;
     await conversation.save();
 
-    // Check if receiver is online and update status accordingly
-    const isReceiverOnline = connectedUsers.has(receiverId.toString());
-    let messageStatus = 'sent';
-    
-    if (isReceiverOnline) {
-      if (isReceiverJoined) {
-        // If receiver is both online and joined to conversation, mark as read
-        messageStatus = 'read';
-        await Message.findByIdAndUpdate(message._id, { status: 'read' });
-      } else {
-        // If receiver is online but not joined, mark as delivered
-        messageStatus = 'delivered';
-        await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
-      }
-    }
-
     // Get user details for socket events
     const senderDetails = await getUserDetails(senderId);
     const receiverDetails = await getUserDetails(receiverId);
 
-    // Emit socket events
+    // Standardized newMessage payload - status is ALWAYS "sent" on initial send
     const messageData = {
-      _id: message._id,
-      conversationId: conversation._id,
+      messageId: message._id.toString(),
+      conversationId: conversation._id.toString(),
       text: text,
-      senderId: senderId,
-      receiverId: receiverId,
+      senderId: senderId.toString(),
+      receiverId: receiverId.toString(),
       createdAt: message.createdAt,
-      status: messageStatus,
+      status: "sent",
+      type: "user",
       sender: senderDetails,
       receiver: receiverDetails,
       equipment: {
-        id: equipment._id,
+        id: equipment._id.toString(),
         name: equipment.name,
         images: equipment.images,
         category: subCategoryData ? subCategoryData.categoryName : "Unknown",
-        rental_price: equipment.rental_price,
+        rentalPrice: equipment.rental_price,
         address: equipment.location.address
       }
     };
 
-    // Emit to receiver if online
+    // Check if receiver is online
+    const isReceiverOnline = connectedUsers.has(receiverId.toString());
+
+    // 1. Emit "newMessage" to receiver (always with status "sent")
     if (isReceiverOnline) {
       sendEventToUser(receiverId, "newMessage", messageData);
-      
-      // Emit delivery confirmation to sender
-      sendEventToUser(senderId, "messageDelivered", {
-        messageId: message._id,
-        status: 'delivered',
-        sender: senderDetails,
-        receiver: receiverDetails
-      });
     }
 
-    // Emit to sender for confirmation
-    sendEventToUser(senderId, "messageSent", {
-      messageId: message._id,
-      conversationId: conversation._id,
-      status: messageStatus,
-      sender: senderDetails,
-      receiver: receiverDetails
+    // 2. Emit "messageStatusUpdated" with status "sent" to sender
+    sendEventToUser(senderId, "messageStatusUpdated", {
+      messageId: message._id.toString(),
+      conversationId: conversation._id.toString(),
+      status: "sent"
     });
+
+    // 3. If receiver is online, update to "delivered" and notify sender
+    if (isReceiverOnline) {
+      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      
+      sendEventToUser(senderId, "messageStatusUpdated", {
+        messageId: message._id.toString(),
+        conversationId: conversation._id.toString(),
+        status: "delivered"
+      });
+    }
 
     res.status(201).json({
       message: "Message sent successfully",
       conversationId: conversation._id,
       messageId: message._id,
-      status: messageStatus
+      status: isReceiverOnline ? "delivered" : "sent"
     });
   } catch (error) {
     console.error("Error in sendMessage:", error);
@@ -480,7 +471,7 @@ exports.sendSupportMessage = async (req, res) => {
       receiver: adminId,
       content: text,
       status: 'sent',
-      read: isAdminJoined // Mark as read if admin is joined to conversation
+      read: isAdminJoined
     }).save();
 
     conversation.lastMessage = message._id;
@@ -490,38 +481,45 @@ exports.sendSupportMessage = async (req, res) => {
     const userDetails = await getUserDetails(userId);
     const adminDetails = await getUserDetails(adminId);
 
-    // Check if admin is online and update status accordingly
+    // Check if admin is online
     const isAdminOnline = connectedUsers.has(adminId.toString());
-    let messageStatus = 'sent';
-    
-    if (isAdminOnline) {
-      if (isAdminJoined) {
-        // If admin is both online and joined to conversation, mark as read
-        messageStatus = 'read';
-        await Message.findByIdAndUpdate(message._id, { status: 'read' });
-      } else {
-        // If admin is online but not joined, mark as delivered
-        messageStatus = 'delivered';
-        await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
-      }
-    }
 
-    // Notify admin via socket
+    // Standardized newMessage payload with type: "support"
     const messageData = {
-      _id: message._id,
-      conversationId: conversation._id,
+      messageId: message._id.toString(),
+      conversationId: conversation._id.toString(),
       text: text,
-      senderId: userId,
-      receiverId: adminId,
+      senderId: userId.toString(),
+      receiverId: adminId.toString(),
       createdAt: message.createdAt,
-      status: messageStatus,
-      isNewSupportMessage: true,
+      status: "sent",
+      type: "support",
       sender: userDetails,
-      receiver: adminDetails,
-      user: userDetails // Legacy field for backward compatibility
+      receiver: adminDetails
     };
     
-    sendEventToUser(adminId, "newSupportMessage", messageData);
+    // 1. Emit "newMessage" to admin (always with status "sent")
+    if (isAdminOnline) {
+      sendEventToUser(adminId, "newMessage", messageData);
+    }
+
+    // 2. Emit "messageStatusUpdated" with status "sent" to sender
+    sendEventToUser(userId, "messageStatusUpdated", {
+      messageId: message._id.toString(),
+      conversationId: conversation._id.toString(),
+      status: "sent"
+    });
+
+    // 3. If admin is online, update to "delivered" and notify sender
+    if (isAdminOnline) {
+      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      
+      sendEventToUser(userId, "messageStatusUpdated", {
+        messageId: message._id.toString(),
+        conversationId: conversation._id.toString(),
+        status: "delivered"
+      });
+    }
 
     res.status(201).json({ 
       message: "Support message sent successfully",
@@ -551,12 +549,15 @@ exports.getSupportMessages = async (req, res) => {
       return res.status(200).json({ message: "No support messages found", messages: [] });
     }
 
-    // Get unread messages that will be marked as read
-    const unreadMessages = await Message.find({
-      conversation: conversation._id,
-      receiver: userId,
-      read: false
-    }).select('sender _id');
+    // Only mark as read when support chat screen is visibly opened
+    const markAsRead = req.query.markAsRead !== 'false';
+    const unreadMessages = markAsRead
+      ? await Message.find({
+          conversation: conversation._id,
+          receiver: userId,
+          read: false
+        }).select('sender _id')
+      : [];
 
     const messages = await Message.find({ conversation: conversation._id })
       .sort({ createdAt: -1 })
@@ -580,22 +581,19 @@ exports.getSupportMessages = async (req, res) => {
         }
       );
 
-      // Emit read receipts to admin via socket
+      // Emit "messageStatusUpdated" to admin for each message
       const adminId = admin._id;
-      const userDetails = await getUserDetails(userId);
-      const adminDetails = await getUserDetails(adminId);
       
-      const readMessageIds = unreadMessages
+      const adminMessageIds = unreadMessages
         .filter(msg => msg.sender.toString() === adminId.toString())
-        .map(msg => msg._id);
+        .map(msg => msg._id.toString());
       
-      if (readMessageIds.length > 0) {
-        sendEventToUser(adminId.toString(), "messagesRead", {
-          conversationId: conversation._id,
-          messageIds: readMessageIds,
-          readBy: userId,
-          readByUser: userDetails,
-          sender: adminDetails
+      // Emit status update for each message
+      for (const messageId of adminMessageIds) {
+        sendEventToUser(adminId.toString(), "messageStatusUpdated", {
+          messageId: messageId,
+          conversationId: conversation._id.toString(),
+          status: "read"
         });
       }
     }
@@ -744,12 +742,15 @@ exports.getAdminSupportMessages = async (req, res) => {
     const userId = conversation.participants.find(id => id.toString() !== adminId.toString());
     const user = await User.findById(userId).select("name picture email");
 
-    // Get unread messages that will be marked as read
-    const unreadMessages = await Message.find({
-      conversation: conversationId,
-      receiver: adminId,
-      read: false
-    }).select('sender _id');
+    // Only mark as read when admin has conversation visibly open
+    const markAsRead = req.query.markAsRead !== 'false';
+    const unreadMessages = markAsRead
+      ? await Message.find({
+          conversation: conversationId,
+          receiver: adminId,
+          read: false
+        }).select('sender _id')
+      : [];
 
     // Fetch messages for the conversation
     const messages = await Message.find({
@@ -790,22 +791,18 @@ exports.getAdminSupportMessages = async (req, res) => {
         }
       );
 
-      // Emit read receipts to user via socket
+      // Emit "messageStatusUpdated" to user for each message
       const userIdStr = userId.toString();
-      const readMessageIds = unreadMessages
+      const userMessageIds = unreadMessages
         .filter(msg => msg.sender.toString() === userIdStr)
-        .map(msg => msg._id);
+        .map(msg => msg._id.toString());
       
-      if (readMessageIds.length > 0) {
-        const adminDetails = await getUserDetails(adminId);
-        const userDetails = await getUserDetails(userId);
-        
-        sendEventToUser(userIdStr, "messagesRead", {
+      // Emit status update for each message
+      for (const messageId of userMessageIds) {
+        sendEventToUser(userIdStr, "messageStatusUpdated", {
+          messageId: messageId,
           conversationId: conversationId,
-          messageIds: readMessageIds,
-          readBy: adminId,
-          readByUser: adminDetails,
-          sender: userDetails
+          status: "read"
         });
       }
     }
@@ -881,75 +878,62 @@ exports.adminReplySupportMessage = async (req, res) => {
       receiver: receiverId,
       content: text,
       status: 'sent',
-      read: isUserJoined // Mark as read if user is joined to conversation
+      read: isUserJoined
     }).save();
 
     // Update conversation's last message
     conversation.lastMessage = message._id;
     await conversation.save();
 
-    // Check if receiver is online and update status accordingly
-    const isReceiverOnline = connectedUsers.has(receiverId.toString());
-    let messageStatus = 'sent';
-    
-    if (isReceiverOnline) {
-      if (isUserJoined) {
-        // If user is both online and joined to conversation, mark as read
-        messageStatus = 'read';
-        await Message.findByIdAndUpdate(message._id, { status: 'read' });
-      } else {
-        // If user is online but not joined, mark as delivered
-        messageStatus = 'delivered';
-        await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
-      }
-    }
-
     // Get user details for socket events
     const adminDetails = await getUserDetails(adminId);
     const userDetails = await getUserDetails(receiverId);
 
-    // Emit socket events
+    // Check if receiver is online
+    const isReceiverOnline = connectedUsers.has(receiverId.toString());
+
+    // Standardized newMessage payload with type: "support"
     const messageData = {
-      _id: message._id,
-      conversationId: conversationId,
+      messageId: message._id.toString(),
+      conversationId: conversationId.toString(),
       text: text,
-      senderId: adminId,
-      receiverId: receiverId,
+      senderId: adminId.toString(),
+      receiverId: receiverId.toString(),
       createdAt: message.createdAt,
-      status: messageStatus,
-      isAdminReply: true,
+      status: "sent",
+      type: "support",
       sender: adminDetails,
       receiver: userDetails
     };
 
-    // Emit to user if online
+    // 1. Emit "newMessage" to user (always with status "sent")
     if (isReceiverOnline) {
-      // Emit newMessage event to user (same as regular messages for consistency)
       sendEventToUser(receiverId, "newMessage", messageData);
-      
-      // Emit delivery confirmation to admin
-      sendEventToUser(adminId, "messageDelivered", {
-        messageId: message._id,
-        status: 'delivered',
-        sender: adminDetails,
-        receiver: userDetails
-      });
     }
 
-    // Emit to admin for confirmation
-    sendEventToUser(adminId, "messageSent", {
-      messageId: message._id,
-      conversationId: conversationId,
-      status: messageStatus,
-      sender: adminDetails,
-      receiver: userDetails
+    // 2. Emit "messageStatusUpdated" with status "sent" to admin
+    sendEventToUser(adminId, "messageStatusUpdated", {
+      messageId: message._id.toString(),
+      conversationId: conversationId.toString(),
+      status: "sent"
     });
+
+    // 3. If receiver is online, update to "delivered" and notify admin
+    if (isReceiverOnline) {
+      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+      
+      sendEventToUser(adminId, "messageStatusUpdated", {
+        messageId: message._id.toString(),
+        conversationId: conversationId.toString(),
+        status: "delivered"
+      });
+    }
 
     res.status(201).json({
       message: "Support reply sent successfully",
       status: true,
       messageId: message._id,
-      messageStatus: messageStatus
+      messageStatus: isReceiverOnline ? "delivered" : "sent"
     });
   } catch (error) {
     console.error("Error in adminReplySupportMessage:", error);

@@ -5,14 +5,15 @@ const EquipmentDropdown = require('../models/equipmentDropDown');
 const DEFAULT_INSURANCE_RR_PERCENT = 1;
 
 /**
- * Duration factor for insurance: days ≤ 3 → 1; days > 3 → +0.5% per extra day, capped at +3%.
+ * Duration factor for insurance: DF = 1 + min(30%, (rental_days - 3) × 5%).
+ * Days ≤ 3 → 1; days > 3 → +5% per extra day, capped at +30%.
  * @param {Number} rentalDays
- * @returns {Number} multiplier (e.g. 1, 1.005, 1.01, ... up to 1.03)
+ * @returns {Number} multiplier (e.g. 1, 1.05, 1.10, ... up to 1.30)
  */
 function insuranceDurationFactor(rentalDays) {
   if (rentalDays <= 3) return 1;
   const extraDays = rentalDays - 3;
-  const additionalPercent = Math.min(3, extraDays * 0.5); // cap +3%
+  const additionalPercent = Math.min(30, extraDays * 5); // cap +30%, +5% per extra day
   return 1 + additionalPercent / 100;
 }
 

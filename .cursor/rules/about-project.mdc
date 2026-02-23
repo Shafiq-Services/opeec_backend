@@ -143,18 +143,35 @@ Order (orderId)
 
 ---
 
-## ⚡ **REAL-TIME SOCKET EVENTS:**
+## ⚡ **REAL-TIME SOCKET EVENTS (STANDARDIZED):**
 
 ### **Admin Events:**
 - `adminNotification` - New system notifications with email backup
 - `adminNotificationUnreadCount` - Live unread count updates
-- `newSupportMessage` - User support ticket alerts
 
-### **Chat Events:**
-- `newMessage` - Real-time chat messages
-- `messageDelivered` - Delivery confirmations
-- `messagesRead` - Read receipts
-- `userTyping` / `stopTyping` - Typing indicators
+### **Chat Events (STANDARDIZED CONTRACT - Updated Feb 2026):**
+| Event | Direction | Purpose |
+|-------|-----------|---------|
+| `newMessage` | Backend → Receiver | Insert new message into UI (status always "sent") |
+| `messageStatusUpdated` | Backend → Sender | Update message tick/status (sent→delivered→read) |
+| `typing` | Both | Typing indicators (isTyping: true/false) |
+
+**Removed Legacy Events:**
+- ~~`message`~~ - Replaced by `newMessage`
+- ~~`messageSent`~~ - Replaced by `messageStatusUpdated`
+- ~~`messageDelivered`~~ - Replaced by `messageStatusUpdated`
+- ~~`messagesRead`~~ - Replaced by `messageStatusUpdated`
+- ~~`newSupportMessage`~~ - Replaced by `newMessage` with `type: "support"`
+- ~~`startTyping`/`stopTyping`/`userTyping`~~ - Replaced by `typing`
+
+**Message Status Flow:**
+```
+sent → delivered (when receiver is online) → read (when chat is opened)
+```
+
+**Payload Standards:**
+- Always use `messageId` (not `_id`)
+- Always include `conversationId`, `senderId`, `receiverId`
 
 ### **Presence Events:**
 - `userOnline` / `userOffline` - Connection status
@@ -287,6 +304,7 @@ Triggered for all admin events with professional templates:
 - JWT authentication on connection
 - Room-based messaging: `conversation_${id}`
 - Typing indicator management
+- **Stripe Connect status (Feb 2026):** `requestStripeConnectStatus` → `stripeConnectStatusResponse` includes both `status` and `account_status` so app sidebar and create-intent checks stay in sync
 - Connection state tracking
 
 ---
@@ -435,5 +453,205 @@ Triggered for all admin events with professional templates:
   - Distance-based filtering with equipment range logic (delivery_by_owner consideration)
   - Reservation text now only shows FUTURE reservations (past dates return empty string)
   - Reservation date/time formatted in UTC (getReservationText) so "Reserved till DD/MM/YY" matches stored end_date regardless of server timezone
+
+---
+
+## 📅 **RENTAL DATE & TIMEZONE SYSTEM (Feb 2026):**
+
+### **Days-Only Rental System:**
+- **Unit:** All rental durations are in DAYS only (no hours/weeks/months)
+- **Notice Period:** 0-5 days (0 = same-day allowed with 5 PM cutoff)
+- **Min Duration:** 1-5 days
+- **Max Duration:** 1, 2, 3, 4, 5, 6, 7, 14, 30 days
+
+### **Rental Days Calculation:**
+```
+Same day (17→17) = 1 day
+17→18 = 1 day  
+17→19 = 2 days
+Formula: diff < 1 ? 1 : diff
+```
+
+### **5 PM Same-Day Cutoff:**
+- When notice_period = 0, same-day booking only available before 5 PM local time
+- After 5 PM, earliest start date is tomorrow
+- Enforced in both Flutter app and backend
+
+### **Renter Timezone Handling:**
+- **Order Model:** New `renter_timezone` field stores renter's timezone
+- **Flutter App:** Sends device timezone (e.g., "PST", "EST") with addOrder
+- **Backend:** Maps abbreviations to IANA names (PST→America/Vancouver, EST→America/Toronto, etc.)
+- **Fallback:** America/Toronto when timezone unknown
+
+### **Late/Penalty Calculation:**
+- Uses renter's timezone for fairness
+- End of last rental day = 23:59:59.999 in renter's timezone
+- Order marked Late only AFTER end of day in renter's timezone
+
+### **Canadian Timezone Mapping:**
+```javascript
+PST/PDT → America/Vancouver
+MST/MDT → America/Edmonton  
+CST/CDT → America/Winnipeg
+EST/EDT → America/Toronto
+AST/ADT → America/Halifax
+NST/NDT → America/St_Johns
+```
+
+### **Key Files Modified:**
+- `models/orders.js` - Added renter_timezone field
+- `models/equipmentDropDown.js` - Days-only unit enum
+- `controllers/orders.js` - Notice/cutoff validation, timezone resolution, late detection
+- `controllers/equipmentDropDown.js` - Days-only validation with value ranges
+- `scripts/seedEquipmentDropdowns.js` - Seed script for dropdown options
+
+### **Dependencies Added:**
+- `moment-timezone` - For timezone-aware date calculations in backend
+
+---
+
+## 💬 **CHAT MODULE REAL-TIME SYSTEM (Feb 2026):**
+
+### **Notification Filtering:**
+- **Chat Tab Tracking:** `ChatStateTracker.isOnChatTab()` - true when user is on chat list
+- **Active Conversation:** `ChatStateTracker.isConversationActive(id)` - true when user is in specific chat
+- **Push Notification Filter:** Foreground chat notifications suppressed when user is on chat tab or in that conversation
+
+### **Chat List Real-Time Updates:**
+- **Socket Events Handled:** `newMessage`, `messageStatusUpdated` (STANDARDIZED)
+- **Auto-Sorting:** Conversations sorted by `updatedAt` (most recent first) after each update
+- **Typing Indicator:** Shows "typing..." in chat list via `typing` event
+- **Unread Count Logic:** Only increments if:
+  1. Message is NOT from current user
+  2. User is NOT in that specific conversation
+
+### **Chat Detail Real-Time:**
+- **Instant Messages:** `newMessage` event inserts messages (deduplicated by messageId)
+- **Status Updates:** `messageStatusUpdated` event updates tick/status (sent→delivered→read)
+- **Typing Indicators:** `typing` event with `isTyping: true/false`
+- **Race Condition Handling:** Pending status queue for updates arriving before messages
+
+### **Sync Between Chat List & Detail:**
+- **Background Updates:** Chat list model updates via socket even when user is in chat room
+- **Return Callback:** When leaving chat room, passes `lastMessageObj` to update chat list
+- **Conversation Joining:** `joinConversation` socket event marks user as active in conversation
+
+### **Delivery Logic:**
+- **Online Check:** Uses `connectedUsers.has(userId)` - socket-level presence
+- **NOT** `isUserJoinedToConversation` (that only tracks if user opened specific chat)
+
+### **Cache-First Loading:**
+- **Flutter Implementation:** Shows cached `getUserConversationModel` immediately
+- **Background Refresh:** API call updates in background without loading indicator if cache exists
+- **No Stale Overwrite:** Socket updates always use latest timestamp for sorting
+
+### **Key Classes & Methods (Flutter):**
+```dart
+// Utility class for tracking chat state (notification filtering)
+ChatStateTracker
+├── setOnChatTab(bool)      // Called when entering/leaving chat list
+├── isOnChatTab()           // Check if user is on chat tab
+├── setActiveConversation(String?)  // Called when entering/leaving chat room
+├── isConversationActive(String)    // Check if user is in specific chat
+└── shouldShowChatNotification(String)  // Combined check for notification display
+```
+
+### **Files Modified:**
+- `main_chat_screen.dart` - Added ChatStateTracker, typing indicators, cache-first loading
+- `chat_room.dart` - Integrated ChatStateTracker for conversation tracking
+- `push_notification.dart` - Added chat notification filtering
+
+---
+
+## 🔧 CHAT MODULE AUDIT & FIXES (Feb 2026)
+
+### **Critical Bugs Fixed:**
+
+#### 1. Socket Listener Duplication (CRITICAL)
+- **Issue:** Listeners accumulated across screen rebuilds causing duplicate events
+- **Fix:** Added `_listenersInitialized` flag guard in `chat_room.dart` and `chat_support_screen.dart`
+- **Files:** `chat_room.dart`, `chat_support_screen.dart`
+
+#### 2. Typing Indicator Timeout Missing (MODERATE)
+- **Issue:** Typing indicator stayed forever if stop event wasn't received
+- **Fix:** Added 5-second auto-clear timer in both `main_chat_screen.dart` and `chat_room.dart`
+- **Implementation:** `_typingTimers` map with Timer cleanup in dispose
+
+#### 3. Race Condition: Socket vs API (CRITICAL)
+- **Issue:** API response could overwrite newer socket data
+- **Fix:** Added timestamp comparison in `ChatController.getConversationMethod()` 
+- **Logic:** Preserves conversation with newer `updatedAt` timestamp
+
+#### 4. Broken Unread Count in Support Messages (CRITICAL)
+- **Issue:** Unread count logic was commented out, always incrementing
+- **Fix:** Restored conditional logic: `shouldIncrementUnread ? +1 : 0`
+- **File:** `main_chat_screen.dart` (`_handleSupportMessage`)
+
+#### 5. Wrong Last Message on Exit (BUG)
+- **Issue:** `_onWillPop` returned `messages.first` (oldest) instead of `.last` (newest)
+- **Fix:** Changed to `messages.last` for correct last message
+- **File:** `chat_room.dart`
+
+#### 6. Socket Reconnection Not Rejoining Conversations (CRITICAL)
+- **Issue:** After socket disconnect/reconnect, conversations weren't rejoined
+- **Fix:** Added conversation tracking in `SocketHelper`:
+  - `trackJoinConversation(id)` / `trackLeaveConversation(id)`
+  - `_rejoinConversations()` called on reconnect
+- **Files:** `socket_helper.dart`, `socket_controller.dart`
+
+#### 7. Missing ChatStateTracker in Support Screen
+- **Issue:** Support chat didn't integrate with notification filtering
+- **Fix:** Added `ChatStateTracker.setActiveConversation()` in init/dispose
+- **File:** `chat_support_screen.dart`
+
+#### 8. Message Alignment Inverted (CRITICAL UI BUG)
+- **Issue:** Sender messages aligned LEFT, receiver messages aligned RIGHT (backwards)
+- **Fix:** Changed alignment logic: `sentByYou ? Alignment.centerRight : Alignment.centerLeft`
+- **Files:** `chat_room.dart`, `chat_support_screen.dart`
+
+#### 9. Missing Status Ticks in Chat Room (MODERATE)
+- **Issue:** Chat detail view didn't show sent/delivered/read tick icons
+- **Fix:** Added optional `status` parameter to `_buildMessageBubble()` with tick icons:
+  - Single grey tick = sent
+  - Double grey tick = delivered  
+  - Double blue tick = read
+- **File:** `chat_room.dart`
+
+### **Architecture Improvements:**
+
+```dart
+// Socket Helper - Conversation Tracking for Reconnection
+SocketHelper
+├── _joinedConversations: Set<String>    // Track active conversations
+├── trackJoinConversation(id)            // Called by joinConversation
+├── trackLeaveConversation(id)           // Called by leaveConversation  
+└── _rejoinConversations()               // Auto-rejoin on reconnect
+
+// Main Chat Screen - Typing Timeout Management
+_MainChatScreenState
+├── _typingTimers: Map<String, Timer>    // Per-conversation timeout
+├── _setupTypingListeners()              // 5-second auto-clear
+└── dispose()                            // Cancel all timers
+
+// Chat Controller - Race Condition Prevention
+ChatController.getConversationMethod()
+├── Store pre-API timestamps
+├── Compare API response timestamps
+└── Preserve newer socket data
+```
+
+### **Verified Working:**
+- ✅ Socket listeners register once per screen instance
+- ✅ Typing indicators auto-clear after 5 seconds
+- ✅ Socket reconnection auto-rejoins conversations
+- ✅ API responses don't overwrite newer socket data
+- ✅ Unread counts correctly increment/decrement
+- ✅ ChatStateTracker works across all chat screens
+- ✅ Navigation clears conversation state properly
+- ✅ Message alignment: sender RIGHT, receiver LEFT
+- ✅ Status ticks display in chat room (sent/delivered/read)
+- ✅ Chat list shows correct status icons for last message
+
+---
 
 This comprehensive overview ensures Cursor understands the complete OPEEC project structure, business logic, and current implementation without needing to search through individual files.

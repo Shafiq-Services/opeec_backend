@@ -8,6 +8,7 @@ const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSell
 const Order = require('../models/orders');
 const { sendEventToUser } = require('../utils/socketService');
 const { createAdminNotification } = require('./adminNotificationController');
+const { sendNotificationToUser } = require('./notification');
 const { getDurationDetails } = require('../utils/feeCalculations');
 const EquipmentDropdown = require('../models/equipmentDropDown');
 
@@ -594,8 +595,13 @@ async function getAllEquipments(req, res) {
       geoPipeline.push({ $match: query });
     }
 
-    // ✅ Fetch filtered equipment
-    let equipments = await Equipment.aggregate(geoPipeline);
+    // ✅ Fetch filtered equipment ($geoNear can fail or return nothing if coordinates are stored as [lat,lng] instead of [lng,lat])
+    let equipments = [];
+    try {
+      equipments = await Equipment.aggregate(geoPipeline);
+    } catch (aggErr) {
+      console.warn('getAllEquipments: aggregate/geoNear failed, will use fallback:', aggErr.message);
+    }
 
     const maxDistanceKm = parsedLat !== 0.0 && parsedLng !== 0.0 ? (distance ? parseFloat(distance) : 50) : 0;
 
@@ -642,6 +648,7 @@ async function getAllEquipments(req, res) {
       const allWithLocation = await Equipment.find(distanceQuery).lean();
       equipments = allWithLocation
         .map((doc) => {
+          // Prefer location.lat/lng so wrong GeoJSON order [lat,lng] does not break distance
           const lat = doc.location?.lat ?? doc.location?.coordinates?.coordinates?.[1];
           const lng = doc.location?.lng ?? doc.location?.coordinates?.coordinates?.[0];
           if (lat == null || lng == null) return null;
@@ -1467,6 +1474,26 @@ async function updateEquipmentStatus(req, res) {
 
     // Send event to equipment owner
     sendEventToUser(equipment.ownerId.toString(), 'equipmentStatusChanged', socketEventData);
+
+    // 📱 Push + in-app notification to owner (when Pending → Active, Rejected, or Blocked)
+    const ownerId = equipment.ownerId.toString();
+    const adminId = (req.userId || equipment.ownerId).toString();
+    if (oldStatus === 'Pending' && ['Active', 'Rejected', 'Blocked'].includes(status)) {
+      const isApproved = status === 'Active';
+      const title = isApproved ? 'Equipment approved' : status === 'Rejected' ? 'Equipment not approved' : 'Equipment blocked';
+      const body = isApproved
+        ? `"${equipment.name}" is now live and can be rented.`
+        : status === 'Rejected'
+          ? (equipment.reason ? `"${equipment.name}" was not approved. Reason: ${equipment.reason}` : `"${equipment.name}" was not approved.`)
+          : (equipment.reason ? `"${equipment.name}" was blocked. Reason: ${equipment.reason}` : `"${equipment.name}" was blocked.`);
+      sendNotificationToUser({
+        receiverId: ownerId,
+        senderId: adminId,
+        title,
+        body,
+        details: { equipmentId: equipment._id.toString(), type: 'equipment_status_update', new_status: status },
+      }).catch((err) => console.error('Equipment status push notification error:', err.message));
+    }
 
     return res.status(200).json({ message: `Equipment status updated to ${status}`, status: true, equipment });
 

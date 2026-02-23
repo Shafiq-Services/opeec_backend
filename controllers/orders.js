@@ -4,6 +4,70 @@ const Category = require('../models/categories');
 const cron = require('node-cron');
 const mongoose = require('mongoose');
 const moment = require('moment');
+const momentTz = require('moment-timezone');
+
+// Default timezone for Canada (fallback when renter_timezone not provided)
+const DEFAULT_TIMEZONE = 'America/Toronto';
+// Cutoff hour for same-day booking (5 PM = 17:00)
+const SAME_DAY_CUTOFF_HOUR = 17;
+
+// Map common Canadian timezone abbreviations to IANA names
+// This handles Flutter's DateTime.now().timeZoneName which returns abbreviations
+const TIMEZONE_ABBREVIATION_MAP = {
+  // Pacific
+  'PST': 'America/Vancouver',
+  'PDT': 'America/Vancouver',
+  'Pacific Standard Time': 'America/Vancouver',
+  'Pacific Daylight Time': 'America/Vancouver',
+  // Mountain
+  'MST': 'America/Edmonton',
+  'MDT': 'America/Edmonton',
+  'Mountain Standard Time': 'America/Edmonton',
+  'Mountain Daylight Time': 'America/Edmonton',
+  // Central
+  'CST': 'America/Winnipeg',
+  'CDT': 'America/Winnipeg',
+  'Central Standard Time': 'America/Winnipeg',
+  'Central Daylight Time': 'America/Winnipeg',
+  // Eastern
+  'EST': 'America/Toronto',
+  'EDT': 'America/Toronto',
+  'Eastern Standard Time': 'America/Toronto',
+  'Eastern Daylight Time': 'America/Toronto',
+  // Atlantic
+  'AST': 'America/Halifax',
+  'ADT': 'America/Halifax',
+  'Atlantic Standard Time': 'America/Halifax',
+  'Atlantic Daylight Time': 'America/Halifax',
+  // Newfoundland
+  'NST': 'America/St_Johns',
+  'NDT': 'America/St_Johns',
+  'Newfoundland Standard Time': 'America/St_Johns',
+  'Newfoundland Daylight Time': 'America/St_Johns',
+};
+
+// Resolves timezone string to IANA format
+// Accepts: IANA name, abbreviation, or returns default for unknown
+const resolveTimezone = (tzInput) => {
+  if (!tzInput) return DEFAULT_TIMEZONE;
+  
+  const tz = String(tzInput).trim();
+  
+  // Check if it's already a valid IANA timezone
+  if (momentTz.tz.zone(tz)) {
+    return tz;
+  }
+  
+  // Try to map abbreviation to IANA name
+  const mapped = TIMEZONE_ABBREVIATION_MAP[tz];
+  if (mapped) {
+    return mapped;
+  }
+  
+  // Fallback to default Canadian timezone
+  console.log(`⚠️ Unknown timezone "${tz}", using default: ${DEFAULT_TIMEZONE}`);
+  return DEFAULT_TIMEZONE;
+};
 const { calculateOrderFees } = require('../utils/feeCalculations');
 const { createAdminNotification } = require('./adminNotificationController');
 const { sendNotificationToUser } = require('./notification');
@@ -97,7 +161,8 @@ exports.addOrder = async (req, res) => {
       total_amount,
       subtotal,
       is_insurance,
-      payment_intent_id  // New field for Stripe payment
+      payment_intent_id,  // New field for Stripe payment
+      renter_timezone     // Renter's timezone (IANA format, e.g. "America/Vancouver")
     } = req.body;
 
     // Validation: Required fields
@@ -125,6 +190,81 @@ exports.addOrder = async (req, res) => {
     // Validate equipment existence
     const equipment = await Equipment.findById(equipmentId);
     if (!equipment) return res.status(404).json({ message: 'Equipment not found.' });
+
+    // ========================================
+    // RENTAL DATE VALIDATION (Option A - Days-only)
+    // ========================================
+    // Use renter's timezone (resolve abbreviations like PST/EST to IANA names)
+    const timezone = resolveTimezone(renter_timezone);
+    
+    // Parse dates as date-only (midnight in UTC, then we work in renter's timezone)
+    const startDateOnly = String(start_date).trim().split('T')[0];
+    const endDateOnly = String(end_date).trim().split('T')[0];
+    const startMoment = momentTz.tz(startDateOnly, timezone).startOf('day');
+    const endMoment = momentTz.tz(endDateOnly, timezone).startOf('day');
+    const nowInRenterTz = momentTz.tz(timezone);
+    const todayInRenterTz = nowInRenterTz.clone().startOf('day');
+    
+    // Calculate rental days: same day = 1, otherwise = difference
+    // e.g., 17→17 = 1 day, 17→18 = 1 day, 17→19 = 2 days
+    const daysDiff = endMoment.diff(startMoment, 'days');
+    const rentalDays = daysDiff < 1 ? 1 : daysDiff; // Same day = 1 day
+    
+    // Get equipment duration settings (convert old format if needed)
+    const getCountValue = (durationRef) => {
+      if (!durationRef) return null;
+      // New format: selectedValue; Old format: count
+      return durationRef.selectedValue ?? durationRef.count ?? null;
+    };
+    
+    const noticeDays = getCountValue(equipment.notice_period) ?? 0;
+    const minDays = getCountValue(equipment.minimum_trip_duration) ?? 1;
+    const maxDays = getCountValue(equipment.maximum_trip_duration) ?? 365; // No limit if not set
+    
+    // Calculate earliest allowed start date based on notice period
+    let earliestStartDate = todayInRenterTz.clone().add(noticeDays, 'days');
+    
+    // 5 PM cutoff for same-day booking (when notice = 0)
+    if (noticeDays === 0) {
+      const currentHour = nowInRenterTz.hour();
+      if (currentHour >= SAME_DAY_CUTOFF_HOUR) {
+        // Past 5 PM - earliest start is tomorrow
+        earliestStartDate = todayInRenterTz.clone().add(1, 'days');
+      }
+    }
+    
+    // Validate start date against notice period
+    if (startMoment.isBefore(earliestStartDate)) {
+      const currentHour = nowInRenterTz.hour();
+      if (noticeDays === 0 && currentHour >= SAME_DAY_CUTOFF_HOUR) {
+        return res.status(400).json({ 
+          message: `Same-day booking is only available before ${SAME_DAY_CUTOFF_HOUR}:00 (5 PM) your time. Please select tomorrow or later.`,
+          error_code: 'same_day_cutoff_passed'
+        });
+      }
+      return res.status(400).json({ 
+        message: `Start date must be at least ${noticeDays} day(s) from today. Earliest available: ${earliestStartDate.format('MMM D, YYYY')}.`,
+        error_code: 'notice_period_violation'
+      });
+    }
+    
+    // Validate rental duration (min/max)
+    if (rentalDays < minDays) {
+      return res.status(400).json({ 
+        message: `Minimum rental duration for this equipment is ${minDays} day(s). Selected: ${rentalDays} day(s).`,
+        error_code: 'min_duration_violation'
+      });
+    }
+    
+    if (rentalDays > maxDays) {
+      return res.status(400).json({ 
+        message: `Maximum rental duration for this equipment is ${maxDays} day(s). Selected: ${rentalDays} day(s).`,
+        error_code: 'max_duration_violation'
+      });
+    }
+    
+    console.log(`📅 Rental validation passed: ${rentalDays} day(s), start: ${startDateOnly}, end: ${endDateOnly}, timezone: ${timezone}`);
+    // ========================================
 
     // CHECK STRIPE IDENTITY VERIFICATION - Required to rent equipment
     const user = await User.findById(userId).select('stripe_verification');
@@ -199,10 +339,8 @@ exports.addOrder = async (req, res) => {
 
     // Backend validation: Verify pricing calculations match expected values (insurance/deposit use equipment value)
     try {
-      // Match app: date-only strings → full 24h periods (same as Dart DateTime.difference().inDays)
-      const startMs = new Date(String(start_date).trim().split('T')[0]).getTime();
-      const endMs = new Date(String(end_date).trim().split('T')[0]).getTime();
-      const rentalDays = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)));
+      // Rental days already calculated above: same day = 1, otherwise = difference
+      // e.g., 17→17 = 1 day, 17→18 = 1 day, 17→19 = 2 days
       const equipmentValue = equipment.equipment_price != null ? Number(equipment.equipment_price) : 0;
       const expectedFees = await calculateOrderFees(rental_fee, is_insurance, rentalDays, equipmentValue);
       
@@ -250,6 +388,7 @@ exports.addOrder = async (req, res) => {
       userId,
       equipmentId,
       rental_schedule: { start_date, end_date },
+      renter_timezone: timezone, // Store renter's timezone for late/penalty calculations
       location: { address, lat, lng },
       rental_fee,
       platform_fee,
@@ -307,7 +446,7 @@ exports.addOrder = async (req, res) => {
         receiverId: renterId,
         senderId: ownerId,
         title: 'Rental confirmed',
-        body: 'Chat with the owner to share your address and coordinate pickup.',
+        body: 'Chat with the owner to share your address or coordinate pickup.',
         details: { orderId: orderIdStr, type: 'booking_chat_reminder' },
       }),
     ]).catch((err) => console.error('Booking chat reminders:', err));
@@ -556,6 +695,31 @@ exports.cancelOrder = async (req, res) => {
     };
     order.rental_status = "Cancelled";
     await order.save();
+
+    // Notify the other party about booking cancellation (non-blocking)
+    const ownerId = order.equipmentId.ownerId;
+    const buyerId = order.userId;
+    const orderIdStr = order._id.toString();
+    const equipmentName = order.equipmentId?.name || 'Equipment';
+    if (isOwner) {
+      // Owner cancelled → notify buyer (renter)
+      sendNotificationToUser({
+        receiverId: buyerId,
+        senderId: userId,
+        title: 'Booking Cancelled',
+        body: `The owner has cancelled your booking for "${equipmentName}". Any payment will be refunded.`,
+        details: { orderId: orderIdStr, type: 'booking_cancelled', cancelledBy: 'seller' },
+      }).catch((err) => console.error('Booking cancelled notification (to renter):', err));
+    } else {
+      // Buyer (renter) cancelled → notify owner
+      sendNotificationToUser({
+        receiverId: ownerId,
+        senderId: userId,
+        title: 'Booking Cancelled',
+        body: `A renter has cancelled their booking for "${equipmentName}".`,
+        details: { orderId: orderIdStr, type: 'booking_cancelled', cancelledBy: 'buyer' },
+      }).catch((err) => console.error('Booking cancelled notification (to owner):', err));
+    }
 
     let refundProcessed = false;
     let refundAmount = 0;
@@ -1127,45 +1291,61 @@ const processOrders = async () => {
         console.log(`🚀 Order ${order._id} changed from Delivered → Ongoing (waited ${hoursWaited}h)`);
       }
 
-      if (order.rental_status === 'Ongoing' && order.rental_schedule?.end_date && now > order.rental_schedule.end_date) {
-        await updateOrder(order, {
-          rental_status: 'Late',
-          penalty_apply: true,
-          status_change_timestamp: order.rental_schedule.end_date,
-          penalty_amount: DAILY_PENALTY
-        });
+      // Late detection using renter's timezone (end of last day = 23:59:59 in renter's timezone)
+      if (order.rental_status === 'Ongoing' && order.rental_schedule?.end_date) {
+        // Get renter's timezone (fallback to Canada default)
+        const renterTz = order.renter_timezone || DEFAULT_TIMEZONE;
+        
+        // Calculate end of last rental day in renter's timezone
+        // e.g., end_date "2026-03-15" means renter has until 23:59:59.999 on March 15 in their timezone
+        const endDateStr = momentTz(order.rental_schedule.end_date).format('YYYY-MM-DD');
+        const endOfLastDay = momentTz.tz(endDateStr, renterTz).endOf('day');
+        const nowMoment = momentTz();
+        
+        if (nowMoment.isAfter(endOfLastDay)) {
+          // Store the end-of-day moment as status_change_timestamp for penalty calculations
+          const lateStartTime = endOfLastDay.toDate();
+          
+          await updateOrder(order, {
+            rental_status: 'Late',
+            penalty_apply: true,
+            status_change_timestamp: lateStartTime,
+            penalty_amount: DAILY_PENALTY
+          });
 
-        // Send admin notification for late return
-        try {
-          const equipment = await Equipment.findById(order.equipmentId).populate('ownerId', 'name email');
-          const User = require('../models/user');
-          const renter = await User.findById(order.userId).select('name email');
-          const daysLate = Math.ceil((now - order.rental_schedule.end_date) / (1000 * 60 * 60 * 24));
+          // Send admin notification for late return
+          try {
+            const equipment = await Equipment.findById(order.equipmentId).populate('ownerId', 'name email');
+            const User = require('../models/user');
+            const renter = await User.findById(order.userId).select('name email');
+            const daysLate = Math.ceil(nowMoment.diff(endOfLastDay, 'hours') / 24) || 1;
 
-          await createAdminNotification(
-            'late_return_alert',
-            `Order ${order._id} is ${daysLate} day(s) overdue for return`,
-            {
-              userId: order.userId,
-              equipmentId: order.equipmentId,
-              orderId: order._id,
-              data: {
-                equipmentName: equipment?.name || 'Unknown',
-                renterName: renter?.name || 'Unknown',
-                renterEmail: renter?.email || 'Unknown',
-                ownerName: equipment?.ownerId?.name || 'Unknown',
-                daysLate: daysLate,
-                originalEndDate: order.rental_schedule.end_date,
-                penaltyAmount: DAILY_PENALTY,
-                lateDate: new Date()
+            await createAdminNotification(
+              'late_return_alert',
+              `Order ${order._id} is ${daysLate} day(s) overdue for return`,
+              {
+                userId: order.userId,
+                equipmentId: order.equipmentId,
+                orderId: order._id,
+                data: {
+                  equipmentName: equipment?.name || 'Unknown',
+                  renterName: renter?.name || 'Unknown',
+                  renterEmail: renter?.email || 'Unknown',
+                  ownerName: equipment?.ownerId?.name || 'Unknown',
+                  daysLate: daysLate,
+                  originalEndDate: order.rental_schedule.end_date,
+                  renterTimezone: renterTz,
+                  penaltyAmount: DAILY_PENALTY,
+                  lateDate: new Date()
+                }
               }
-            }
-          );
-        } catch (notificationError) {
-          console.error('Error sending late return notification:', notificationError);
-        }
+            );
+          } catch (notificationError) {
+            console.error('Error sending late return notification:', notificationError);
+          }
 
-        console.log(`⏳ Order ${order._id} changed from Ongoing → Late!`);
+          console.log(`⏳ Order ${order._id} changed from Ongoing → Late! (timezone: ${renterTz})`);
+        }
       }
 
       if (order.rental_status === 'Late') {

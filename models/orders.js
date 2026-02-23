@@ -17,6 +17,13 @@ const orderSchema = new mongoose.Schema({
     end_date: { type: Date, required: true }
   },
 
+  // Renter's timezone for late/penalty calculations (IANA format e.g. "America/Toronto")
+  // Fallback to America/Toronto if not provided
+  renter_timezone: { 
+    type: String, 
+    default: 'America/Toronto' 
+  },
+
   location: locationSchema,
 
   // Pricing breakdown - all amounts stored from frontend calculations

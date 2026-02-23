@@ -5,6 +5,7 @@ const Admin = require("../models/admin");
 const EventStore = require("../models/EventStore");
 
 const JWT_SECRET = process.env.JWT_SECRET || "Opeec";
+// Map<userId, Set<socketId>> - user is online if they have at least one socket
 const connectedUsers = new Map();
 const typingUsers = new Map();
 const joinedConversations = new Map(); // userId -> Set of conversationIds
@@ -43,11 +44,12 @@ async function getUserDetails(userId) {
 }
 
 const sendEventToUser = (userId, event, data) => {
-  console.log(`Connected Users (${connectedUsers.size}):`, Array.from(connectedUsers.entries()));
-  const socketId = connectedUsers.get(userId.toString());
-  if (socketId) {
-    io.to(socketId).emit(event, data);
-    console.log(`Event "${event}" sent to user ${userId}:`, data);
+  const userIdStr = userId.toString();
+  const room = `user_${userIdStr}`;
+  const socketIds = connectedUsers.get(userIdStr);
+  if (socketIds && socketIds.size > 0) {
+    io.to(room).emit(event, data);
+    console.log(`Event "${event}" sent to user ${userId} (${socketIds.size} socket(s)):`, data);
   } else {
     console.warn(`User with ID ${userId} is not connected. Available users: [${Array.from(connectedUsers.keys()).join(', ')}]`);
   }
@@ -116,8 +118,13 @@ const initializeSocket = (server) => {
   io.on("connection", (socket) => {
     const userId = socket.userId;
     const userType = socket.userType;
-    connectedUsers.set(userId.toString(), socket.id);
-    console.log(`${userType.charAt(0).toUpperCase() + userType.slice(1)} connected: ${userId}, Socket ID: ${socket.id}`);
+    const userIdStr = userId.toString();
+    if (!connectedUsers.has(userIdStr)) {
+      connectedUsers.set(userIdStr, new Set());
+    }
+    connectedUsers.get(userIdStr).add(socket.id);
+    socket.join(`user_${userIdStr}`);
+    console.log(`${userType.charAt(0).toUpperCase() + userType.slice(1)} connected: ${userId}, Socket ID: ${socket.id} (total sockets for user: ${connectedUsers.get(userIdStr).size})`);
 
     // Send unread count to admin when they connect
     if (userType === 'admin') {
@@ -182,9 +189,11 @@ const initializeSocket = (server) => {
         // Get admin settings for title and description
         const settings = await AppSettings.findOne();
         
-        // Prepare simple response with just 3 fields as requested
+        // Prepare response: include account_status so Flutter sidebar stays in sync with create-intent checks
+        const accountStatus = user.stripe_connect?.account_status || 'not_connected';
         const response = {
-          status: user.stripe_connect?.account_status || 'not_connected',
+          status: accountStatus,
+          account_status: accountStatus, // Flutter expects this key
           title: settings?.stripe_connect_title || 'Connect Your Bank Account',
           description: settings?.stripe_connect_description || 'Connect your bank account to receive automatic payouts after each rental.'
         };
@@ -192,7 +201,7 @@ const initializeSocket = (server) => {
         // Send response back to app
         socket.emit("stripeConnectStatusResponse", response);
         
-        console.log(`✅ Stripe Connect status sent to user ${userId}:`, response.status);
+        console.log(`✅ Stripe Connect status sent to user ${userId}:`, accountStatus);
         
       } catch (error) {
         console.error(`❌ Error getting Stripe Connect status for user ${userId}:`, error);
@@ -260,55 +269,30 @@ const initializeSocket = (server) => {
       }
     });
 
-    // Typing indicator events - only frontend involvement needed
-    socket.on("startTyping", async ({ conversationId, receiverId }) => {
+    // Unified typing event - replaces startTyping/stopTyping
+    socket.on("typing", async ({ conversationId, receiverId, isTyping }) => {
       if (!conversationId || !receiverId) return;
       
       const typingKey = `${conversationId}_${userId.toString()}`;
-      typingUsers.set(typingKey, Date.now());
       
-      // Get user details for socket events
-      const typingUserDetails = await getUserDetails(userId);
-      const receiverDetails = await getUserDetails(receiverId);
+      if (isTyping) {
+        typingUsers.set(typingKey, Date.now());
+      } else {
+        typingUsers.delete(typingKey);
+      }
       
+      // Standardized typing payload
       const typingData = {
         conversationId,
-        userId,
-        isTyping: true,
-        typingUser: typingUserDetails,
-        receiver: receiverDetails
+        userId: userId.toString(),
+        isTyping: !!isTyping
       };
       
-      // Notify the receiver that user is typing
-      sendEventToUser(receiverId, "userTyping", typingData);
+      // Notify the receiver
+      sendEventToUser(receiverId, "typing", typingData);
       
       // Also emit to conversation room
-      socket.to(`conversation_${conversationId}`).emit("userTyping", typingData);
-    });
-
-    socket.on("stopTyping", async ({ conversationId, receiverId }) => {
-      if (!conversationId || !receiverId) return;
-      
-      const typingKey = `${conversationId}_${userId.toString()}`;
-      typingUsers.delete(typingKey);
-      
-      // Get user details for socket events
-      const typingUserDetails = await getUserDetails(userId);
-      const receiverDetails = await getUserDetails(receiverId);
-      
-      const typingData = {
-        conversationId,
-        userId,
-        isTyping: false,
-        typingUser: typingUserDetails,
-        receiver: receiverDetails
-      };
-      
-      // Notify the receiver that user stopped typing
-      sendEventToUser(receiverId, "userTyping", typingData);
-      
-      // Also emit to conversation room
-      socket.to(`conversation_${conversationId}`).emit("userTyping", typingData);
+      socket.to(`conversation_${conversationId}`).emit("typing", typingData);
     });
 
     // Restore all previous socket functionality
@@ -455,22 +439,30 @@ const initializeSocket = (server) => {
     });
 
     socket.on("disconnect", () => {
-      console.log(`${userType.charAt(0).toUpperCase() + userType.slice(1)} disconnected: ${userId}`);
+      console.log(`${userType.charAt(0).toUpperCase() + userType.slice(1)} disconnected: ${userId}, Socket ID: ${socket.id}`);
       
       // Automatically notify user's contacts that they are offline
       socket.broadcast.emit("userOffline", { userId, userType });
       
       // Clean up typing indicators for this user
+      const uidStr = userId.toString();
       for (const [key, value] of typingUsers.entries()) {
-        if (key.includes(`_${userId.toString()}`)) {
+        if (key.includes(`_${uidStr}`)) {
           typingUsers.delete(key);
         }
       }
       
       // Clean up joined conversations for this user
-      joinedConversations.delete(userId.toString());
+      joinedConversations.delete(uidStr);
       
-      connectedUsers.delete(userId.toString());
+      // Remove this socket from user's set; user is offline only when no sockets left
+      const socketSet = connectedUsers.get(uidStr);
+      if (socketSet) {
+        socketSet.delete(socket.id);
+        if (socketSet.size === 0) {
+          connectedUsers.delete(uidStr);
+        }
+      }
     });
   });
 
@@ -485,16 +477,11 @@ const initializeSocket = (server) => {
           // Extract conversationId and userId from key
           const [conversationId, typingUserId] = key.split('_');
           
-          // Get user details for timeout event
-          const typingUserDetails = await getUserDetails(typingUserId);
-          
-          // Notify that user stopped typing (timeout)
-          io.to(`conversation_${conversationId}`).emit("userTyping", {
+          // Notify that user stopped typing (timeout) - standardized payload
+          io.to(`conversation_${conversationId}`).emit("typing", {
             conversationId,
             userId: typingUserId,
-            isTyping: false,
-            typingUser: typingUserDetails,
-            reason: 'timeout'
+            isTyping: false
           });
         }
       }

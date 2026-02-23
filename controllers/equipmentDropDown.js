@@ -21,6 +21,7 @@ const getEquipmentDropdowns = async (req, res) => {
   };
 
 // ✅ PUT: Modify (Create/Update) a Dropdown by Name
+// Days-only rental system (Option A)
 const updateEquipmentDropdown = async (req, res) => {
   const dropdowns = req.body; // now expecting an array
 
@@ -29,7 +30,15 @@ const updateEquipmentDropdown = async (req, res) => {
       return res.status(400).json({ message: 'Dropdowns array is required.' });
     }
 
-    const validUnits = ['hours', 'days', 'weeks', 'months'];
+    // Days-only system - no hours/weeks/months
+    const validUnits = ['days'];
+
+    // Valid value ranges for each dropdown type
+    const validRanges = {
+      advanceNotice: [0, 1, 2, 3, 4, 5], // 0 = same-day allowed (with 5PM cutoff)
+      minimumRentalDuration: [1, 2, 3, 4, 5],
+      maximumRentalDuration: [1, 2, 3, 4, 5, 6, 7, 14, 30]
+    };
 
     for (const dropdown of dropdowns) {
       const { name, unit, options } = dropdown;
@@ -39,7 +48,19 @@ const updateEquipmentDropdown = async (req, res) => {
       }
 
       if (!validUnits.includes(unit)) {
-        return res.status(400).json({ message: `Invalid unit type for ${name}. Must be one of: hours, days, weeks, months.` });
+        return res.status(400).json({ message: `Invalid unit type for ${name}. Only 'days' is supported.` });
+      }
+
+      // Validate option values are within allowed range
+      const allowedValues = validRanges[name];
+      if (allowedValues) {
+        for (const option of options) {
+          if (!allowedValues.includes(option.value)) {
+            return res.status(400).json({ 
+              message: `Invalid value ${option.value} for ${name}. Allowed values: ${allowedValues.join(', ')}` 
+            });
+          }
+        }
       }
 
       for (const option of options) {
