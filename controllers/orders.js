@@ -858,21 +858,6 @@ exports.collectOrder = async (req, res) => {
     if (order.rental_status !== "Delivered") return res.status(400).json({ message: "Only 'Delivered' orders can be collected." });
     if (String(order.userId) !== userId) return res.status(403).json({ message: "Only the user can collect the order." });
 
-    // ✅ Check if required time has passed since delivery
-    const deliveryTime = order.status_change_timestamp;
-    const now = new Date();
-    const hoursElapsed = (now - deliveryTime) / (1000 * 60 * 60);
-    const requiredHours = timeOffsetHours;
-
-    if (hoursElapsed < requiredHours) {
-      const remainingMinutes = Math.ceil((requiredHours - hoursElapsed) * 60);
-      return res.status(400).json({ 
-        message: `Equipment can be collected in ${remainingMinutes} minutes. Please wait.`,
-        status: false,
-        remaining_minutes: remainingMinutes
-      });
-    }
-
     order.rental_status = "Ongoing";
     order.updated_at = new Date();
     order.status_change_timestamp = new Date();
@@ -930,24 +915,6 @@ exports.finishOrder = async (req, res) => {
     if (!["Returned", "Late"].includes(order.rental_status)) {
       return res.status(400).json({ message: "Only 'Returned' or 'Late' orders can be finished." });
     }
-
-    // ✅ Check if required time has passed since return (only for 'Returned' status)
-    if (order.rental_status === "Returned") {
-      const returnTime = order.status_change_timestamp;
-      const now = new Date();
-      const hoursElapsed = (now - returnTime) / (1000 * 60 * 60);
-      const requiredHours = timeOffsetHours;
-
-      if (hoursElapsed < requiredHours) {
-        const remainingMinutes = Math.ceil((requiredHours - hoursElapsed) * 60);
-        return res.status(400).json({ 
-          message: `Order can be finished in ${remainingMinutes} minutes. Please wait.`,
-          status: false,
-          remaining_minutes: remainingMinutes
-        });
-      }
-    }
-    // Late orders can be finished immediately (no time restriction)
 
     order.rental_status = "Finished";
     order.updated_at = new Date();
