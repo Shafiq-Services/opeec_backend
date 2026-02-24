@@ -30,6 +30,11 @@ const NOTIFICATION_CONFIGS = {
     icon: 'package-check',
     title: 'Equipment Resubmission'
   },
+  equipment_updated: {
+    color: '#F59E0B', // Amber/Orange
+    icon: 'package-search',
+    title: 'Equipment Updated'
+  },
   rental_booking: {
     color: '#059669', // Emerald
     icon: 'calendar-check',
