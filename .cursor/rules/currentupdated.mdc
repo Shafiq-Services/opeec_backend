@@ -104,4 +104,42 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [Stripe Connect: Separate Charges and Transfers - Feb 24, 2026]
+**Type:** Critical Architecture Fix  
+**Description:** Changed from "Destination Charges" to "Separate Charges and Transfers" to fix cashflow issues.
+
+**Problem:**
+- Destination Charges transferred money to sellers IMMEDIATELY at payment time
+- Cancelled orders required transfer reversals (complex, often failed)
+- Sellers showed "future payouts" before rental even started
+- Refunds could create negative platform balance if seller withdrew first
+- This caused the $22.47 negative balance and failed bank withdrawal
+
+**Solution:**
+- Payment now goes to PLATFORM account first (no immediate transfer)
+- Transfer to seller ONLY when order status = "Finished" (via `triggerAutomaticPayout`)
+- Cancellation = simple refund from platform (no transfer reversal needed)
+- Platform always has funds available to cover refunds
+
+**Backend Changes (`paymentController.js`):**
+- Removed `transfer_data.destination` from `createPaymentIntent`
+- Removed `application_fee_amount` (not needed without destination charge)
+- Added `owner_connect_account_id` to metadata for reference
+- Updated logging to reflect new flow
+
+**Backend Changes (`orders.js`):**
+- Added `stripe_payout.destination_account_id` storage at order creation
+- Added logging to confirm funds held in platform account
+
+**Backend Changes (`paymentController.js` - webhook):**
+- Updated `createOrderFromPaymentIntent` to also store owner connect account ID
+
+**Documentation:**
+- Updated `about-project.mdc` with new payment flow documentation
+- Added "Separate Charges and Transfers" section explaining the change
+
+**No Flutter Changes Required:** Backend-only fix
+
+---
+
 *This log will be updated after each prompt with new changes...*

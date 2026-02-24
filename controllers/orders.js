@@ -322,6 +322,7 @@ exports.addOrder = async (req, res) => {
         };
 
         console.log(`✅ Payment verified: ${payment_intent_id} - $${paidAmount}`);
+        console.log(`   💰 Funds held in platform account (transfer to owner on completion)`);
       } catch (paymentError) {
         console.error('Error verifying payment:', paymentError);
         
@@ -383,6 +384,10 @@ exports.addOrder = async (req, res) => {
       // Continue with order creation if validation fails (non-blocking for now)
     }
 
+    // Get owner's Stripe Connect account ID for later payout
+    const owner = await User.findById(equipment.ownerId).select('stripe_connect name');
+    const ownerConnectAccountId = owner?.stripe_connect?.account_id || '';
+    
     // Create new order with all pricing data from frontend
     const newOrder = new Order({
       userId,
@@ -401,8 +406,17 @@ exports.addOrder = async (req, res) => {
         insurance: is_insurance
       },
       // Add payment details if payment was made
-      ...(paymentDetails && { stripe_payment: paymentDetails })
+      ...(paymentDetails && { stripe_payment: paymentDetails }),
+      // Store owner's connect account ID for later payout (Separate Charges & Transfers)
+      stripe_payout: {
+        destination_account_id: ownerConnectAccountId,
+        transfer_status: 'pending' // Will be 'processing' then 'completed' when order is Finished
+      }
     });
+    
+    if (ownerConnectAccountId) {
+      console.log(`📋 Order created with owner connect account: ${ownerConnectAccountId} (payout on completion)`);
+    }
 
     const savedOrder = await newOrder.save();
 

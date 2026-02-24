@@ -115,32 +115,27 @@ exports.createPaymentIntent = async (req, res) => {
     const amountInCents = Math.round(total_amount * 100);
     const applicationFeeInCents = Math.round(platform_fee * 100);
 
-    // Check if owner's account is fully onboarded
+    // Check if owner's account is fully onboarded (for logging purposes)
     const isOwnerFullyOnboarded = owner.stripe_connect.payouts_enabled && 
                                    owner.stripe_connect.details_submitted;
 
-    // Platform country (where OPEEC business is registered)
-    // Can be overridden via environment variable if needed
-    const PLATFORM_COUNTRY = process.env.STRIPE_PLATFORM_COUNTRY || 'CA'; // Default: Canada
+    /**
+     * SEPARATE CHARGES AND TRANSFERS (Feb 2026 Update)
+     * 
+     * Previously used "Destination Charges" which transferred money to seller IMMEDIATELY
+     * when payment succeeded. This caused issues:
+     * - Cancelled orders required transfer reversals (complex, can fail)
+     * - Sellers showed "future payouts" before rental even started
+     * - Refunds could create negative platform balance if seller withdrew
+     * 
+     * NEW APPROACH: Payment goes to platform account first
+     * - No immediate transfer at payment time
+     * - Transfer to seller only happens when order is "Finished" (via triggerAutomaticPayout)
+     * - Cancellation = simple refund from platform (no transfer reversal needed)
+     * - Platform always has funds to cover refunds
+     */
 
-    // Check if cross-border payment is needed
-    let isCrossBorder = false;
-    let connectedAccountCountry = null;
-    
-    if (isOwnerFullyOnboarded) {
-      try {
-        // Fetch connected account details from Stripe to get country
-        const connectedAccount = await stripe.accounts.retrieve(owner.stripe_connect.account_id);
-        connectedAccountCountry = connectedAccount.country;
-        isCrossBorder = connectedAccountCountry !== PLATFORM_COUNTRY;
-        console.log(`🌍 Platform country: ${PLATFORM_COUNTRY}, Connected account country: ${connectedAccountCountry}, Cross-border: ${isCrossBorder}`);
-      } catch (err) {
-        console.log(`⚠️ Could not fetch connected account country, assuming cross-border for safety: ${err.message}`);
-        isCrossBorder = true; // Default to cross-border for safety
-      }
-    }
-
-    // Create PaymentIntent (with or without Stripe Connect based on onboarding status)
+    // Create PaymentIntent - funds go to PLATFORM account first (no transfer_data)
     // Store ALL order details in metadata so webhook can create order if Flutter call fails
     const paymentIntentParams = {
       amount: amountInCents,
@@ -150,12 +145,11 @@ exports.createPaymentIntent = async (req, res) => {
         user_id: userId,
         equipment_id: equipment_id,
         owner_id: owner_id,
+        owner_connect_account_id: owner.stripe_connect.account_id, // Store for later transfer
         rental_fee: rental_fee.toString(),
         platform_fee: platform_fee.toString(),
         platform: 'OPEEC',
-        test_mode: isOwnerFullyOnboarded ? 'false' : 'true',
-        cross_border: isCrossBorder ? 'true' : 'false',
-        connected_account_country: connectedAccountCountry || 'unknown',
+        owner_onboarded: isOwnerFullyOnboarded ? 'true' : 'false',
         // Order details for webhook fallback (store as strings - Stripe metadata requirement)
         start_date: start_date || '',
         end_date: end_date || '',
@@ -179,25 +173,9 @@ exports.createPaymentIntent = async (req, res) => {
       description: `Rental: ${equipment.name}`
     };
 
-    // Only add Stripe Connect transfer if owner is fully onboarded
-    if (isOwnerFullyOnboarded) {
-      paymentIntentParams.application_fee_amount = applicationFeeInCents;
-      paymentIntentParams.transfer_data = {
-        destination: owner.stripe_connect.account_id,
-      };
-      
-      // Only add on_behalf_of for cross-border payments (different countries)
-      // This allows the charge to settle in the connected account's country
-      if (isCrossBorder) {
-        paymentIntentParams.on_behalf_of = owner.stripe_connect.account_id;
-        console.log(`💰 Creating CROSS-BORDER payment with on_behalf_of to ${owner.stripe_connect.account_id} (${connectedAccountCountry})`);
-      } else {
-        console.log(`💰 Creating SAME-REGION payment transfer to ${owner.stripe_connect.account_id} (${connectedAccountCountry})`);
-      }
-    } else {
-      console.log(`⚠️  Creating payment WITHOUT transfer (owner not fully onboarded - test mode)`);
-      console.log(`   Owner will be credited via wallet after testing`);
-    }
+    console.log(`💳 Creating payment to PLATFORM account (Separate Charges & Transfers mode)`);
+    console.log(`   Owner ${owner.name} (${owner.stripe_connect.account_id}) will receive payout when order is Finished`);
+    console.log(`   Owner onboarded: ${isOwnerFullyOnboarded}, Rental fee: $${rental_fee}, Platform fee: $${platform_fee}`);
 
     const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
 
@@ -591,6 +569,9 @@ async function createOrderFromPaymentIntent(paymentIntent) {
       throw new Error(`Equipment ${meta.equipment_id} not found`);
     }
 
+    // Get owner's connect account ID from metadata (stored during createPaymentIntent)
+    const ownerConnectAccountId = meta.owner_connect_account_id || '';
+
     // Create order with data from payment intent metadata
     const newOrder = new Order({
       userId: meta.user_id,
@@ -621,6 +602,11 @@ async function createOrderFromPaymentIntent(paymentIntent) {
         payment_status: 'succeeded',
         amount_captured: paymentIntent.amount / 100,
         payment_captured_at: new Date()
+      },
+      // Store owner's connect account ID for later payout (Separate Charges & Transfers)
+      stripe_payout: {
+        destination_account_id: ownerConnectAccountId,
+        transfer_status: 'pending'
       }
     });
 

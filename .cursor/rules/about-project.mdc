@@ -242,13 +242,19 @@ Triggered for all admin events with professional templates:
 6. Automated late detection → Late return alerts + automatic penalty charging
 7. Penalty disputes → Admin notification system
 
-### **Payment & Refund Flow:**
-1. **Payment Collection:** User pays via Stripe at booking time
-2. **Fund Holding:** Platform holds funds until rental completes
-3. **Cancellation Refunds:** Automatic refunds based on timing (before/after start date)
+### **Payment & Refund Flow (Separate Charges and Transfers - Feb 2026):**
+1. **Payment Collection:** User pays via Stripe at booking time → funds go to PLATFORM account
+2. **Fund Holding:** Platform holds ALL funds until rental completes successfully
+3. **Cancellation Refunds:** Simple refund from platform account (no transfer reversal needed)
 4. **Late Penalties:** Automatic charges for overdue returns ($50/day default)
-5. **Owner Payouts:** Automatic transfer to owner after "Finished" status
+5. **Owner Payouts:** Transfer to owner ONLY when order status = "Finished" (via `triggerAutomaticPayout`)
 6. **Failed Payments:** Admin notifications for manual collection
+
+**Why Separate Charges (not Destination Charges):**
+- Avoids immediate transfers that can't be easily reversed on cancellation
+- Prevents negative platform balance when refunds exceed seller's connected account balance
+- Platform always has funds available to cover refunds
+- Seller sees payout only AFTER successful rental completion
 
 ### **Support Flow:**
 1. User sends support message → Admin socket + email alert
@@ -311,6 +317,22 @@ Triggered for all admin events with professional templates:
 
 ## 🚨 **RECENT MAJOR UPDATES:**
 
+### **Stripe Connect: Separate Charges and Transfers (Feb 24, 2026):**
+- **CRITICAL FIX:** Changed from "Destination Charges" to "Separate Charges and Transfers"
+- **Problem Solved:** Destination Charges transferred money to sellers IMMEDIATELY at payment time, causing:
+  - Cancelled orders required transfer reversals (complex, often failed)
+  - Sellers showed "future payouts" before rental started
+  - Refunds could create negative platform balance if seller withdrew first
+- **New Flow:**
+  1. Payment goes to platform account first (no `transfer_data.destination`)
+  2. Platform holds funds until order is successfully completed
+  3. Transfer to seller ONLY when order status = "Finished" (via `triggerAutomaticPayout`)
+  4. Cancellation = simple refund from platform (no transfer reversal)
+- **Files Changed:**
+  - `paymentController.js` - Removed `transfer_data.destination` and `application_fee_amount` from createPaymentIntent
+  - `orders.js` - Added `stripe_payout.destination_account_id` storage at order creation
+- **No Flutter Changes Required:** Backend-only fix
+
 ### **Stripe Webhook Secrets in Database (Feb 2026):**
 - **Admin Panel Control:** Webhook secrets can now be edited from Admin Panel → Settings
 - **Test/Live Mode Switching:** Client can switch between test and live mode by updating both API keys AND webhook secrets from admin panel
@@ -320,12 +342,13 @@ Triggered for all admin events with professional templates:
 - **Startup Validation:** Server validates required Stripe env vars at startup (fallback safety net)
 
 ### **Stripe Payment Integration:**
-- **Payment Collection:** Backend now collects payments via Stripe before order creation
-- **Payment Intent Creation:** New `/payment/create-intent` endpoint creates Stripe PaymentIntent with Connect
+- **Payment Collection:** Backend collects payments via Stripe before order creation
+- **Separate Charges Model:** Payment goes to platform account first; transfer to seller on order completion
+- **Payment Intent Creation:** `/payment/create-intent` creates PaymentIntent WITHOUT immediate transfer
 - **Payment Verification:** Orders require valid `payment_intent_id` before creation
-- **Automatic Refunds:** Cancellations trigger automatic Stripe refunds based on timing
+- **Automatic Refunds:** Cancellations trigger simple refunds from platform account (no transfer reversal)
 - **Late Penalty Charging:** System automatically charges late penalties to saved payment methods
-- **Payment Tracking:** Orders now store complete payment details (`stripe_payment` field)
+- **Payment Tracking:** Orders store `stripe_payment` (customer payment) + `stripe_payout` (seller transfer)
 - **Stripe Customer IDs:** Users get Stripe customer IDs for payment method reuse
 - **Webhook Integration:** `/payment/webhook` handles Stripe payment events
 
