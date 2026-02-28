@@ -47,7 +47,11 @@ exports.handleStripeConnectWebhook = async (req, res) => {
   console.log(`   Object ID: ${event.data.object.id}`);
   console.log('━'.repeat(80));
 
-  // Handle the event
+  // IMPORTANT: Stripe best practice - acknowledge receipt immediately
+  // Always return 200 after signature verification to prevent Stripe from disabling webhook
+  res.json({ received: true });
+
+  // Handle the event asynchronously (errors logged but don't cause retry)
   try {
     switch (event.type) {
       case 'account.updated':
@@ -89,11 +93,9 @@ exports.handleStripeConnectWebhook = async (req, res) => {
       default:
         console.log(`⚠️ Unhandled event type: ${event.type}`);
     }
-
-    res.json({ received: true });
   } catch (error) {
-    console.error('❌ Error handling webhook:', error);
-    res.status(500).json({ error: 'Webhook handler failed' });
+    // Log error but don't affect response (already sent 200)
+    console.error('❌ Error handling webhook event:', error);
   }
 };
 

@@ -493,7 +493,11 @@ exports.handleWebhook = async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Handle the event
+  // IMPORTANT: Stripe best practice - acknowledge receipt immediately, process async
+  // Always return 200 after signature verification to prevent Stripe from disabling webhook
+  res.json({ received: true });
+
+  // Handle the event asynchronously (errors logged but don't cause retry)
   try {
     switch (event.type) {
       case 'payment_intent.succeeded':
@@ -516,17 +520,21 @@ exports.handleWebhook = async (req, res) => {
         const failedPayment = event.data.object;
         console.log(`❌ Payment failed: ${failedPayment.id}`);
         
-        // Notify admin of payment failure
-        await createAdminNotification(
-          'payment_failed',
-          `Payment failed: ${failedPayment.id}`,
-          {
-            data: {
-              paymentIntentId: failedPayment.id,
-              error: failedPayment.last_payment_error?.message
+        // Notify admin of payment failure (wrapped in try-catch to prevent crashes)
+        try {
+          await createAdminNotification(
+            'payment_failed',
+            `Payment failed: ${failedPayment.id}`,
+            {
+              data: {
+                paymentIntentId: failedPayment.id,
+                error: failedPayment.last_payment_error?.message
+              }
             }
-          }
-        );
+          );
+        } catch (notifErr) {
+          console.error('Failed to send payment_failed notification:', notifErr.message);
+        }
         break;
 
       case 'charge.refunded':
@@ -537,11 +545,19 @@ exports.handleWebhook = async (req, res) => {
       default:
         console.log(`Unhandled event type: ${event.type}`);
     }
-
-    res.json({ received: true });
   } catch (error) {
-    console.error('Error handling webhook:', error);
-    res.status(500).json({ error: 'Webhook handler failed' });
+    // Log error but don't affect response (already sent 200)
+    console.error('Error handling webhook event:', error);
+    // Optionally notify admin of webhook processing failure
+    try {
+      await createAdminNotification(
+        'order_creation_failed',
+        `Webhook processing error: ${error.message}`,
+        { data: { event_type: event.type, error: error.message } }
+      );
+    } catch (notifErr) {
+      console.error('Failed to send webhook error notification:', notifErr.message);
+    }
   }
 };
 

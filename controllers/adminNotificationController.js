@@ -60,12 +60,144 @@ const NOTIFICATION_CONFIGS = {
     color: '#7C3AED', // Violet
     icon: 'user-x',
     title: 'User Blocked'
+  },
+  // Payment & Order notifications
+  payment_failed: {
+    color: '#DC2626', // Red
+    icon: 'credit-card-off',
+    title: 'Payment Failed'
+  },
+  order_refund_processed: {
+    color: '#10B981', // Green
+    icon: 'receipt-refund',
+    title: 'Refund Processed'
+  },
+  refund_failed: {
+    color: '#DC2626', // Red
+    icon: 'alert-circle',
+    title: 'Refund Failed'
+  },
+  order_creation_failed: {
+    color: '#DC2626', // Red
+    icon: 'alert-triangle',
+    title: 'Order Creation Failed'
+  },
+  order_created_via_webhook: {
+    color: '#F59E0B', // Amber
+    icon: 'webhook',
+    title: 'Order Created via Webhook'
+  },
+  // Late penalty notifications
+  late_penalty_manual_collection: {
+    color: '#EF4444', // Red
+    icon: 'hand-coins',
+    title: 'Late Penalty - Manual Collection'
+  },
+  late_penalty_charged: {
+    color: '#10B981', // Green
+    icon: 'check-circle',
+    title: 'Late Penalty Charged'
+  },
+  late_penalty_payment_failed: {
+    color: '#DC2626', // Red
+    icon: 'credit-card-off',
+    title: 'Late Penalty Payment Failed'
+  },
+  // Withdrawal notifications
+  withdrawal_approved: {
+    color: '#10B981', // Green
+    icon: 'bank-transfer',
+    title: 'Withdrawal Approved'
+  },
+  withdrawal_rejected: {
+    color: '#DC2626', // Red
+    icon: 'bank-transfer-off',
+    title: 'Withdrawal Rejected'
+  },
+  // Stripe Connect notifications (supporting both string and object-style calls)
+  STRIPE_CONNECT_ORPHANED: {
+    color: '#F59E0B', // Amber
+    icon: 'alert-triangle',
+    title: 'Stripe Connect Orphaned'
+  },
+  STRIPE_CONNECT_ACCOUNT_CREATED: {
+    color: '#3B82F6', // Blue
+    icon: 'user-check',
+    title: 'Stripe Connect Account Created'
+  },
+  STRIPE_CONNECT_ONBOARDING_COMPLETED: {
+    color: '#10B981', // Green
+    icon: 'check-circle',
+    title: 'Stripe Connect Onboarding Complete'
+  },
+  STRIPE_CONNECT_ACCOUNT_DEAUTHORIZED: {
+    color: '#EF4444', // Red
+    icon: 'user-x',
+    title: 'Stripe Connect Deauthorized'
+  },
+  STRIPE_CONNECT_ACCOUNT_DISABLED: {
+    color: '#DC2626', // Red
+    icon: 'alert-octagon',
+    title: 'Stripe Connect Account Disabled'
+  },
+  STRIPE_TRANSFER_INITIATED: {
+    color: '#3B82F6', // Blue
+    icon: 'send',
+    title: 'Stripe Transfer Initiated'
+  },
+  STRIPE_TRANSFER_COMPLETED: {
+    color: '#10B981', // Green
+    icon: 'check-circle',
+    title: 'Stripe Transfer Completed'
+  },
+  STRIPE_TRANSFER_FAILED: {
+    color: '#DC2626', // Red
+    icon: 'x-circle',
+    title: 'Stripe Transfer Failed'
+  },
+  STRIPE_TRANSFER_REVERSED: {
+    color: '#F59E0B', // Amber
+    icon: 'rotate-ccw',
+    title: 'Stripe Transfer Reversed'
+  },
+  STRIPE_PAYOUT_TO_BANK_COMPLETED: {
+    color: '#10B981', // Green
+    icon: 'bank',
+    title: 'Payout to Bank Completed'
+  },
+  STRIPE_PAYOUT_TO_BANK_FAILED: {
+    color: '#DC2626', // Red
+    icon: 'bank-off',
+    title: 'Payout to Bank Failed'
+  },
+  STRIPE_VERIFICATION_ORPHANED: {
+    color: '#F59E0B', // Amber
+    icon: 'alert-triangle',
+    title: 'Stripe Verification Orphaned'
   }
 };
 
 // Helper function to create and send admin notification
-const createAdminNotification = async (type, body, relatedData = {}) => {
+// Supports two calling conventions:
+// 1. createAdminNotification(type, body, relatedData) - string type
+// 2. createAdminNotification({ type, body, ... }) - object with type property
+const createAdminNotification = async (typeOrOptions, body, relatedData = {}) => {
   try {
+    // Handle object-style call: createAdminNotification({ type: 'X', body: '...', ... })
+    let type;
+    if (typeof typeOrOptions === 'object' && typeOrOptions !== null) {
+      type = typeOrOptions.type;
+      body = typeOrOptions.body || typeOrOptions.message || '';
+      relatedData = {
+        userId: typeOrOptions.userId,
+        equipmentId: typeOrOptions.equipmentId,
+        orderId: typeOrOptions.orderId,
+        data: typeOrOptions.data || typeOrOptions
+      };
+    } else {
+      type = typeOrOptions;
+    }
+    
     const config = NOTIFICATION_CONFIGS[type];
     if (!config) {
       console.error(`Unknown notification type: ${type}`);
