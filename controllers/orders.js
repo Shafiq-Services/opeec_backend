@@ -165,6 +165,22 @@ exports.addOrder = async (req, res) => {
       renter_timezone     // Renter's timezone (IANA format, e.g. "America/Vancouver")
     } = req.body;
 
+    // DUPLICATE CHECK: Prevent race condition with webhook
+    // Webhook may have already created order for this payment_intent_id
+    if (payment_intent_id) {
+      const existingOrder = await Order.findOne({ 
+        'stripe_payment.payment_intent_id': payment_intent_id 
+      });
+      if (existingOrder) {
+        console.log(`✅ Order ${existingOrder._id} already exists for payment ${payment_intent_id} (webhook created it)`);
+        return res.status(200).json({
+          message: 'Order already created',
+          order: existingOrder._id,
+          created_by: 'webhook'
+        });
+      }
+    }
+
     // Validation: Required fields
     const requiredFields = [
       { name: 'equipmentId', value: equipmentId },
