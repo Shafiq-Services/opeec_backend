@@ -74,7 +74,7 @@ const { sendNotificationToUser } = require('./notification');
 const User = require('../models/user');
 const { triggerAutomaticPayout } = require('./stripeConnectController');
 const { getStripeInstance } = require('../utils/stripeIdentity');
-const { processOrderCancellation, processOrderCompletion } = require('./settlementController');
+const { processOrderCancellation, processOrderCompletion, processLateReturnSettlement } = require('./settlementController');
 const { processRefund } = require('./paymentController');
 
 // Helper function to create subcategory lookup pipeline for embedded subcategories
@@ -135,12 +135,13 @@ function createSubcategoryLookupPipeline() {
   ];
 }
 
-const timeOffsetHours = parseFloat(process.env.TIME_OFFSET_HOURS) || 3;
-const intervalMinutes = parseInt(process.env.INTERVAL_MINUTES) || 1;
+// Cron timing (see about-project or ORDER_SYSTEM_TERMS_AND_AUDIT for platform rules)
+const timeOffsetHours = parseFloat(process.env.TIME_OFFSET_HOURS) || 3;       // Delivered → Ongoing after this many hours
+const returnedAutoFinishHours = parseFloat(process.env.RETURNED_AUTO_FINISH_HOURS) ?? 24; // Returned → Finished (0 = manual only)
+const intervalMinutes = parseInt(process.env.INTERVAL_MINUTES) || 1;         // How often cron runs (minutes)
 const DAILY_PENALTY = parseFloat(process.env.DAILY_PENALTY) || 50; // Default penalty if not set
 
-console.log(`⏳ Monitoring every ${intervalMinutes} minute(s)`);
-console.log(`⏳ Status changes after ${timeOffsetHours * 60} minutes`);
+console.log(`⏳ Order cron: every ${intervalMinutes} min; Delivered→Ongoing after ${timeOffsetHours}h; Returned→Finished after ${returnedAutoFinishHours}h (0=manual)`);
 
 // Add Order
 exports.addOrder = async (req, res) => {
@@ -533,13 +534,10 @@ exports.getCurrentRentals = async (req, res) => {
     ]);
 
     const formattedOrders = orders.map(order => {
-      let statusChangeTime = "";
-
-      if (order.rental_status === "Delivered" && isSeller === "false") {
-        statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
-      } else if (order.rental_status === "Returned" && isSeller === "true") {
-        statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
-      }
+      // ISO so app can add time_offset_hours/returned_auto_finish_hours and show in user timezone
+      const statusChangeIso = order.status_change_timestamp
+        ? new Date(order.status_change_timestamp).toISOString()
+        : "";
 
       // Remove sub_categories from category if it exists
       const cleanedOrder = { ...order };
@@ -556,7 +554,7 @@ exports.getCurrentRentals = async (req, res) => {
         },
         penalty_apply: order.penalty_apply ?? false,
         penalty_amount: order.penalty_amount ?? 0,
-        status_change_timestamp: statusChangeTime,
+        status_change_timestamp: statusChangeIso,
         rental_days: order.rental_days ?? 0,
         // Use stored pricing data directly (no more calculations needed)
         platform_fee: order.platform_fee,
@@ -572,6 +570,8 @@ exports.getCurrentRentals = async (req, res) => {
       message: "Current rentals fetched successfully.",
       success: true,
       orders: formattedOrders,
+      time_offset_hours: timeOffsetHours,
+      returned_auto_finish_hours: returnedAutoFinishHours,
     });
   } catch (error) {
     return res.status(500).json({
@@ -621,13 +621,10 @@ exports.getHistoryRentals = async (req, res) => {
     ]);
 
     const formattedOrders = orders.map(order => {
-      let statusChangeTime = "";
-
-      if (order.rental_status === "Delivered" && isSeller === "false") {
-        statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
-      } else if (order.rental_status === "Returned" && isSeller === "true") {
-        statusChangeTime = moment.utc(order.status_change_timestamp).format("HH:mm");
-      }
+      // ISO so app can add time_offset_hours/returned_auto_finish_hours and show in user timezone
+      const statusChangeIso = order.status_change_timestamp
+        ? new Date(order.status_change_timestamp).toISOString()
+        : "";
 
       // Remove sub_categories from category if it exists
       const cleanedOrder = { ...order };
@@ -644,7 +641,7 @@ exports.getHistoryRentals = async (req, res) => {
         },
         penalty_apply: order.penalty_apply ?? false,
         penalty_amount: order.penalty_amount ?? 0,
-        status_change_timestamp: statusChangeTime,
+        status_change_timestamp: statusChangeIso,
         rental_days: order.rental_days ?? 0,
         // Use stored pricing data directly (no more calculations needed)
         platform_fee: order.platform_fee,
@@ -913,7 +910,7 @@ exports.returnOrder = async (req, res) => {
       return res.status(400).json({ message: "At least one image is required." });
     }
 
-    const order = await Order.findById(order_id);
+    const order = await Order.findById(order_id).populate('equipmentId');
     if (!order) return res.status(404).json({ message: "Order not found." });
     if (order.rental_status !== "Ongoing") return res.status(400).json({ message: "Only 'Ongoing' orders can be returned." });
     if (String(order.userId) !== userId) return res.status(403).json({ message: "Only the user can return the order." });
@@ -923,6 +920,19 @@ exports.returnOrder = async (req, res) => {
     order.updated_at = new Date();
     order.status_change_timestamp = new Date();
     await order.save();
+
+    // Notify seller (owner) that buyer has returned the equipment
+    const ownerId = order.equipmentId?.ownerId?.toString?.() || order.equipmentId?.ownerId;
+    const equipmentName = order.equipmentId?.name || 'Equipment';
+    if (ownerId) {
+      sendNotificationToUser({
+        receiverId: ownerId,
+        senderId: userId,
+        title: 'Equipment returned',
+        body: `The renter has marked "${equipmentName}" as returned. You can now confirm and finish the order.`,
+        details: { orderId: order._id.toString(), type: 'equipment_returned_by_buyer' },
+      }).catch((err) => console.error('Returned-by-buyer notification (to seller):', err));
+    }
 
     return res.status(200).json({ message: "Order status updated to 'Returned'.", status: true });
   } catch (err) {
@@ -954,6 +964,19 @@ exports.finishOrder = async (req, res) => {
     equipment.equipment_status = "Active";
     await equipment.save();
     await order.save();
+
+    // Notify buyer (renter) that seller has approved/finished the order
+    const buyerId = order.userId?.toString?.() || order.userId;
+    const equipmentName = equipment?.name || order.equipmentId?.name || 'Equipment';
+    if (buyerId) {
+      sendNotificationToUser({
+        receiverId: buyerId,
+        senderId: sellerId,
+        title: 'Rental completed',
+        body: `The owner has confirmed return of "${equipmentName}". Your rental is complete.${order.deposit_amount > 0 ? ' Your security deposit will be refunded.' : ''}`,
+        details: { orderId: order._id.toString(), type: 'order_finished_by_seller' },
+      }).catch((err) => console.error('Finished-by-seller notification (to buyer):', err));
+    }
 
     // Process settlement for finished order (owner gets rental_fee only; deposit is not paid to owner)
     try {
@@ -1270,6 +1293,7 @@ const processOrders = async () => {
         continue;
       }
 
+      // All auto-transitions use status_change_timestamp (when status was set), NOT createdAt
       const futureTimestamp = getFutureTime(order.status_change_timestamp, timeOffsetHours * 60);
 
       // Debug logging for timing
@@ -1286,6 +1310,24 @@ const processOrders = async () => {
         });
         const hoursWaited = ((now - order.status_change_timestamp) / (1000 * 60 * 60)).toFixed(1);
         console.log(`🚀 Order ${order._id} changed from Delivered → Ongoing (waited ${hoursWaited}h)`);
+
+        // Notify buyer that rental period has started (same idea as manual Collect)
+        try {
+          const equipment = await Equipment.findById(order.equipmentId);
+          const buyerId = order.userId?.toString?.() || order.userId;
+          const equipmentName = equipment?.name || 'Equipment';
+          if (buyerId) {
+            sendNotificationToUser({
+              receiverId: buyerId,
+              senderId: equipment?.ownerId?.toString?.() || null,
+              title: 'Rental started',
+              body: `Your rental of "${equipmentName}" has started. Return it by the end date to avoid late fees.`,
+              details: { orderId: order._id.toString(), type: 'rental_started_auto' },
+            }).catch((err) => console.error('Delivered→Ongoing notification (to buyer):', err));
+          }
+        } catch (notifErr) {
+          console.error(`❌ Notification error for order ${order._id} Delivered→Ongoing:`, notifErr.message);
+        }
       }
 
       // Late detection using renter's timezone (end of last day = 23:59:59 in renter's timezone)
@@ -1349,14 +1391,16 @@ const processOrders = async () => {
         await applyLatePenalty(order);
       }
 
-      // Debug logging for Returned orders
-      if (order.rental_status === 'Returned') {
+      // Auto-finish Returned → Finished after returnedAutoFinishHours
+      if (order.rental_status === 'Returned' && returnedAutoFinishHours > 0) {
         const hoursElapsed = ((now - order.status_change_timestamp) / (1000 * 60 * 60)).toFixed(1);
-        const hoursRequired = timeOffsetHours;
-        console.log(`⏱️  Order ${order._id} Returned: ${hoursElapsed}h elapsed, needs ${hoursRequired}h`);
+        console.log(`⏱️  Order ${order._id} Returned: ${hoursElapsed}h elapsed, auto-finish after ${returnedAutoFinishHours}h`);
       }
 
-      if (order.rental_status === 'Returned' && now >= futureTimestamp) {
+      const returnedFinishTimestamp = returnedAutoFinishHours > 0
+        ? getFutureTime(order.status_change_timestamp, returnedAutoFinishHours * 60)
+        : null;
+      if (order.rental_status === 'Returned' && returnedFinishTimestamp && now >= returnedFinishTimestamp) {
         await updateOrder(order, {
           rental_status: 'Finished',
           status_change_timestamp: new Date()
@@ -1365,8 +1409,9 @@ const processOrders = async () => {
         console.log(`🚀 Order ${order._id} changed from Returned → Finished (waited ${hoursWaited}h)`);
 
         // Set equipment back to Active so it can be rented again
+        let equipment = null;
         try {
-          const equipment = await Equipment.findById(order.equipmentId);
+          equipment = await Equipment.findById(order.equipmentId);
           if (equipment) {
             equipment.equipment_status = 'Active';
             await equipment.save();
@@ -1376,16 +1421,51 @@ const processOrders = async () => {
           console.error(`❌ Error setting equipment Active for order ${order._id}:`, equipErr.message);
         }
 
-        // Process settlement for automatically finished order
-        try {
-          await processOrderCompletion(order._id);
-          console.log(`💰 Auto-completion settlement processed for order: ${order._id}`);
-        } catch (settlementError) {
-          console.error(`❌ Auto-settlement error for order ${order._id}:`, settlementError);
-          // Continue with order processing even if settlement fails
+        // Notify buyer (same as manual finish) that rental is complete
+        const buyerId = order.userId?.toString?.() || order.userId;
+        const ownerId = equipment?.ownerId?.toString?.() || null;
+        const equipmentName = equipment?.name || 'Equipment';
+        if (buyerId) {
+          sendNotificationToUser({
+            receiverId: buyerId,
+            senderId: ownerId,
+            title: 'Rental completed',
+            body: `Your rental of "${equipmentName}" has been completed.${order.deposit_amount > 0 ? ' Your security deposit will be refunded.' : ''}`,
+            details: { orderId: order._id.toString(), type: 'order_finished_by_seller', autoFinished: true },
+          }).catch((err) => console.error('Auto-finish notification (to buyer):', err));
         }
 
-        // Trigger automatic Stripe payout to seller
+        // Process settlement (same as manual: Late+penalty vs normal completion)
+        try {
+          if (order.penalty_amount > 0) {
+            await processLateReturnSettlement(order._id, order.penalty_amount);
+            console.log(`💰 Auto late-return settlement processed for order: ${order._id}`);
+          } else {
+            await processOrderCompletion(order._id);
+            console.log(`💰 Auto-completion settlement processed for order: ${order._id}`);
+          }
+        } catch (settlementError) {
+          console.error(`❌ Auto-settlement error for order ${order._id}:`, settlementError);
+        }
+
+        // Refund security deposit to renter (same as manual finish)
+        const depositAmount = order.deposit_amount || 0;
+        const usedDeposit = !order.security_option?.insurance && depositAmount > 0;
+        if (usedDeposit && order.stripe_payment?.payment_intent_id && order.stripe_payment?.payment_status === 'succeeded') {
+          try {
+            await processRefund(order._id, depositAmount, 'requested_by_customer');
+            console.log(`✅ Security deposit refunded to renter (auto-finish): $${depositAmount} for order ${order._id}`);
+          } catch (refundErr) {
+            console.error(`❌ Deposit refund error for order ${order._id}:`, refundErr);
+            await createAdminNotification(
+              'refund_failed',
+              `Security deposit refund failed for auto-finished order ${order._id} - requires manual processing`,
+              { orderId: order._id, data: { depositAmount, error: refundErr.message } }
+            );
+          }
+        }
+
+        // Trigger automatic Stripe payout to seller (same as manual finish)
         try {
           const payoutResult = await triggerAutomaticPayout(order._id);
           if (payoutResult.success) {

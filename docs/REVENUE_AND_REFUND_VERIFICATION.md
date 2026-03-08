@@ -28,3 +28,35 @@ This document confirms how platform revenue and security deposit refunds work.
    - This creates a Stripe refund on the original payment intent, returning the deposit to the renter’s payment method.
 
 4. **Code reference:** `controllers/orders.js` around lines 977–994: "Refund security deposit to renter when equipment is marked as received (only for deposit option, not insurance)."
+
+## Late Return Penalty – Finance Flow
+
+When an order becomes **Late** (equipment not returned by end date), the following applies:
+
+### Who Pays the Penalty
+- **The customer (renter)** pays the late penalty.
+- The penalty is charged to the customer's saved payment method via `chargeLatePenalty` in `paymentController.js`.
+- The charged amount goes to the **platform's Stripe account**.
+
+### Who Receives What
+
+| Party | Amount |
+|-------|--------|
+| **Platform** | Keeps platform_fee, tax, insurance from the original payment. Transfers penalty to owner when `penalty_apply` is true. |
+| **Owner (seller)** | Receives `rental_fee + penalty_amount` when `penalty_apply` is true. Receives `rental_fee` only when owner waives penalty (`penalty_apply` false). |
+
+### Owner Can Enable/Disable Penalty
+- **penalty_apply = true** (default): Owner receives the penalty as compensation. Transfer = rental_fee + penalty.
+- **penalty_apply = false**: Owner waives the penalty. Transfer = rental_fee only. Platform keeps the penalty (customer was still charged).
+
+### Example
+- Rental fee: $2.00, Penalty: $50.00, penalty_apply: true
+- Customer is charged $50 → Platform receives $50
+- Owner transfer: $2 + $50 = **$52** (owner receives penalty as compensation)
+- Platform keeps: original platform_fee, tax, insurance
+
+### Code References
+- `controllers/orders.js`: `applyLatePenalty` – charges customer via `chargeLatePenalty`
+- `controllers/orders.js`: `togglePenalty` – owner can enable/disable penalty before finishing
+- `controllers/stripeConnectController.js`: `triggerAutomaticPayout` – transfer = rental_fee + (penalty_apply ? penalty_amount : 0)
+- Flutter: Owner UI shows rental_fee + penalty when penalty_apply; Bill dialog has "Apply late fee" toggle

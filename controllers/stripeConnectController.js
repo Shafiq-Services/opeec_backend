@@ -536,8 +536,11 @@ exports.triggerAutomaticPayout = async (orderId) => {
       };
     }
 
-    // Calculate transfer amount (rental_fee - platform_fee - any penalties)
-    const transferAmount = order.rental_fee - (order.penalty_amount || 0);
+    // Calculate transfer amount: rental_fee + penalty (when owner has penalty enabled)
+    // Penalty is paid by customer; when penalty_apply=true, owner receives it as compensation
+    const penaltyAmount = order.penalty_amount || 0;
+    const includePenalty = order.penalty_apply && penaltyAmount > 0;
+    const transferAmount = order.rental_fee + (includePenalty ? penaltyAmount : 0);
 
     if (transferAmount <= 0) {
       console.log(`⚠️ Transfer amount is zero or negative for order ${orderId}, skipping transfer`);
@@ -548,11 +551,31 @@ exports.triggerAutomaticPayout = async (orderId) => {
       };
     }
 
-    // Create Stripe Transfer
+    // Create Stripe Transfer (uses platform's *available* balance only; pending funds cannot be transferred)
     const stripe = await getStripeInstance();
+    const transferAmountCents = Math.round(transferAmount * 100);
+    const transferCurrency = 'usd';
+
+    // Pre-check: log available balance so "insufficient funds" is easier to debug
+    try {
+      const balance = await stripe.balance.retrieve();
+      const availableForCurrency = (balance.available || []).find((b) => (b.currency || '').toLowerCase() === transferCurrency);
+      const availableCents = availableForCurrency ? availableForCurrency.amount : 0;
+      if (availableCents < transferAmountCents) {
+        console.warn(
+          `⚠️ Stripe available balance (${transferCurrency}) is ${(availableCents / 100).toFixed(2)} ` +
+          `but transfer requires ${(transferAmountCents / 100).toFixed(2)}. ` +
+          `Charges are often "pending" until their "Available on" date in Dashboard → Transactions. ` +
+          `Test mode: use card 4000000000000077 for immediately available funds, or wait until the charge becomes available.`
+        );
+      }
+    } catch (balanceErr) {
+      console.warn('Could not retrieve Stripe balance (proceeding with transfer):', balanceErr.message);
+    }
+
     const transfer = await stripe.transfers.create({
-      amount: Math.round(transferAmount * 100), // Convert to cents
-      currency: 'usd',
+      amount: transferAmountCents,
+      currency: transferCurrency,
       destination: owner.stripe_connect.account_id,
       transfer_group: `order_${orderId}`,
       description: `Rental payout for order ${orderId} - ${order.equipmentId.title}`,
@@ -631,13 +654,21 @@ exports.triggerAutomaticPayout = async (orderId) => {
       'stripe_payout.transfer_triggered_at': new Date()
     });
 
-    // Send admin notification about failure
+    // Clearer message when Stripe says "insufficient funds" (usually pending vs available balance)
+    const isInsufficientFunds = (error.code === 'balance_insufficient' || (error.message || '').toLowerCase().includes('insufficient'));
+    const failureMessage = isInsufficientFunds
+      ? `Automatic payout failed for order ${orderId}: insufficient *available* balance. ` +
+        `The rental charge is often "pending" until its "Available on" date in Stripe Dashboard → Transactions. ` +
+        `Transfers use only available balance, not pending. Test mode: use card 4000000000000077 for immediate available funds, or wait until the charge's available date.`
+      : `Automatic payout failed for order ${orderId}: ${error.message}`;
+
     await createAdminNotification({
       type: 'STRIPE_TRANSFER_FAILED',
-      message: `Automatic payout failed for order ${orderId}: ${error.message}`,
+      message: failureMessage,
       metadata: {
         order_id: orderId.toString(),
-        error: error.message
+        error: error.message,
+        code: error.code
       }
     });
 

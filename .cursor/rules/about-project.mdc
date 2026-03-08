@@ -420,6 +420,7 @@ Triggered for all admin events with professional templates:
 - `STRIPE_CONNECT_WEBHOOK_SECRET` - **Required** for `/webhooks/stripe-connect` and Identity webhook fallback
 - `STRIPE_IDENTITY_WEBHOOK_SECRET` - Optional (falls back to CONNECT secret) for `/user/verification/webhook`
 - `STRIPE_PLATFORM_COUNTRY` - Optional, defaults to 'CA' for cross-border payment detection
+- **Order cron:** `TIME_OFFSET_HOURS` (default 3) Delivered→Ongoing delay; `RETURNED_AUTO_FINISH_HOURS` (default 24, 0=manual only) Returned→Finished; `INTERVAL_MINUTES` (default 1) cron frequency
 
 ### **Default Ports:**
 - Server: 5001

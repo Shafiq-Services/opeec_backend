@@ -154,7 +154,9 @@
 
 ### 5.1 Timing (configurable via env)
 
-- **TIME_OFFSET_HOURS** (e.g. 3): Wait (in hours) before: Delivered → Ongoing (auto), Returned → Finished (auto), and before buyer can Collect / seller can Finish.
+- **TIME_OFFSET_HOURS** (default 3): Hours after seller marks **Delivered** before cron auto-moves to **Ongoing** if buyer has not tapped Collect. Recommended: **3–6** (give buyer time to collect and open app).
+- **RETURNED_AUTO_FINISH_HOURS** (default 24): Hours after buyer marks **Returned** before cron auto-moves to **Finished** (notifications, settlement, deposit refund, payout run same as manual). Set **0** to disable auto-finish (seller must always tap Finish). Recommended: **24** or **0**.
+- **INTERVAL_MINUTES** (default 1): How often the order-status cron runs (minutes). Recommended: **5** (balance of responsiveness and server load); **1** for fastest status updates.
 - **DAILY_PENALTY** (e.g. 50): Amount per day (or per period) for late return; applied automatically when order becomes Late.
 
 ### 5.2 Fees and money flow

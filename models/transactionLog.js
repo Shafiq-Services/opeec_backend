@@ -16,6 +16,7 @@ const transactionLogSchema = new mongoose.Schema({
     enum: [
       'ORDER_EARNING',           // Positive: Seller earnings from completed rental
       'PENALTY',                 // Negative: Penalty deducted from seller
+      'PENALTY_RECEIVED',        // Positive: Late penalty received from customer (goes to owner)
       'REFUND',                  // Negative: Refund processed (seller loses money)
       'DEPOSIT_REFUND',          // Negative: Deposit refund to renter
       'SELLER_PAYOUT',           // Negative: Money paid out to seller

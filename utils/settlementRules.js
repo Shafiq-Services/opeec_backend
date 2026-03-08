@@ -198,9 +198,10 @@ function determineSettlement(order, event) {
         };
         
       case 'late_return_with_penalty':
-        // Late return with penalty
+        // Late return with penalty - owner receives rental_fee + penalty (when penalty_apply)
         const lateReturnEarnings = calculateSellerEarnings(order);
-        const penalty = calculatePenaltySettlement(order);
+        const penaltyAmount = order.penalty_amount || 0;
+        const penaltyApply = order.penalty_apply !== false;
         
         const transactions = [{
           type: 'ORDER_EARNING',
@@ -209,20 +210,21 @@ function determineSettlement(order, event) {
           metadata: { order_breakdown: lateReturnEarnings.breakdown }
         }];
         
-        // Add penalty transaction if seller is responsible for part of it
-        if (penalty.seller_penalty > 0) {
+        // When penalty_apply: owner receives penalty paid by customer as compensation
+        if (penaltyApply && penaltyAmount > 0) {
           transactions.push({
-            type: 'PENALTY',
-            amount: -penalty.seller_penalty,
-            description: 'Late return penalty (exceeds deposit)',
-            metadata: { penalty_breakdown: penalty.breakdown }
+            type: 'PENALTY_RECEIVED',
+            amount: penaltyAmount,
+            description: 'Late return penalty received from customer',
+            metadata: { penalty_amount: penaltyAmount }
           });
         }
         
+        const totalSellerEarning = lateReturnEarnings.seller_earning + (penaltyApply && penaltyAmount > 0 ? penaltyAmount : 0);
         return {
           type: 'late_completion',
-          seller_earning: lateReturnEarnings.seller_earning,
-          seller_penalty: penalty.seller_penalty,
+          seller_earning: totalSellerEarning,
+          seller_penalty: 0,
           transactions
         };
         
