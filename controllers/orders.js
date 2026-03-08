@@ -163,7 +163,8 @@ exports.addOrder = async (req, res) => {
       subtotal,
       is_insurance,
       payment_intent_id,  // New field for Stripe payment
-      renter_timezone     // Renter's timezone (IANA format, e.g. "America/Vancouver")
+      renter_timezone,    // Renter's timezone (IANA format, e.g. "America/Vancouver")
+      verification_fee   // Optional: included in first rental when user hasn't paid verification fee
     } = req.body;
 
     // DUPLICATE CHECK: Prevent race condition with webhook
@@ -373,11 +374,16 @@ exports.addOrder = async (req, res) => {
         deposit_amount: Number(deposit_amount) || 0,
       };
       const feesToValidate = ['platform_fee', 'tax_amount', 'total_amount', 'subtotal', 'insurance_amount', 'deposit_amount'];
-      
+      const verificationFeeNum = verification_fee != null ? Number(verification_fee) : 0;
+
       for (const fee of feesToValidate) {
-        const expected = expectedFees[fee];
-        const provided = providedFees[fee];
-        
+        let expected = expectedFees[fee];
+        let provided = providedFees[fee];
+        // total_amount may include verification_fee (first rental) - compare rental-only amount
+        if (fee === 'total_amount' && verificationFeeNum > 0) {
+          provided = provided - verificationFeeNum;
+        }
+
         // Round both values to 2 decimal places for comparison to avoid floating-point precision issues
         const expectedRounded = Math.round(expected * 100) / 100;
         const providedRounded = Math.round(provided * 100) / 100;
@@ -436,6 +442,15 @@ exports.addOrder = async (req, res) => {
     }
 
     const savedOrder = await newOrder.save();
+
+    // Mark verification_fee_paid when first rental included verification fee
+    const verificationFeeIncluded = verification_fee != null && Number(verification_fee) > 0;
+    if (verificationFeeIncluded) {
+      await User.findByIdAndUpdate(userId, {
+        'stripe_verification.verification_fee_paid': true
+      });
+      console.log(`✅ Marked verification_fee_paid=true for user ${userId} (first rental)`);
+    }
 
     // Get user and equipment details for notification
     const userDetails = await User.findById(userId).select('name email');

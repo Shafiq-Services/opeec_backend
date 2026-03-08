@@ -30,6 +30,7 @@ exports.createPaymentIntent = async (req, res) => {
       platform_fee,
       rental_fee,
       owner_id,
+      verification_fee: verificationFeeIncluded,
       // Additional order details for webhook fallback
       start_date,
       end_date,
@@ -112,8 +113,14 @@ exports.createPaymentIntent = async (req, res) => {
     }
 
     // Convert amounts to cents (Stripe uses smallest currency unit)
+    // total_amount from frontend may already include verification_fee when user hasn't paid it
     const amountInCents = Math.round(total_amount * 100);
     const applicationFeeInCents = Math.round(platform_fee * 100);
+
+    // Store verification_fee in metadata when included (for marking fee_paid after order creation)
+    const verificationFeeToStore = (verificationFeeIncluded != null && Number(verificationFeeIncluded) > 0)
+      ? String(Number(verificationFeeIncluded).toFixed(2))
+      : '';
 
     // Check if owner's account is fully onboarded (for logging purposes)
     const isOwnerFullyOnboarded = owner.stripe_connect.payouts_enabled && 
@@ -162,7 +169,8 @@ exports.createPaymentIntent = async (req, res) => {
         subtotal: subtotal?.toString() || '0',
         total_amount: total_amount.toString(),
         is_insurance: is_insurance ? 'true' : 'false',
-        renter_timezone: renter_timezone || ''
+        renter_timezone: renter_timezone || '',
+        verification_fee: verificationFeeToStore
       },
       // Enable automatic payment methods (card, etc.)
       automatic_payment_methods: {
@@ -656,6 +664,15 @@ async function createOrderFromPaymentIntent(paymentIntent) {
       `Order ${newOrder._id} created via webhook fallback (Flutter call may have failed)`,
       { data: { orderId: newOrder._id.toString(), payment_intent_id: paymentIntent.id } }
     );
+
+    // Mark verification_fee_paid when payment included verification fee (first rental)
+    const verificationFeeInMeta = meta.verification_fee && parseFloat(meta.verification_fee) > 0;
+    if (verificationFeeInMeta) {
+      await User.findByIdAndUpdate(meta.user_id, {
+        'stripe_verification.verification_fee_paid': true
+      });
+      console.log(`✅ Marked verification_fee_paid=true for user ${meta.user_id} (first rental)`);
+    }
 
   } catch (error) {
     console.error(`❌ Failed to create order from webhook:`, error);
