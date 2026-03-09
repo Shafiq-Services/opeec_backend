@@ -927,7 +927,7 @@ exports.returnOrder = async (req, res) => {
 
     const order = await Order.findById(order_id).populate('equipmentId');
     if (!order) return res.status(404).json({ message: "Order not found." });
-    if (order.rental_status !== "Ongoing") return res.status(400).json({ message: "Only 'Ongoing' orders can be returned." });
+    if (!["Ongoing", "Late"].includes(order.rental_status)) return res.status(400).json({ message: "Only 'Ongoing' or 'Late' orders can be returned." });
     if (String(order.userId) !== userId) return res.status(403).json({ message: "Only the user can return the order." });
 
     order.rental_status = "Returned";

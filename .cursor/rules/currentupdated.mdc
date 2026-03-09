@@ -142,4 +142,19 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [Return Order: Allow Late Status - Mar 9, 2026]
+**Type:** Bug Fix  
+**Description:** Fixed "Only 'Ongoing' orders can be returned" error when returning overdue equipment.
+
+**Root Cause:**
+- Cron job auto-transitions Ongoing → Late when past end_date (user still has equipment)
+- `returnOrder` API only accepted `rental_status === "Ongoing"`
+- Late orders (overdue) were blocked from being returned
+
+**Backend Changes (`orders.js`):**
+- `returnOrder`: Now accepts both "Ongoing" and "Late" statuses
+- Updated error message to "Only 'Ongoing' or 'Late' orders can be returned."
+
+---
+
 *This log will be updated after each prompt with new changes...*
