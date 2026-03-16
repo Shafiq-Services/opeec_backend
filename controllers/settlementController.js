@@ -19,7 +19,7 @@ async function processOrderCompletion(orderId) {
 
     // Get order with equipment information to find the seller
     const order = await Order.findById(orderId)
-      .populate('equipmentId', 'ownerId title')
+      .populate('equipmentId', 'ownerId name')
       .lean();
 
     if (!order) {
@@ -52,7 +52,7 @@ async function processOrderCompletion(orderId) {
         orderId: order._id,
         metadata: {
           order_breakdown: transactionData.metadata?.order_breakdown || {},
-          equipment_title: order.equipmentId.title,
+          equipment_title: order.equipmentId?.name || order.equipmentId?.title,
           order_dates: {
             start_date: order.rental_schedule.start_date,
             end_date: order.rental_schedule.end_date
@@ -93,7 +93,7 @@ async function processOrderCancellation(orderId, isBeforeCutoff = true) {
     console.log(`🚫 Processing order cancellation settlement for order: ${orderId}, before cutoff: ${isBeforeCutoff}`);
 
     const order = await Order.findById(orderId)
-      .populate('equipmentId', 'ownerId title')
+      .populate('equipmentId', 'ownerId name')
       .lean();
 
     if (!order) {
@@ -124,7 +124,7 @@ async function processOrderCancellation(orderId, isBeforeCutoff = true) {
         orderId: order._id,
         metadata: {
           order_breakdown: transactionData.metadata?.order_breakdown || {},
-          equipment_title: order.equipmentId.title,
+          equipment_title: order.equipmentId?.name || order.equipmentId?.title,
           cancellation_timing: isBeforeCutoff ? 'before_cutoff' : 'after_cutoff',
           order_dates: {
             start_date: order.rental_schedule.start_date,
@@ -167,7 +167,7 @@ async function processLateReturnSettlement(orderId, penaltyAmount = null) {
     console.log(`⏰ Processing late return settlement for order: ${orderId}, penalty: $${penaltyAmount || 'from order'}`);
 
     const order = await Order.findById(orderId)
-      .populate('equipmentId', 'ownerId title')
+      .populate('equipmentId', 'ownerId name')
       .lean();
 
     if (!order) {
@@ -204,7 +204,7 @@ async function processLateReturnSettlement(orderId, penaltyAmount = null) {
         metadata: {
           order_breakdown: transactionData.metadata?.order_breakdown || {},
           penalty_breakdown: transactionData.metadata?.penalty_breakdown || {},
-          equipment_title: order.equipmentId.title,
+          equipment_title: order.equipmentId?.name || order.equipmentId?.title,
           penalty_amount: finalPenaltyAmount,
           order_dates: {
             start_date: order.rental_schedule.start_date,
@@ -246,7 +246,7 @@ async function processDepositRefund(orderId) {
     console.log(`🔄 Processing deposit refund for order: ${orderId}`);
 
     const order = await Order.findById(orderId)
-      .populate('equipmentId', 'ownerId title')
+      .populate('equipmentId', 'ownerId name')
       .lean();
 
     if (!order) {
@@ -269,7 +269,7 @@ async function processDepositRefund(orderId) {
       description: 'Deposit refunded to renter',
       orderId: order._id,
       metadata: {
-        equipment_title: order.equipmentId.title,
+        equipment_title: order.equipmentId?.name || order.equipmentId?.title,
         deposit_amount: depositAmount,
         refund_reason: 'Normal deposit return'
       }

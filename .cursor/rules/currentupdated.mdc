@@ -157,4 +157,27 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [Stripe Payout: source_transaction Fix - Mar 16, 2026]
+**Type:** Critical Bug Fix  
+**Description:** Fixed balance_insufficient when transferring to owner (no money transferred to owner).
+
+**Root Cause:**
+- Customer funds are "pending" 2-7 days after payment
+- Transfer without source_transaction uses platform's *available* balance (often $0)
+- Stripe returns balance_insufficient
+
+**Solution (Stripe docs):** Pass `source_transaction` (Charge ID) to link transfer to the specific payment. Transfer request succeeds; funds move when charge clears.
+
+**Backend Changes (`stripeConnectController.js`):**
+- `triggerAutomaticPayout`: Retrieves PaymentIntent → latest_charge, adds source_transaction to transfer
+- Fixed description: use equipment `name` (not title)
+- Populate equipmentId with `name` for description
+
+**New Script (`scripts/e2eOrderFlowTest.js`):**
+- Full E2E order flow: Booked → Delivered → Ongoing → Returned → Finished
+- Uses 2 verified users (seller + buyer), Stripe test mode, date manipulation
+- Verifies financial calculations (buyer, seller, platform)
+
+---
+
 *This log will be updated after each prompt with new changes...*

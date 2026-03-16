@@ -503,7 +503,7 @@ exports.triggerAutomaticPayout = async (orderId) => {
 
     // Get order with equipment and owner information
     const order = await Order.findById(orderId)
-      .populate('equipmentId', 'ownerId title')
+      .populate('equipmentId', 'ownerId name')
       .lean();
 
     if (!order) {
@@ -551,34 +551,51 @@ exports.triggerAutomaticPayout = async (orderId) => {
       };
     }
 
-    // Create Stripe Transfer (uses platform's *available* balance only; pending funds cannot be transferred)
+    // Create Stripe Transfer
+    // Use source_transaction (Charge ID) to link transfer to the original payment - avoids balance_insufficient
+    // when funds are still "pending" (2-7 days). Without it, Stripe uses available balance only.
     const stripe = await getStripeInstance();
     const transferAmountCents = Math.round(transferAmount * 100);
     const transferCurrency = 'usd';
 
-    // Pre-check: log available balance so "insufficient funds" is easier to debug
-    try {
-      const balance = await stripe.balance.retrieve();
-      const availableForCurrency = (balance.available || []).find((b) => (b.currency || '').toLowerCase() === transferCurrency);
-      const availableCents = availableForCurrency ? availableForCurrency.amount : 0;
-      if (availableCents < transferAmountCents) {
-        console.warn(
-          `⚠️ Stripe available balance (${transferCurrency}) is ${(availableCents / 100).toFixed(2)} ` +
-          `but transfer requires ${(transferAmountCents / 100).toFixed(2)}. ` +
-          `Charges are often "pending" until their "Available on" date in Dashboard → Transactions. ` +
-          `Test mode: use card 4000000000000077 for immediately available funds, or wait until the charge becomes available.`
-        );
+    let sourceTransaction = null;
+    const paymentIntentId = order.stripe_payment?.payment_intent_id;
+    if (paymentIntentId) {
+      try {
+        const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        sourceTransaction = intent.latest_charge;
+        if (sourceTransaction) {
+          console.log(`   Linking transfer to charge: ${sourceTransaction}`);
+        }
+      } catch (piErr) {
+        console.warn('Could not retrieve PaymentIntent for source_transaction:', piErr.message);
       }
-    } catch (balanceErr) {
-      console.warn('Could not retrieve Stripe balance (proceeding with transfer):', balanceErr.message);
     }
 
-    const transfer = await stripe.transfers.create({
+    // Pre-check: log available balance when not using source_transaction
+    if (!sourceTransaction) {
+      try {
+        const balance = await stripe.balance.retrieve();
+        const availableForCurrency = (balance.available || []).find((b) => (b.currency || '').toLowerCase() === transferCurrency);
+        const availableCents = availableForCurrency ? availableForCurrency.amount : 0;
+        if (availableCents < transferAmountCents) {
+          console.warn(
+            `⚠️ Stripe available balance (${transferCurrency}) is ${(availableCents / 100).toFixed(2)} ` +
+            `but transfer requires ${(transferAmountCents / 100).toFixed(2)}. ` +
+            `No source_transaction - order may be missing payment_intent_id.`
+          );
+        }
+      } catch (balanceErr) {
+        console.warn('Could not retrieve Stripe balance (proceeding with transfer):', balanceErr.message);
+      }
+    }
+
+    const transferParams = {
       amount: transferAmountCents,
       currency: transferCurrency,
       destination: owner.stripe_connect.account_id,
       transfer_group: `order_${orderId}`,
-      description: `Rental payout for order ${orderId} - ${order.equipmentId.title}`,
+      description: `Rental payout for order ${orderId} - ${order.equipmentId?.name || order.equipmentId?.title || 'Equipment'}`,
       metadata: {
         order_id: orderId.toString(),
         equipment_id: order.equipmentId._id.toString(),
@@ -588,7 +605,12 @@ exports.triggerAutomaticPayout = async (orderId) => {
         penalty_amount: order.penalty_amount || 0,
         transfer_amount: transferAmount
       }
-    });
+    };
+    if (sourceTransaction) {
+      transferParams.source_transaction = sourceTransaction;
+    }
+
+    const transfer = await stripe.transfers.create(transferParams);
 
     console.log(`✅ Stripe transfer created: ${transfer.id} for $${transferAmount}`);
 
@@ -612,7 +634,7 @@ exports.triggerAutomaticPayout = async (orderId) => {
       metadata: {
         stripe_transfer_id: transfer.id,
         destination_account: owner.stripe_connect.account_id,
-        equipment_title: order.equipmentId.title,
+        equipment_title: order.equipmentId?.name || order.equipmentId?.title,
         rental_dates: {
           start_date: order.rental_schedule.start_date,
           end_date: order.rental_schedule.end_date
