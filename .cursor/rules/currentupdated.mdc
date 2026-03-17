@@ -180,4 +180,25 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [Owner Pays Stripe Fee + Min Platform Fee - Mar 2026]
+**Type:** Business Logic Change  
+**Description:** Owner (seller) now pays Stripe processing fee and platform fee (min $0.70). Customer pays same total; platform keeps intended income.
+
+**Formula:**
+- `transfer = rental_fee - stripe_fee - max(platform_fee, 0.70) + (penalty when penalty_apply)`
+- `stripe_fee = rental_fee × stripeFeePercentage + $0.30` (from admin panel)
+- `effective_platform_fee = max(platform_fee, 0.70)` — when calculated < $0.70, seller covers difference
+
+**Backend Changes (`stripeConnectController.js`):**
+- Added `PercentageSetting` for `stripeFeePercentage`
+- Deduct Stripe fee (admin % + $0.30 fixed) from owner payout
+- Deduct effective platform fee (min $0.70) from owner payout
+- Added `stripe_fee`, `effective_platform_fee` to transfer metadata for audit
+- Log breakdown: Rental, Stripe fee, Platform fee, Penalty → Transfer
+
+**Documentation:**
+- Updated `about-project.mdc` with new payout formula
+
+---
+
 *This log will be updated after each prompt with new changes...*

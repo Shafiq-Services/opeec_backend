@@ -2,6 +2,7 @@ const { getStripeInstance } = require('../utils/stripeIdentity');
 const User = require('../models/user');
 const Order = require('../models/orders');
 const Equipment = require('../models/equipment');
+const PercentageSetting = require('../models/percentageSettings');
 const { createTransaction } = require('../utils/walletService');
 const { createAdminNotification } = require('./adminNotificationController');
 
@@ -536,11 +537,24 @@ exports.triggerAutomaticPayout = async (orderId) => {
       };
     }
 
-    // Calculate transfer amount: rental_fee + penalty (when owner has penalty enabled)
+    // Get fee settings (Stripe % from admin panel; fixed $0.30 per Stripe Canada)
+    const settings = await PercentageSetting.findOne().sort({ createdAt: -1 });
+    const stripeFeePct = (settings?.stripeFeePercentage ?? 2.9) / 100;
+    const stripeFeeFixed = 0.30;
+
+    // Owner pays: Stripe fee + platform fee (min $0.70)
+    const rentalFee = Number(order.rental_fee) || 0;
+    const platformFee = Number(order.platform_fee) || 0;
+    const stripeFee = Math.round((rentalFee * stripeFeePct + stripeFeeFixed) * 100) / 100;
+    const effectivePlatformFee = Math.max(platformFee, 0.70);
+
     // Penalty is paid by customer; when penalty_apply=true, owner receives it as compensation
     const penaltyAmount = order.penalty_amount || 0;
     const includePenalty = order.penalty_apply && penaltyAmount > 0;
-    const transferAmount = order.rental_fee + (includePenalty ? penaltyAmount : 0);
+
+    const transferAmount = Math.max(0, Math.round((rentalFee - stripeFee - effectivePlatformFee + (includePenalty ? penaltyAmount : 0)) * 100) / 100);
+
+    console.log(`   Rental: $${rentalFee}, Stripe fee: $${stripeFee}, Platform fee: $${effectivePlatformFee}, Penalty: $${includePenalty ? penaltyAmount : 0} → Transfer: $${transferAmount}`);
 
     if (transferAmount <= 0) {
       console.log(`⚠️ Transfer amount is zero or negative for order ${orderId}, skipping transfer`);
@@ -602,6 +616,8 @@ exports.triggerAutomaticPayout = async (orderId) => {
         owner_id: ownerId.toString(),
         rental_fee: order.rental_fee,
         platform_fee: order.platform_fee,
+        stripe_fee: stripeFee,
+        effective_platform_fee: effectivePlatformFee,
         penalty_amount: order.penalty_amount || 0,
         transfer_amount: transferAmount
       }

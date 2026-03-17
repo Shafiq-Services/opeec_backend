@@ -247,7 +247,7 @@ Triggered for all admin events with professional templates:
 2. **Fund Holding:** Platform holds ALL funds until rental completes successfully
 3. **Cancellation Refunds:** Simple refund from platform account (no transfer reversal needed)
 4. **Late Penalties:** Automatic charges for overdue returns ($50/day default)
-5. **Owner Payouts:** Transfer to owner ONLY when order status = "Finished" (via `triggerAutomaticPayout`)
+5. **Owner Payouts:** Transfer to owner ONLY when order status = "Finished" (via `triggerAutomaticPayout`). Owner pays Stripe fee + platform fee (min $0.70). Formula: `transfer = rental_fee - stripe_fee - max(platform_fee, 0.70) + (penalty when penalty_apply)`. Stripe fee = `rental_fee × stripeFeePercentage + $0.30` (from admin panel).
 6. **Failed Payments:** Admin notifications for manual collection
 
 **Why Separate Charges (not Destination Charges):**
@@ -316,6 +316,12 @@ Triggered for all admin events with professional templates:
 ---
 
 ## 🚨 **RECENT MAJOR UPDATES:**
+
+### **Owner Pays Stripe Fee + Min Platform Fee (Mar 2026):**
+- **Owner Payout Deductions:** Owner pays Stripe processing fee + platform fee (min $0.70). Customer pays same total.
+- **Formula:** `transfer = rental_fee - stripe_fee - max(platform_fee, 0.70) + (penalty when penalty_apply)`
+- **Stripe fee:** `rental_fee × stripeFeePercentage + $0.30` (admin panel; default 2.9%)
+- **File:** `stripeConnectController.js` — `triggerAutomaticPayout`
 
 ### **Stripe Connect: Separate Charges and Transfers (Feb 24, 2026):**
 - **CRITICAL FIX:** Changed from "Destination Charges" to "Separate Charges and Transfers"
