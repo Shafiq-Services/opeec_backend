@@ -139,7 +139,7 @@ function createSubcategoryLookupPipeline() {
 const timeOffsetHours = parseFloat(process.env.TIME_OFFSET_HOURS) || 3;       // Delivered → Ongoing after this many hours
 const returnedAutoFinishHours = parseFloat(process.env.RETURNED_AUTO_FINISH_HOURS) ?? 24; // Returned → Finished (0 = manual only)
 const intervalMinutes = parseInt(process.env.INTERVAL_MINUTES) || 1;         // How often cron runs (minutes)
-const LATE_MULTIPLIER = parseFloat(process.env.LATE_FEE_PERCENTAGE) || 1.8; // 1.8% per day late - client spec
+const LATE_MULTIPLIER = parseFloat(process.env.LATE_FEE_MULTIPLIER || process.env.LATE_FEE_PERCENTAGE) || 1.8; // 1.8x per day late - client spec (multiplier, not %)
 
 console.log(`⏳ Order cron: every ${intervalMinutes} min; Delivered→Ongoing after ${timeOffsetHours}h; Returned→Finished after ${returnedAutoFinishHours}h (0=manual)`);
 

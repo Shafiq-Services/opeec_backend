@@ -203,7 +203,7 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ### [Client Fee Formula - Full Implementation - Mar 2026]
 **Type:** Business Logic Overhaul  
-**Description:** Implemented client's complete fee formula: 3% platform fee (min $0.70), tax on fee+insurance only, platform absorbs Stripe, percentage-based late fee (1.8%) with fee+insurance+tax.
+**Description:** Implemented client's complete fee formula: 3% platform fee (min $0.70), tax on fee+insurance only, platform absorbs Stripe, late fee (1.8× daily rate) with fee+insurance+tax.
 
 **Rental:**
 - Platform fee: max(rental_fee × 3%, $0.70)
@@ -211,7 +211,7 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 - Owner receives: full rental_fee (no Stripe/platform deduction)
 
 **Late fee:**
-- late_base = (rental_fee/rental_days) × 1.8% × days_late (use N not N+1)
+- late_base = (rental_fee/rental_days) × 1.8 × days_late (1.8× multiplier; use N not N+1)
 - platform_fee = max(late_base × 3%, $0.70)
 - insurance = late_base × insurance%
 - tax = (platform_fee + insurance) × tax_rate
@@ -226,6 +226,22 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 - `lib/controller/utils/services/pricing_calculation.dart` - Flutter formula sync
 
 **Env:** `LATE_FEE_PERCENTAGE=1.8` (optional override)
+
+---
+
+### [Late Fee Multiplier Fix - Mar 9, 2026]
+**Type:** Bug Fix  
+**Description:** Changed late fee from 1.8% to 1.8× multiplier per client spec. Late penalty should exceed daily rent so keeping equipment longer is not cheaper than returning it.
+
+**Before:** late_base = daily_rate × 0.018 × days_late (1.8%)  
+**After:** late_base = daily_rate × 1.8 × days_late (1.8× multiplier)
+
+**Example:** $2/day, 3 days late → was ~$0.11 base → now ~$10.80 base
+
+**Files Changed:**
+- `utils/feeCalculations.js` - Removed /100; lateMultiplier used directly
+- `controllers/orders.js` - Env: LATE_FEE_MULTIPLIER or LATE_FEE_PERCENTAGE (both supported)
+- `about-project.mdc` - Updated late fee formula docs
 
 ---
 

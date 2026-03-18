@@ -127,7 +127,7 @@ async function getDurationDetails(durationRef) {
 
 /**
  * Calculate late fee with platform fee, insurance, tax - client spec.
- * late_base = owner_daily_rate × LATE_MULTIPLIER (1.8%) × days_late
+ * late_base = owner_daily_rate × LATE_MULTIPLIER (1.8x) × days_late - multiplier, not %
  * platform_fee = max(late_base × 3%, $0.70)
  * insurance = late_base × insuranceRate
  * tax = (platform_fee + insurance) × tax_rate
@@ -135,16 +135,15 @@ async function getDurationDetails(durationRef) {
  * @param {Number} rentalDays - Rental days
  * @param {Number} daysLate - Days late (1, 2, 3...) - use N not N+1 per client
  * @param {Number} equipmentValue - Equipment value for insurance
- * @param {Number} lateFeePct - Optional override (default 1.8)
+ * @param {Number} lateMultiplier - Multiplier (default 1.8) - 1 day late = 1.8× daily rate
  * @returns {Object} { late_base, platform_fee, insurance_amount, tax_amount, total_charge }
  */
-async function calculateLateFee(rentalFee, rentalDays, daysLate, equipmentValue = 0, lateFeePct = 1.8) {
+async function calculateLateFee(rentalFee, rentalDays, daysLate, equipmentValue = 0, lateMultiplier = 1.8) {
   const settings = await PercentageSetting.findOne().sort({ createdAt: -1 });
   if (!settings) throw new Error('Percentage settings not found');
 
-  const LATE_MULTIPLIER = lateFeePct / 100; // e.g. 1.8 -> 0.018
   const ownerDailyRate = rentalDays > 0 ? rentalFee / rentalDays : 0;
-  const lateBase = Math.round((ownerDailyRate * LATE_MULTIPLIER * daysLate) * 100) / 100;
+  const lateBase = Math.round((ownerDailyRate * lateMultiplier * daysLate) * 100) / 100;
 
   const platformFeePct = (settings.adminFeePercentage ?? 3) / 100;
   const potentialPctFee = lateBase * platformFeePct;

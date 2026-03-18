@@ -320,8 +320,8 @@ Triggered for all admin events with professional templates:
 ### **Client Fee Formula (Mar 2026):**
 - **Platform fee:** max(rental_fee × 3%, $0.70). Tax ONLY on (platform_fee + insurance).
 - **Owner receives:** full rental_fee + late_base. Platform absorbs Stripe.
-- **Late fee:** 1.8% of daily rate × days_late, with fee+insurance+tax. Owner receives late_base only.
-- **Env:** `LATE_FEE_PERCENTAGE=1.8` for late multiplier
+- **Late fee:** 1.8× daily rate × days_late (multiplier, not %), with fee+insurance+tax. Owner receives late_base only.
+- **Env:** `LATE_FEE_MULTIPLIER=1.8` or `LATE_FEE_PERCENTAGE=1.8` (both supported; value is multiplier)
 
 ### **Stripe Connect: Separate Charges and Transfers (Feb 24, 2026):**
 - **CRITICAL FIX:** Changed from "Destination Charges" to "Separate Charges and Transfers"
