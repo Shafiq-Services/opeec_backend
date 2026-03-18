@@ -4,6 +4,9 @@ const EquipmentDropdown = require('../models/equipmentDropDown');
 /** Fallback risk rate (%) when admin Insurance % is not set */
 const DEFAULT_INSURANCE_RR_PERCENT = 1;
 
+/** Platform fee minimum (CAD) - client spec */
+const PLATFORM_FEE_MIN = 0.70;
+
 /**
  * Duration factor for insurance: DF = 1 + min(30%, (rental_days - 3) × 5%).
  * Days ≤ 3 → 1; days > 3 → +5% per extra day, capped at +30%.
@@ -39,34 +42,38 @@ async function calculateOrderFees(rentalFee, isInsurance = false, rentalDays = 1
       throw new Error('Percentage settings not found');
     }
 
-    // Calculate platform fee (on rental fee only)
-    const platformFee = (rentalFee * settings.adminFeePercentage) / 100;
-    
-    // Calculate tax on rental + platform fee only (not insurance/deposit)
+    // Platform fee: max(rental_fee × platformFeePct, $0.70) - client spec
+    const platformFeePct = (settings.adminFeePercentage ?? 3) / 100;
+    const potentialPctFee = rentalFee * platformFeePct;
+    const platformFee = Math.max(potentialPctFee, PLATFORM_FEE_MIN);
+
     const roundedPlatformFee = Math.round(platformFee * 100) / 100;
-    const taxableAmount = rentalFee + roundedPlatformFee;
-    const taxAmount = (taxableAmount * settings.taxPercentage) / 100;
-    
+
     // Insurance = EV × Risk Rate × Duration Factor. RR = admin "Insurance (%)" from Pricing.
     const ev = Number(equipmentValue) || 0;
     const rrPercent = settings.insurancePercentage != null && !isNaN(settings.insurancePercentage)
       ? Number(settings.insurancePercentage) : DEFAULT_INSURANCE_RR_PERCENT;
     let insuranceAmount = 0;
     let depositAmount = 0;
-    
+
     if (isInsurance) {
       const df = insuranceDurationFactor(rentalDays);
       insuranceAmount = ev * (rrPercent / 100) * df;
     } else {
       depositAmount = ev * (settings.depositPercentage / 100);
     }
-    
+
+    const roundedInsuranceAmount = Math.round(insuranceAmount * 100) / 100;
+    const roundedDepositAmount = Math.round(depositAmount * 100) / 100;
+
+    // Tax ONLY on (platform_fee + insurance) - not on rental; client spec for tax compliance
+    const taxableAmount = roundedPlatformFee + roundedInsuranceAmount;
+    const taxAmount = (taxableAmount * settings.taxPercentage) / 100;
+
     // Use rounded values for final calculations to ensure consistency
     const roundedRentalFee = Math.round(rentalFee * 100) / 100;
     const roundedTaxAmount = Math.round(taxAmount * 100) / 100;
-    const roundedInsuranceAmount = Math.round(insuranceAmount * 100) / 100;
-    const roundedDepositAmount = Math.round(depositAmount * 100) / 100;
-    
+
     // Calculate total amount - must include deposit when applicable
     const totalAmount = roundedRentalFee + roundedPlatformFee + roundedTaxAmount + roundedInsuranceAmount + roundedDepositAmount;
     
@@ -118,7 +125,51 @@ async function getDurationDetails(durationRef) {
   }
 }
 
+/**
+ * Calculate late fee with platform fee, insurance, tax - client spec.
+ * late_base = owner_daily_rate × LATE_MULTIPLIER (1.8%) × days_late
+ * platform_fee = max(late_base × 3%, $0.70)
+ * insurance = late_base × insuranceRate
+ * tax = (platform_fee + insurance) × tax_rate
+ * @param {Number} rentalFee - Base rental fee
+ * @param {Number} rentalDays - Rental days
+ * @param {Number} daysLate - Days late (1, 2, 3...) - use N not N+1 per client
+ * @param {Number} equipmentValue - Equipment value for insurance
+ * @param {Number} lateFeePct - Optional override (default 1.8)
+ * @returns {Object} { late_base, platform_fee, insurance_amount, tax_amount, total_charge }
+ */
+async function calculateLateFee(rentalFee, rentalDays, daysLate, equipmentValue = 0, lateFeePct = 1.8) {
+  const settings = await PercentageSetting.findOne().sort({ createdAt: -1 });
+  if (!settings) throw new Error('Percentage settings not found');
+
+  const LATE_MULTIPLIER = lateFeePct / 100; // e.g. 1.8 -> 0.018
+  const ownerDailyRate = rentalDays > 0 ? rentalFee / rentalDays : 0;
+  const lateBase = Math.round((ownerDailyRate * LATE_MULTIPLIER * daysLate) * 100) / 100;
+
+  const platformFeePct = (settings.adminFeePercentage ?? 3) / 100;
+  const potentialPctFee = lateBase * platformFeePct;
+  const platformFee = Math.round(Math.max(potentialPctFee, PLATFORM_FEE_MIN) * 100) / 100;
+
+  const rrPercent = settings.insurancePercentage ?? DEFAULT_INSURANCE_RR_PERCENT;
+  const insuranceAmount = Math.round((lateBase * (rrPercent / 100)) * 100) / 100;
+
+  const taxableAmount = platformFee + insuranceAmount;
+  const taxAmount = Math.round((taxableAmount * (settings.taxPercentage / 100)) * 100) / 100;
+
+  const totalCharge = Math.round((lateBase + platformFee + insuranceAmount + taxAmount) * 100) / 100;
+
+  return {
+    late_base: lateBase,
+    platform_fee: platformFee,
+    insurance_amount: insuranceAmount,
+    tax_amount: taxAmount,
+    total_charge: totalCharge
+  };
+}
+
 module.exports = {
   calculateOrderFees,
-  getDurationDetails
+  calculateLateFee,
+  getDurationDetails,
+  PLATFORM_FEE_MIN
 }; 

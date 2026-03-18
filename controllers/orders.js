@@ -68,7 +68,7 @@ const resolveTimezone = (tzInput) => {
   console.log(`⚠️ Unknown timezone "${tz}", using default: ${DEFAULT_TIMEZONE}`);
   return DEFAULT_TIMEZONE;
 };
-const { calculateOrderFees } = require('../utils/feeCalculations');
+const { calculateOrderFees, calculateLateFee } = require('../utils/feeCalculations');
 const { createAdminNotification } = require('./adminNotificationController');
 const { sendNotificationToUser } = require('./notification');
 const User = require('../models/user');
@@ -139,7 +139,7 @@ function createSubcategoryLookupPipeline() {
 const timeOffsetHours = parseFloat(process.env.TIME_OFFSET_HOURS) || 3;       // Delivered → Ongoing after this many hours
 const returnedAutoFinishHours = parseFloat(process.env.RETURNED_AUTO_FINISH_HOURS) ?? 24; // Returned → Finished (0 = manual only)
 const intervalMinutes = parseInt(process.env.INTERVAL_MINUTES) || 1;         // How often cron runs (minutes)
-const DAILY_PENALTY = parseFloat(process.env.DAILY_PENALTY) || 50; // Default penalty if not set
+const LATE_MULTIPLIER = parseFloat(process.env.LATE_FEE_PERCENTAGE) || 1.8; // 1.8% per day late - client spec
 
 console.log(`⏳ Order cron: every ${intervalMinutes} min; Delivered→Ongoing after ${timeOffsetHours}h; Returned→Finished after ${returnedAutoFinishHours}h (0=manual)`);
 
@@ -1234,52 +1234,61 @@ const updateOrder = async (order, updates) => {
 };
 
 
-// Helper: Applies penalty if order is late
+// Helper: Applies penalty if order is late - client spec: 1.8% of daily rate × days_late, fee+insurance+tax
 const applyLatePenalty = async (order) => {
   const now = new Date();
   const timeElapsed = now - order.status_change_timestamp;
-  const daysLate = Math.floor(timeElapsed / (1000 * 60 * 60 * 24));
+  const daysLate = Math.max(1, 1 + Math.floor(timeElapsed / (1000 * 60 * 60 * 24)));
 
-  const expectedPenalty = (daysLate + 1) * DAILY_PENALTY;
+  const rentalFee = Number(order.rental_fee) || 0;
+  let rentalDays = Number(order.rental_days) || 0;
+  if (rentalDays < 1 && order.rental_schedule?.start_date && order.rental_schedule?.end_date) {
+    const start = new Date(order.rental_schedule.start_date).getTime();
+    const end = new Date(order.rental_schedule.end_date).getTime();
+    rentalDays = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+  }
+  rentalDays = Math.max(1, rentalDays);
+  let equipmentValue = 0;
+  try {
+    const equipment = await Equipment.findById(order.equipmentId).select('equipment_price').lean();
+    equipmentValue = equipment?.equipment_price || 0;
+  } catch (e) { /* ignore */ }
 
-  if (order.penalty_amount !== expectedPenalty) {
-    const penaltyIncrease = expectedPenalty - order.penalty_amount;
-    
-    // Update penalty amount in database
-    await updateOrder(order, { penalty_amount: expectedPenalty });
-    console.log(`💰 Penalty updated: $${expectedPenalty} (increase: $${penaltyIncrease})`);
+  const lateFeeBreakdown = await calculateLateFee(rentalFee, rentalDays, daysLate, equipmentValue, LATE_MULTIPLIER);
+  const expectedLateBase = lateFeeBreakdown.late_base;
+  const totalToCharge = lateFeeBreakdown.total_charge;
 
-    // Attempt to charge the penalty increase to customer's card
-    if (penaltyIncrease > 0 && order.stripe_payment && order.stripe_payment.payment_method_id) {
+  if (order.penalty_amount !== expectedLateBase) {
+    const totalChargedSoFar = (order.stripe_payment?.late_penalty_charges || []).reduce((sum, c) => sum + (c.amount || 0), 0);
+    const chargeAmount = Math.round((totalToCharge - totalChargedSoFar) * 100) / 100;
+
+    await updateOrder(order, { penalty_amount: expectedLateBase });
+    console.log(`💰 Late penalty updated: base $${expectedLateBase}, total $${totalToCharge} (charge $${chargeAmount})`);
+
+    if (chargeAmount > 0 && order.stripe_payment && order.stripe_payment.payment_method_id) {
       try {
         const { chargeLatePenalty } = require('./paymentController');
-        const chargeResult = await chargeLatePenalty(order._id, penaltyIncrease, daysLate);
-        
+        const chargeResult = await chargeLatePenalty(order._id, chargeAmount, daysLate);
         if (chargeResult.success) {
-          console.log(`✅ Late penalty of $${penaltyIncrease} charged successfully`);
+          console.log(`✅ Late penalty of $${chargeAmount} charged successfully`);
         } else {
           console.log(`⚠️ Late penalty charge failed - ${chargeResult.message}`);
         }
       } catch (chargeError) {
         console.error(`❌ Error charging late penalty for order ${order._id}:`, chargeError);
-        
-        // Payment failed - admin notification already sent by chargeLatePenalty
-        // Order penalty amount is still tracked for manual collection
       }
-    } else if (penaltyIncrease > 0) {
+    } else if (chargeAmount > 0) {
       console.log(`ℹ️ No saved payment method for order ${order._id} - penalty tracked but not charged`);
-      
-      // Notify admin for manual collection (only once when penalty first applied)
-      if (order.penalty_amount === DAILY_PENALTY) {
+      if (order.penalty_amount === 0) {
         await createAdminNotification(
           'late_penalty_manual_collection',
-          `Late penalty requires manual collection for order ${order._id}`,
+          `Late penalty of $${chargeAmount} requires manual collection for order ${order._id}`,
           {
             orderId: order._id,
             userId: order.userId,
             equipmentId: order.equipmentId,
             data: {
-              penaltyAmount: expectedPenalty,
+              penaltyAmount: chargeAmount,
               daysLate: daysLate,
               reason: 'No saved payment method'
             }
@@ -1364,7 +1373,7 @@ const processOrders = async () => {
             rental_status: 'Late',
             penalty_apply: true,
             status_change_timestamp: lateStartTime,
-            penalty_amount: DAILY_PENALTY
+            penalty_amount: 0
           });
 
           // Send admin notification for late return
@@ -1389,7 +1398,7 @@ const processOrders = async () => {
                   daysLate: daysLate,
                   originalEndDate: order.rental_schedule.end_date,
                   renterTimezone: renterTz,
-                  penaltyAmount: DAILY_PENALTY,
+                  penaltyAmount: 0,
                   lateDate: new Date()
                 }
               }

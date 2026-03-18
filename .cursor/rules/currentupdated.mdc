@@ -201,4 +201,32 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [Client Fee Formula - Full Implementation - Mar 2026]
+**Type:** Business Logic Overhaul  
+**Description:** Implemented client's complete fee formula: 3% platform fee (min $0.70), tax on fee+insurance only, platform absorbs Stripe, percentage-based late fee (1.8%) with fee+insurance+tax.
+
+**Rental:**
+- Platform fee: max(rental_fee × 3%, $0.70)
+- Tax: (platform_fee + insurance) × tax_rate only
+- Owner receives: full rental_fee (no Stripe/platform deduction)
+
+**Late fee:**
+- late_base = (rental_fee/rental_days) × 1.8% × days_late (use N not N+1)
+- platform_fee = max(late_base × 3%, $0.70)
+- insurance = late_base × insurance%
+- tax = (platform_fee + insurance) × tax_rate
+- Customer charged: late_base + fee + insurance + tax
+- Owner receives: late_base only
+
+**Files Changed:**
+- `utils/feeCalculations.js` - New formula, calculateLateFee()
+- `controllers/stripeConnectController.js` - Owner gets full, no deductions
+- `controllers/orders.js` - Percentage-based late penalty, LATE_MULTIPLIER
+- `models/percentageSettings.js` - adminFeePercentage default 3%
+- `lib/controller/utils/services/pricing_calculation.dart` - Flutter formula sync
+
+**Env:** `LATE_FEE_PERCENTAGE=1.8` (optional override)
+
+---
+
 *This log will be updated after each prompt with new changes...*
