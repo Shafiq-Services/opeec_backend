@@ -82,7 +82,7 @@ Order (orderId)
 - **Equipment:** Rental items with images, pricing, location
 - **Order:** Complete rental transactions with pricing breakdown
 - **AdminNotification:** System notifications with email integration
-- **Categories:** Equipment categorization with subcategories
+- **Categories:** Equipment categorization with subcategories (`controllers/categories.js`). Admin `PUT /admin/categories/update` maps `sub_category_id` / `_id` / `id` onto embedded `_id` so listings keep valid references; only **removed** subcategories are blocked if they still have equipment.
 - **Conversation/Message:** Chat system for equipment inquiries
 - **PercentageSetting:** Dynamic pricing configuration
 

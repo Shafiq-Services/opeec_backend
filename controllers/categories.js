@@ -1,5 +1,35 @@
+const mongoose = require('mongoose');
 const Category = require('../models/categories'); // Category model with embedded subcategories
 const Equipment = require('../models/equipment'); // For checking equipment references
+
+/** Subcategory id from admin/API body (dashboards often send sub_category_id, not _id). */
+function getSubcategoryPayloadIdString(sub) {
+  const raw = sub._id ?? sub.sub_category_id ?? sub.id ?? sub.subCategoryId;
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'object' && raw.$oid != null) {
+    const s = String(raw.$oid).trim();
+    return mongoose.Types.ObjectId.isValid(s) ? new mongoose.Types.ObjectId(s).toString() : null;
+  }
+  const s = String(raw).trim();
+  if (!mongoose.Types.ObjectId.isValid(s)) return null;
+  return new mongoose.Types.ObjectId(s).toString();
+}
+
+/**
+ * Map request subcategories to Mongoose embedded docs with stable _id when an id is provided.
+ * Assigning raw JSON (sub_category_id only) makes Mongoose generate new _ids and breaks equipment.subCategoryId.
+ */
+function toEmbeddedSubcategories(sub_categories) {
+  return sub_categories.map((sub) => {
+    const name = (sub.name ?? '').trim();
+    const security_fee = Number(sub.security_fee);
+    const idStr = getSubcategoryPayloadIdString(sub);
+    if (idStr) {
+      return { _id: new mongoose.Types.ObjectId(idStr), name, security_fee };
+    }
+    return { name, security_fee };
+  });
+}
 
 async function addCategory(req, res) {
     try {
@@ -92,31 +122,38 @@ async function addCategory(req, res) {
           }
         }
 
-        // Check if any subcategories being removed have equipment
-        const existingSubcategoryIds = category.sub_categories.map(sub => sub._id.toString());
+        // Subcategories explicitly kept/updated (any payload row with a valid Mongo id)
+        const existingSubcategoryIds = category.sub_categories.map((sub) => sub._id.toString());
         const newSubcategoryIds = sub_categories
-          .filter(sub => sub._id || sub.sub_category_id)
-          .map(sub => (sub._id || sub.sub_category_id).toString());
-        
-        // Find removed subcategory IDs
-        const removedSubcategoryIds = existingSubcategoryIds.filter(id => !newSubcategoryIds.includes(id));
-        
+          .map((sub) => getSubcategoryPayloadIdString(sub))
+          .filter(Boolean);
+
+        // Removed = previously on this category but not in the new list (true deletes only)
+        const removedSubcategoryIds = existingSubcategoryIds.filter((id) => !newSubcategoryIds.includes(id));
+
         if (removedSubcategoryIds.length > 0) {
-          // Check if any equipment uses these subcategories
-          const equipmentCount = await Equipment.countDocuments({
-            subCategoryId: { $in: removedSubcategoryIds }
-          });
-          
-          if (equipmentCount > 0) {
+          const blocking = [];
+          for (const rid of removedSubcategoryIds) {
+            const count = await Equipment.countDocuments({ subCategoryId: rid });
+            if (count > 0) {
+              const sub = category.sub_categories.find((s) => s._id.toString() === rid);
+              blocking.push({ sub_category_id: rid, name: sub?.name ?? 'Unknown', equipment_count: count });
+            }
+          }
+          if (blocking.length > 0) {
+            const detail = blocking
+              .map((b) => `"${b.name}" (${b.equipment_count} listing${b.equipment_count === 1 ? '' : 's'})`)
+              .join(', ');
             return res.status(400).json({
-              message: `Cannot remove subcategories. ${equipmentCount} equipment(s) are using them. Please delete or reassign equipment first.`,
+              message: `Cannot remove subcategory(ies) that still have equipment: ${detail}. You can still edit other subcategories or add new ones.`,
               status: false,
+              blocking_subcategories: blocking,
             });
           }
         }
 
-        // Update embedded subcategories
-        category.sub_categories = sub_categories;
+        // Preserve Mongo _id on updates so equipment references stay valid
+        category.sub_categories = toEmbeddedSubcategories(sub_categories);
       }
   
       // Save updated category
