@@ -700,6 +700,8 @@ ChatController.getConversationMethod()
 - **Rules (`controllers/orders.js` → `addBuyerReview`):** Only `order.userId` may submit; `rental_status` must be `Finished`; cancelled orders blocked; **one submission** per order (rejected if existing `buyer_review.rating >= 1`).
 - **Aggregates:** `utils/common_methods.js` uses `equipmentId`, `userId`, and `ownerId` on Order/Equipment (aligned with Mongoose schemas) for `getAverageRating`, `getEquipmentRatingsList`, `getUserAverageRating`, `getSellerReviews`.
 - **Shop / favorites:** Per-listing average uses `getAverageRating(equipment._id)` in `controllers/equipment.js` (not the owner user id).
+- **Current user as seller (mobile drawer):** `GET /user/profile` includes `seller_average_rating` (number, 1 decimal) and `seller_review_count` (int) from `getSellerRatingSummary` in `utils/common_methods.js` (same filter as above: renter `buyer_review` on owned equipment).
+- **Current user seller review list:** `GET /user/seller-reviews` (JWT) returns `{ message, average_rating, reviews }`; each item is `{ name, comment, rating }` (`controllers/user.js` → `getSellerReviewsMe`, uses `getUserAverageRating` + `getSellerReviews`).
 
 ---
 

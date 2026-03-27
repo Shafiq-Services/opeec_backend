@@ -5,7 +5,13 @@ const { sendOtp } = require('../utils/send_otp');
 const config = require('../config/config');
 const { io, sendEventToUser } = require('../utils/socketService'); // assuming `io` is imported from the socket.js file
 const Equipment = require('../models/equipment'); // Import the Equipment model
-const { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews } = require("../utils/common_methods");
+const {
+  getAverageRating,
+  getEquipmentRatingsList,
+  getUserAverageRating,
+  getSellerRatingSummary,
+  getSellerReviews,
+} = require("../utils/common_methods");
 const Order = require('../models/orders'); // Import the Order model
 const mongoose = require('mongoose');
 const { createAdminNotification } = require('./adminNotificationController');
@@ -373,6 +379,8 @@ exports.getprofile = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    const sellerSummary = await getSellerRatingSummary(userId);
+
     res.status(200).json({ 
       message: 'User profile fetched successfully', 
       "user": {
@@ -388,6 +396,8 @@ exports.getprofile = async (req, res) => {
         is_blocked: user.is_blocked,
         block_reason: user.block_reason,
         fcm_token: user.fcm_token,
+        seller_average_rating: sellerSummary.averageRating,
+        seller_review_count: sellerSummary.reviewCount,
         stripe_verification: {
           status: user.stripe_verification?.status || 'not_verified',
           verified_at: user.stripe_verification?.verified_at || '',
@@ -398,6 +408,24 @@ exports.getprofile = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error in getting user profile', error });
+  }
+};
+
+/** Renter reviews on current user's listings (buyer_review on owned equipment orders). */
+exports.getSellerReviewsMe = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const [average_rating, reviews] = await Promise.all([
+      getUserAverageRating(userId),
+      getSellerReviews(userId),
+    ]);
+    res.status(200).json({
+      message: "Seller reviews fetched successfully",
+      average_rating,
+      reviews,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching seller reviews", error: error.message });
   }
 };
 

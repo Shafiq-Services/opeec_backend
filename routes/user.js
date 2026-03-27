@@ -37,6 +37,7 @@ router.post('/verification/webhook', express.raw({ type: 'application/json' }), 
 router.use(userMiddleware);
 
 router.get('/profile', userController.getprofile);
+router.get('/seller-reviews', userController.getSellerReviewsMe);
 
 // Update user profile
 router.put('/update', userController.updateUser);

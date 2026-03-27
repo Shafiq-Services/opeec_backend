@@ -147,6 +147,53 @@ const getUserAverageRating = async (userId) => {
   }
 };
 
+/**
+ * Average renter rating across all orders (rating >= 1) on equipment owned by sellerId,
+ * plus total review count. Matches semantics of getUserAverageRating / getSellerReviews.
+ * @returns {Promise<{ averageRating: number, reviewCount: number }>}
+ */
+const getSellerRatingSummary = async (userId) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return { averageRating: 0, reviewCount: 0 };
+  }
+
+  try {
+    const ownerOid = new mongoose.Types.ObjectId(userId);
+    const owned = await Equipments.find({ ownerId: ownerOid }, "_id").lean();
+    if (owned.length === 0) {
+      return { averageRating: 0, reviewCount: 0 };
+    }
+    const equipmentObjectIds = owned.map((e) => e._id);
+    const result = await Orders.aggregate([
+      {
+        $match: {
+          equipmentId: { $in: equipmentObjectIds },
+          "buyer_review.rating": { $gte: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: "$buyer_review.rating" },
+          reviewCount: { $sum: 1 },
+        },
+      },
+    ]);
+
+    if (result.length === 0 || result[0].reviewCount == null) {
+      return { averageRating: 0, reviewCount: 0 };
+    }
+
+    return {
+      averageRating: parseFloat(Number(result[0].averageRating).toFixed(1)),
+      reviewCount: Number(result[0].reviewCount) || 0,
+    };
+  } catch (error) {
+    console.error("Error in getSellerRatingSummary:", error);
+    return { averageRating: 0, reviewCount: 0 };
+  }
+};
+
 const getSellerReviews = async (sellerId) => {
   if (!mongoose.Types.ObjectId.isValid(sellerId)) {
     return [];
@@ -199,5 +246,6 @@ module.exports = {
   getAverageRatingsByEquipmentIds,
   getEquipmentRatingsList,
   getUserAverageRating,
+  getSellerRatingSummary,
   getSellerReviews,
 };
