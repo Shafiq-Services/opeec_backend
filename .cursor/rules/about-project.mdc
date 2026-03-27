@@ -693,4 +693,14 @@ ChatController.getConversationMethod()
 
 ---
 
+### **Renter reviews (`buyer_review`)**
+
+- **Storage:** `Order.buyer_review`: `{ rating (0–5), comment, reviewed_at }` (Mongoose: `models/orders.js`).
+- **API:** `POST /order/add-review?orderId=` with renter JWT (`routes/order.js`). Body: `{ rating, comment? }`. Rating must be 1–5 (numeric; string values are coerced in controller).
+- **Rules (`controllers/orders.js` → `addBuyerReview`):** Only `order.userId` may submit; `rental_status` must be `Finished`; cancelled orders blocked; **one submission** per order (rejected if existing `buyer_review.rating >= 1`).
+- **Aggregates:** `utils/common_methods.js` uses `equipmentId`, `userId`, and `ownerId` on Order/Equipment (aligned with Mongoose schemas) for `getAverageRating`, `getEquipmentRatingsList`, `getUserAverageRating`, `getSellerReviews`.
+- **Shop / favorites:** Per-listing average uses `getAverageRating(equipment._id)` in `controllers/equipment.js` (not the owner user id).
+
+---
+
 This comprehensive overview ensures Cursor understands the complete OPEEC project structure, business logic, and current implementation without needing to search through individual files.

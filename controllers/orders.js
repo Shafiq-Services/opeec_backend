@@ -1082,6 +1082,7 @@ exports.togglePenalty = async (req, res) => {
 exports.addBuyerReview = async (req, res) => {
   const { rating, comment } = req.body;
   const { orderId } = req.query;
+  const userId = req.userId;
 
   if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
     return res.status(400).json({ message: "Valid orderId is required." });
@@ -1091,7 +1092,8 @@ exports.addBuyerReview = async (req, res) => {
     return res.status(400).json({ message: "Rating is required." });
   }
 
-  if (typeof rating !== "number" || rating < 1 || rating > 5) {
+  const ratingNum = typeof rating === "string" ? parseFloat(rating) : Number(rating);
+  if (Number.isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
     return res.status(400).json({ message: "Rating must be a number between 1 and 5." });
   }
 
@@ -1103,9 +1105,27 @@ exports.addBuyerReview = async (req, res) => {
     const order = await Order.findById(orderId);
     if (!order) return res.status(404).json({ message: "Order not found." });
 
+    if (String(order.userId) !== String(userId)) {
+      return res.status(403).json({ message: "Only the renter can submit a review for this order." });
+    }
+
+    if (order.cancellation?.is_cancelled) {
+      return res.status(400).json({ message: "Cannot review a cancelled order." });
+    }
+
+    if (order.rental_status !== "Finished") {
+      return res.status(400).json({ message: "You can only review orders that are finished." });
+    }
+
+    const existingRating = order.buyer_review?.rating ?? 0;
+    if (existingRating >= 1) {
+      return res.status(400).json({ message: "A review has already been submitted for this order." });
+    }
+
     order.buyer_review = {
-      rating,
+      rating: ratingNum,
       comment: comment || "",
+      reviewed_at: new Date(),
     };
 
     // ✅ Only update updated_at, not status_change_timestamp (reviews don't affect monitoring)

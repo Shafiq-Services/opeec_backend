@@ -66,7 +66,8 @@ const orderSchema = new mongoose.Schema({
 
   buyer_review: {
     comment: { type: String },
-    rating: { type: Number, min: 0, max: 5, default: 0 }
+    rating: { type: Number, min: 0, max: 5, default: 0 },
+    reviewed_at: { type: Date, default: null },
   },
 
   // Stripe Connect - Automated payout tracking

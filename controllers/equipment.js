@@ -1108,7 +1108,6 @@ async function getUserShop(req, res) {
     }
 
     const owner_average_rating = await getUserAverageRating(ownerId);
-    const equipment_average_rating = await getAverageRating(ownerId);
     const reviews = await getSellerReviews(ownerId);
     
     // Fetch equipment related to the user (owner_id)
@@ -1130,6 +1129,7 @@ async function getUserShop(req, res) {
     // Map equipment data to match the required format
     const formattedEquipments = await Promise.all(equipments.map(async equipment => {
       const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
+      const equipment_average_rating = await getAverageRating(equipment._id);
       return {
         _id: equipment._id,
         name: equipment.name,
@@ -1236,19 +1236,17 @@ async function getFavoriteEquipments(req, res) {
     const subCategoryIds = favoriteEquipments.map(equipment => equipment.subCategoryId.toString());
     const subCategoryMap = await getMultipleSubCategoryDetails(subCategoryIds);
 
-    //Get Equipment Average Rating
-    const average_rating = await getAverageRating(favoriteEquipments);
-
     // Add "isFavorite" flag and additional details to each equipment
     const formattedFavoriteEquipments = await Promise.all(favoriteEquipments.map(async equipment => {
       const subCategoryDetails = subCategoryMap[equipment.subCategoryId.toString()];
+      const equipment_average_rating = await getAverageRating(equipment._id);
       return {
         _id: equipment._id,
         name: equipment.name,
         make: equipment.make,
         rental_price: equipment.rental_price,
         images: normalizeImageUrls(equipment.images),
-        average_rating: average_rating,
+        average_rating: equipment_average_rating,
         owner: equipment.ownerId ? {
           _id: equipment.ownerId._id,
           name: equipment.ownerId.name,

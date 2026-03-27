@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
-const Orders = require("../models/orders"); // Adjust the path based on your project structure
-const Users = require("../models/User"); // Adjust path based on your project structure
+const Orders = require("../models/orders");
+const Users = require("../models/User");
 const Equipments = require("../models/equipment");
 
 /**
@@ -10,16 +10,17 @@ const Equipments = require("../models/equipment");
  */
 const getAverageRating = async (equipmentId) => {
   if (!mongoose.Types.ObjectId.isValid(equipmentId)) {
-    return 0; // Return 0 if the equipmentId is invalid
+    return 0;
   }
 
   try {
+    const eqId = new mongoose.Types.ObjectId(equipmentId);
     const result = await Orders.aggregate([
-      { $match: { equipment_id: new mongoose.Types.ObjectId(equipmentId) } },
-      { $match: { "buyer_review.rating": { $gte: 1 } } }, // Only include orders with a rating
+      { $match: { equipmentId: eqId } },
+      { $match: { "buyer_review.rating": { $gte: 1 } } },
       {
         $group: {
-          _id: "$equipment_id",
+          _id: "$equipmentId",
           averageRating: { $avg: "$buyer_review.rating" },
         },
       },
@@ -28,135 +29,116 @@ const getAverageRating = async (equipmentId) => {
     return result.length > 0 ? parseFloat(result[0].averageRating.toFixed(1)) : 0;
   } catch (error) {
     console.error("Error calculating average rating:", error);
-    return 0; // Return 0 in case of an error
+    return 0;
   }
 };
 
 const getEquipmentRatingsList = async (equipmentId) => {
-    if (!mongoose.Types.ObjectId.isValid(equipmentId)) {
-      return []; // Return empty list if the equipmentId is invalid
-    }
-  
-    try {
-      // Fetch all orders for the given equipment ID that have a valid rating
-      const orders = await Orders.find(
-        { equipment_id: equipmentId, "buyer_review.rating": { $gte: 1 } }, 
-        "buyer_review.comment buyer_review.rating user_id" // Select only required fields
-      );
-  
-      if (orders.length === 0) {
-        return [];
-      }
-  
-      // Extract unique user IDs
-      const userIds = [...new Set(orders.map(order => order.user_id.toString()))];
-  
-      // Fetch user details separately
-      const users = await Users.find(
-        { _id: { $in: userIds } }, 
-        "name"
-      );
-  
-      // Create a mapping of userId to user name
-      const userMap = users.reduce((map, user) => {
-        map[user._id.toString()] = user.name;
-        return map;
-      }, {});
-  
-      // Map orders to return formatted list
-      return orders.map(order => ({
-        name: userMap[order.user_id.toString()] || "Anonymous", // Default to "Anonymous" if user not found
-        comment: order.buyer_review.comment || "", // Default empty string if no comment
-        rating: order.buyer_review.rating
-      }));
-  
-    } catch (error) {
-      console.error("Error fetching equipment ratings list:", error);
+  if (!mongoose.Types.ObjectId.isValid(equipmentId)) {
+    return [];
+  }
+
+  try {
+    const orders = await Orders.find(
+      { equipmentId, "buyer_review.rating": { $gte: 1 } },
+      "buyer_review.comment buyer_review.rating userId"
+    );
+
+    if (orders.length === 0) {
       return [];
     }
-  };
 
-  const getUserAverageRating = async (userId) => {
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    const userIds = [...new Set(orders.map((order) => order.userId.toString()))];
+
+    const users = await Users.find({ _id: { $in: userIds } }, "name");
+
+    const userMap = users.reduce((map, user) => {
+      map[user._id.toString()] = user.name;
+      return map;
+    }, {});
+
+    return orders.map((order) => ({
+      name: userMap[order.userId.toString()] || "Anonymous",
+      comment: order.buyer_review.comment || "",
+      rating: order.buyer_review.rating,
+    }));
+  } catch (error) {
+    console.error("Error fetching equipment ratings list:", error);
+    return [];
+  }
+};
+
+const getUserAverageRating = async (userId) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return 0;
+  }
+
+  try {
+    const userEquipment = await Equipments.find({ ownerId: userId }, "_id");
+    const equipmentIds = userEquipment.map((eq) => eq._id.toString());
+
+    if (equipmentIds.length === 0) {
       return 0;
     }
-  
-    try {
-      // Fetch all equipment owned by the user
-      const userEquipment = await Equipments.find({ owner_id: userId }, "_id");
-      const equipmentIds = userEquipment.map(eq => eq._id.toString());
-  
-      if (equipmentIds.length === 0) {
-        return 0;
-      }
-  
-      // Fetch all orders where the equipment belongs to this user and has a rating
-      const orders = await Orders.find(
-        { equipment_id: { $in: equipmentIds }, "buyer_review.rating": { $gte: 1 } },
-        "buyer_review.rating"
-      );
-  
-      if (orders.length === 0) {
-        return 0;
-      }
-  
-      // Calculate the average rating
-      const totalRating = orders.reduce((sum, order) => sum + order.buyer_review.rating, 0);
-      return parseFloat((totalRating / orders.length).toFixed(1)); // Round to 1 decimal place
-  
-    } catch (error) {
+
+    const orders = await Orders.find(
+      { equipmentId: { $in: equipmentIds }, "buyer_review.rating": { $gte: 1 } },
+      "buyer_review.rating"
+    );
+
+    if (orders.length === 0) {
       return 0;
     }
-  };
 
-  const getSellerReviews = async (sellerId) => {
-    if (!mongoose.Types.ObjectId.isValid(sellerId)) {
+    const totalRating = orders.reduce((sum, order) => sum + order.buyer_review.rating, 0);
+    return parseFloat((totalRating / orders.length).toFixed(1));
+  } catch (error) {
+    return 0;
+  }
+};
+
+const getSellerReviews = async (sellerId) => {
+  if (!mongoose.Types.ObjectId.isValid(sellerId)) {
+    return [];
+  }
+
+  try {
+    const ownedEquipments = await Equipments.find({ ownerId: sellerId }, "_id");
+    const equipmentIds = ownedEquipments.map((eq) => eq._id);
+
+    if (equipmentIds.length === 0) {
       return [];
     }
-  
-    try {
-      // Step 1: Get all equipment owned by the seller
-      const ownedEquipments = await Equipments.find({ owner_id: sellerId }, "_id");
-      const equipmentIds = ownedEquipments.map(eq => eq._id);
-  
-      if (equipmentIds.length === 0) {
-        return [];
-      }
-  
-      // Step 2: Find orders where those equipment were rented
-      const orders = await Orders.find(
-        {
-          equipment_id: { $in: equipmentIds },
-          "buyer_review.rating": { $gte: 1 },
-        },
-        "buyer_review user_id"
-      );
-  
-      if (orders.length === 0) {
-        return [];
-      }
-  
-      // Step 3: Fetch user details for reviewers
-      const userIds = [...new Set(orders.map(order => order.user_id.toString()))];
-      const users = await Users.find({ _id: { $in: userIds } }, "name");
-  
-      const userMap = users.reduce((acc, user) => {
-        acc[user._id.toString()] = user.name;
-        return acc;
-      }, {});
-  
-      // Step 4: Format reviews
-      const reviews = orders.map(order => ({
-        name: userMap[order.user_id.toString()] || "Anonymous",
-        comment: order.buyer_review.comment || "",
-        rating: order.buyer_review.rating,
-      }));
-  
-      return reviews;
-    } catch (error) {
-      console.error("Error fetching seller reviews:", error);
+
+    const orders = await Orders.find(
+      {
+        equipmentId: { $in: equipmentIds },
+        "buyer_review.rating": { $gte: 1 },
+      },
+      "buyer_review userId"
+    );
+
+    if (orders.length === 0) {
       return [];
     }
-  };
+
+    const userIds = [...new Set(orders.map((order) => order.userId.toString()))];
+    const users = await Users.find({ _id: { $in: userIds } }, "name");
+
+    const userMap = users.reduce((acc, user) => {
+      acc[user._id.toString()] = user.name;
+      return acc;
+    }, {});
+
+    return orders.map((order) => ({
+      name: userMap[order.userId.toString()] || "Anonymous",
+      comment: order.buyer_review.comment || "",
+      rating: order.buyer_review.rating,
+    }));
+  } catch (error) {
+    console.error("Error fetching seller reviews:", error);
+    return [];
+  }
+};
 
 module.exports = { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews };
