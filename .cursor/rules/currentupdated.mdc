@@ -257,4 +257,16 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [Reviews: legacy-safe parsing + list average_rating - Mar 27, 2026]
+**Type:** Hardening / Data consistency  
+**Description:** Mongo `buyer_review` (comment, rating, reviewed_at) — defensive reads in `common_methods.js` (null/mixed types); `getAverageRatingsByEquipmentIds` + `getCurrentRentals` / `getHistoryRentals` set `equipment.average_rating` from order aggregates (fallback to stored field). Admin `getRentalsByStatus` normalizes `review.rating` (0–5 int) and `comment` (trim, empty → null). Flutter: `BuyerReviewModel` / `ReviewModel` tolerant parsing; `EquipmentBasicModel.averageRating` real field + `Order.fromJson` maps nested `average_rating`; bottom nav null-safe profile rating text. Web panel: `Review.fromJson` clamps rating and normalizes comment.
+
+---
+
+### [Optional profile_image + client avatar placeholders - Mar 27, 2026]
+**Type:** API / UX  
+**Description:** Signup and profile update no longer require `profile_image`; Mongo schema `profile_image` optional with default `''`. `updateUser` only updates `profile_image` when the field is sent. API responses normalize null/legacy to `''`. Mobile: `OpeecUserAvatar` + `assets/svg/logo.svg` for missing/failed user photos; signup optional photo. Web panel: `assets/svg/logo.svg`, `CommonUIWidgets` / `AzureCircleAvatar` fallbacks use logo; admin sidebar placeholder uses logo.
+
+---
+
 *This log will be updated after each prompt with new changes...*

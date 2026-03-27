@@ -1,3 +1,4 @@
+const { getAverageRatingsByEquipmentIds } = require('../utils/common_methods');
 const Equipment = require('../models/equipment');
 const Order = require('../models/orders');
 const Category = require('../models/categories');
@@ -548,6 +549,8 @@ exports.getCurrentRentals = async (req, res) => {
       { $match: matchQuery },
     ]);
 
+    const avgByEquipment = await getAverageRatingsByEquipmentIds(orders.map((o) => o.equipmentId));
+
     const formattedOrders = orders.map(order => {
       // ISO so app can add time_offset_hours/returned_auto_finish_hours and show in user timezone
       const statusChangeIso = order.status_change_timestamp
@@ -561,11 +564,14 @@ exports.getCurrentRentals = async (req, res) => {
         cleanedOrder.category = categoryWithoutSubCategories;
       }
 
+      const eqKey = order.equipmentId?.toString?.() || String(order.equipmentId);
+      const computedAvg = avgByEquipment[eqKey];
+
       return {
         ...cleanedOrder,
         equipment: {
           ...order.equipment,
-          average_rating: order.equipment.average_rating || 0,
+          average_rating: computedAvg ?? order.equipment.average_rating ?? 0,
         },
         penalty_apply: order.penalty_apply ?? false,
         penalty_amount: order.penalty_amount ?? 0,
@@ -635,6 +641,8 @@ exports.getHistoryRentals = async (req, res) => {
       { $match: matchQuery },
     ]);
 
+    const avgByEquipmentHistory = await getAverageRatingsByEquipmentIds(orders.map((o) => o.equipmentId));
+
     const formattedOrders = orders.map(order => {
       // ISO so app can add time_offset_hours/returned_auto_finish_hours and show in user timezone
       const statusChangeIso = order.status_change_timestamp
@@ -648,11 +656,14 @@ exports.getHistoryRentals = async (req, res) => {
         cleanedOrder.category = categoryWithoutSubCategories;
       }
 
+      const eqKey = order.equipmentId?.toString?.() || String(order.equipmentId);
+      const computedAvg = avgByEquipmentHistory[eqKey];
+
       return {
         ...cleanedOrder,
         equipment: {
           ...order.equipment,
-          average_rating: order.equipment.average_rating || 0,
+          average_rating: computedAvg ?? order.equipment.average_rating ?? 0,
         },
         penalty_apply: order.penalty_apply ?? false,
         penalty_amount: order.penalty_amount ?? 0,
@@ -1714,10 +1725,22 @@ exports.getRentalsByStatus = async (req, res) => {
             }
           },
 
-          review: {
-            rating: order.buyer_review?.rating || 0,
-            comment: order.buyer_review?.comment || null
-          },
+          review: (() => {
+            const br = order.buyer_review;
+            let rating = 0;
+            if (br != null && br.rating != null && br.rating !== "") {
+              const n = Number(br.rating);
+              if (!Number.isNaN(n)) {
+                rating = Math.min(5, Math.max(0, Math.round(n)));
+              }
+            }
+            let comment = null;
+            if (br != null && br.comment != null) {
+              const s = String(br.comment).trim();
+              if (s.length > 0) comment = s;
+            }
+            return { rating, comment };
+          })(),
 
           timestamps: {
             status_change_timestamp: order.status_change_timestamp,

@@ -15,9 +15,9 @@ exports.signup = async (req, res) => {
   try {
     const { name, email, password, profile_image, age, gender, DOB, address, about, phone_number } = req.body;
 
-    // Validate required fields only - age, gender, address are now OPTIONAL (Apple App Store compliance)
-    if (!name || !email || !password || !profile_image || !phone_number) {
-      return res.status(400).json({ message: 'Required fields: name, email, password, profile_image, phone_number' });
+    // profile_image optional at signup (empty string allowed; UI shows logo placeholder)
+    if (!name || !email || !password || !phone_number) {
+      return res.status(400).json({ message: 'Required fields: name, email, password, phone_number' });
     }
 
     // Validate age only if provided
@@ -60,7 +60,7 @@ exports.signup = async (req, res) => {
       email,
       phone_number,
       password: hashedPassword,
-      profile_image,
+      profile_image: (profile_image != null && String(profile_image).trim() !== '') ? String(profile_image).trim() : '',
       age: ageNum,  // Optional - null by default
       gender: gender ? gender.toLowerCase() : '',  // Optional - empty string by default
       DOB: DOB || "",  // Optional - empty string by default
@@ -280,9 +280,8 @@ exports.updateUser = async (req, res) => {
     const userId = req.userId;    
     const { name, email, profile_image, age, gender, DOB, address, phone_number } = req.body;
 
-    // Validate required fields only - age, gender, address are now OPTIONAL (Apple App Store compliance)
-    if (!name || !email || !profile_image || !phone_number) {
-      return res.status(400).json({ message: 'Required fields: name, email, profile_image, phone_number' });
+    if (!name || !email || !phone_number) {
+      return res.status(400).json({ message: 'Required fields: name, email, phone_number' });
     }
 
     // Validate age only if provided
@@ -318,25 +317,27 @@ exports.updateUser = async (req, res) => {
       }
     }
 
-    // Find user by ID and update profile
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { 
-        name, 
-        email,
-        phone_number,
-        profile_image,
-        age: ageNum,
-        gender: gender ? gender.toLowerCase() : '',
-        DOB: DOB || "",  // Optional - empty string by default
-        location: {
-          address: address || '',
-          lat: 0.0,
-          lng: 0.0
-        }
+    const updatePayload = {
+      name,
+      email,
+      phone_number,
+      age: ageNum,
+      gender: gender ? gender.toLowerCase() : '',
+      DOB: DOB || "",
+      location: {
+        address: address || '',
+        lat: 0.0,
+        lng: 0.0,
       },
-      { new: true }
-    );
+    };
+    if (profile_image !== undefined) {
+      updatePayload.profile_image =
+        profile_image == null || String(profile_image).trim() === ''
+          ? ''
+          : String(profile_image).trim();
+    }
+
+    const user = await User.findByIdAndUpdate(userId, updatePayload, { new: true });
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -348,7 +349,7 @@ exports.updateUser = async (req, res) => {
         name: user.name,
         email: user.email,
         phone_number: user.phone_number,
-        profile_image: user.profile_image,
+        profile_image: user.profile_image || '',
         age: user.age,
         gender: user.gender,
         DOB: user.DOB,
@@ -378,7 +379,7 @@ exports.getprofile = async (req, res) => {
         name: user.name,
         email: user.email,
         phone_number: user.phone_number,
-        profile_image: user.profile_image,
+        profile_image: user.profile_image || '',
         age: user.age,
         gender: user.gender,
         DOB: user.DOB,
@@ -820,7 +821,7 @@ exports.getAllUsers = async (req, res) => {
         name: user.name,
         email: user.email,
         phone_number: user.phone_number || "",
-        profile_image: user.profile_image,
+        profile_image: user.profile_image || '',
         age: user.age || "",
         gender: user.gender || "",
         DOB: user.DOB || "",

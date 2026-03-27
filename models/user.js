@@ -42,7 +42,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, trim: true },
   phone_number: { type: String, required: true, trim: true },
   password: { type: String, required: true },
-  profile_image: { type: String, required: true },
+  profile_image: { type: String, required: false, default: '' },
   age: { type: Number, required: false, min: 0, max: 150, default: null }, // Optional - Apple App Store compliance
   gender: { type: String, required: false, enum: ['male', 'female', 'other', ''], default: '' }, // Optional - Apple App Store compliance
   DOB: { type: String, default: "", trim: true }, // Optional - empty string by default

@@ -33,6 +33,50 @@ const getAverageRating = async (equipmentId) => {
   }
 };
 
+/**
+ * Average renter rating per equipment from Finished (etc.) orders with rating >= 1.
+ * Single aggregation for many IDs — used by rental list APIs so UI matches order-based averages.
+ * @param {Array<mongoose.Types.ObjectId|string>} equipmentIds
+ * @returns {Promise<Record<string, number>>} map equipmentId string -> average (1 decimal)
+ */
+const getAverageRatingsByEquipmentIds = async (equipmentIds) => {
+  const validIds = [
+    ...new Set(
+      (equipmentIds || [])
+        .map((id) => (id && id.toString ? id.toString() : String(id)))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    ),
+  ].map((id) => new mongoose.Types.ObjectId(id));
+
+  if (validIds.length === 0) {
+    return {};
+  }
+
+  try {
+    const result = await Orders.aggregate([
+      { $match: { equipmentId: { $in: validIds } } },
+      { $match: { "buyer_review.rating": { $gte: 1 } } },
+      {
+        $group: {
+          _id: "$equipmentId",
+          averageRating: { $avg: "$buyer_review.rating" },
+        },
+      },
+    ]);
+
+    const out = {};
+    for (const row of result) {
+      if (row.averageRating != null) {
+        out[row._id.toString()] = parseFloat(Number(row.averageRating).toFixed(1));
+      }
+    }
+    return out;
+  } catch (error) {
+    console.error("Error in getAverageRatingsByEquipmentIds:", error);
+    return {};
+  }
+};
+
 const getEquipmentRatingsList = async (equipmentId) => {
   if (!mongoose.Types.ObjectId.isValid(equipmentId)) {
     return [];
@@ -59,8 +103,11 @@ const getEquipmentRatingsList = async (equipmentId) => {
 
     return orders.map((order) => ({
       name: userMap[order.userId.toString()] || "Anonymous",
-      comment: order.buyer_review.comment || "",
-      rating: order.buyer_review.rating,
+      comment:
+        order.buyer_review != null && order.buyer_review.comment != null
+          ? String(order.buyer_review.comment)
+          : "",
+      rating: Number(order.buyer_review?.rating) || 0,
     }));
   } catch (error) {
     console.error("Error fetching equipment ratings list:", error);
@@ -90,7 +137,10 @@ const getUserAverageRating = async (userId) => {
       return 0;
     }
 
-    const totalRating = orders.reduce((sum, order) => sum + order.buyer_review.rating, 0);
+    const totalRating = orders.reduce(
+      (sum, order) => sum + (Number(order.buyer_review?.rating) || 0),
+      0
+    );
     return parseFloat((totalRating / orders.length).toFixed(1));
   } catch (error) {
     return 0;
@@ -132,8 +182,11 @@ const getSellerReviews = async (sellerId) => {
 
     return orders.map((order) => ({
       name: userMap[order.userId.toString()] || "Anonymous",
-      comment: order.buyer_review.comment || "",
-      rating: order.buyer_review.rating,
+      comment:
+        order.buyer_review != null && order.buyer_review.comment != null
+          ? String(order.buyer_review.comment)
+          : "",
+      rating: Number(order.buyer_review?.rating) || 0,
     }));
   } catch (error) {
     console.error("Error fetching seller reviews:", error);
@@ -141,4 +194,10 @@ const getSellerReviews = async (sellerId) => {
   }
 };
 
-module.exports = { getAverageRating, getEquipmentRatingsList, getUserAverageRating, getSellerReviews };
+module.exports = {
+  getAverageRating,
+  getAverageRatingsByEquipmentIds,
+  getEquipmentRatingsList,
+  getUserAverageRating,
+  getSellerReviews,
+};
