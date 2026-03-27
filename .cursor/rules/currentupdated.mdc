@@ -245,6 +245,12 @@ This log tracks all modifications, additions, and updates made to the OPEEC proj
 
 ---
 
+### [seedFinishedOrdersForBuyer script - Mar 27, 2026]
+**Type:** Dev tooling  
+**Description:** Added `scripts/seedFinishedOrdersForBuyer.js` — inserts two `Finished` orders for `BUYER_EMAIL` (default `seller.test@opeec.app`) using Active equipment not owned by that user, `buyer_review.rating: 0`, no Stripe/settlement. Usage: `node scripts/seedFinishedOrdersForBuyer.js` or `--dry-run`.
+
+---
+
 ### [Review module + rating aggregates - Mar 27, 2026]
 **Type:** Feature / Bug Fix  
 **Description:** Hardened renter reviews (`POST /order/add-review`): renter-only, Finished-only, single submit; `buyer_review.reviewed_at`. Fixed `utils/common_methods.js` to query `equipmentId` / `userId` / `ownerId` (was broken snake_case). User shop and favorites now use per-equipment `getAverageRating(equipment._id)`. Mobile: bottom-sheet states in `all_popups.dart`, customer/seller UI; removed duplicate `lib/controller/utils/ui/all_popups.dart`. Admin: rental detail shows “No renter review yet” for Finished without rating.
